@@ -150,7 +150,7 @@ func max(a, b int) int {
 }
 
 // RenderSplash renders the about/splash overlay (! key).
-func RenderSplash(configPath, cacheDir, logPath string, width int) string {
+func RenderSplash(configPath, cacheDir, logPath, version string, width int) string {
 	var lines []string
 	lines = append(lines, "")
 	for _, l := range strings.Split(splashArt, "\n") {
@@ -159,6 +159,7 @@ func RenderSplash(configPath, cacheDir, logPath string, width int) string {
 	lines = append(lines, "")
 	lines = append(lines, "  "+DimStyle.Render("git repository monitor  ·  press ! to close"))
 	lines = append(lines, "")
+	lines = append(lines, "  "+cell(DimStyle.Render("version"), 10)+version)
 	lines = append(lines, "  "+cell(DimStyle.Render("config"), 10)+configPath)
 	lines = append(lines, "  "+cell(DimStyle.Render("cache"), 10)+cacheDir)
 	lines = append(lines, "  "+cell(DimStyle.Render("log"), 10)+logPath)

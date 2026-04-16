@@ -239,6 +239,11 @@ func RenderHelp(width int, version string) string {
 			{"p", "git pull current repo  (tab 1)"},
 			{"!", "about / paths"},
 		}},
+		{"CLI", [][2]string{
+			{"grove clone", "clone missing org repos into base_paths"},
+			{"grove clone <profile>", "clone for a specific profile only"},
+			{"grove -v", "print version and config/cache/log paths"},
+		}},
 		{"Panes", [][2]string{
 			{"j / k  (in detail/diff)", "navigate to next / previous item"},
 			{"g  (single, 400 ms)", "toggle grouped / flat view"},

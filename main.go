@@ -57,6 +57,12 @@ func main() {
 
 	cfg := config.Load()
 
+	// clone subcommand: enumerate org repos and clone any that are missing.
+	if len(os.Args) > 1 && os.Args[1] == "clone" {
+		runClone(cfg)
+		return
+	}
+
 	// CLI path args override the first profile's base paths.
 	if len(os.Args) > 1 {
 		paths := os.Args[1:]

@@ -3,9 +3,21 @@
 # (default: ~/.config/grove/config.yaml).
 
 # Named profiles — each has its own GitHub owner (org or username),
-# repo directories, prefix filters, and groups.
-# Use base_path (single) or base_paths (list) per profile.
+# one or more repo directories, prefix filters, and groups.
+# Switch between profiles with < / > in the dashboard.
 profiles:
+  # Personal profile: owner = your GitHub username enables PR/branch tracking.
+  # prefixes: [] matches ALL repos found under base_paths.
+  - name: Personal
+    owner: my-github-username
+    base_paths:
+      - ~/dev/git/personal
+      - ~/projects
+    prefixes: []   # empty = no filtering, all local repos are shown
+
+  # Work profile: scoped to an org with prefix filtering and group routing.
+  # Groups control both the dashboard grouping AND the clone destination
+  # (base_path on a group overrides the profile base_paths for "grove clone").
   - name: Work
     owner: my-org
     base_paths:
@@ -13,19 +25,17 @@ profiles:
     prefixes:
       - service-
       - platform-
+      - infra-
     groups:
       - name: Services
         match: service-
+        base_path: ~/dev/git/my-org/services   # clone goes here
       - name: Platform
         match: platform-
-
-  # Personal profile: set owner to your GitHub username for PR/branch support.
-  # - name: Personal
-  #   owner: my-github-username
-  #   base_paths:
-  #     - ~/dev/git/personal
-  #   prefixes:
-  #     - my-
+        base_path: ~/dev/git/my-org/platform   # clone goes here
+      - name: Infra
+        match: infra-
+        # no base_path → falls back to base_paths[0]
 
 # How often (in seconds) the dashboard auto-refreshes in the background.
 refresh_secs: 300

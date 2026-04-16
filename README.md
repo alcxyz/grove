@@ -15,6 +15,7 @@ A terminal UI for monitoring GitHub repositories. See branch status, dirty worki
 ## Features
 
 - **Multi-profile**: define any number of profiles (personal, work org, etc.) and switch instantly with `<` / `>` or by clicking the profile tab bar; an **All** view merges every profile at once
+- **Clone**: `grove clone` enumerates all repos for each profile's GitHub owner and clones any that are missing locally; groups can route clones to separate subdirectories
 - **Dashboard**: all repos in one view with branch, dirty/clean state, sync status, open PR count, branch count, last author, and last commit time
 - **Pull Requests**: open PRs across all repos with review status
 - **Branches**: all remote branches with PR and merge indicators
@@ -113,6 +114,30 @@ grove ~/dir1 ~/dir2
 | `$XDG_CONFIG_HOME/grove/config.yaml` | Config (falls back to `~/.grove.yaml`); profile-based format |
 | `$XDG_CACHE_HOME/grove/` | Cached PR / branch / activity data |
 | `$XDG_STATE_HOME/grove/grove.log` | Runtime log |
+
+## Clone
+
+`grove clone` enumerates all repos for each profile's GitHub owner via the GitHub API and clones any that are not already present locally:
+
+```sh
+grove clone                  # all profiles
+grove clone Personal         # one profile by name
+grove clone Work Personal    # multiple profiles
+```
+
+Repos are cloned into the profile's `base_paths[0]` by default. If a group has its own `base_path`, repos matching that group's prefix are cloned there instead:
+
+```yaml
+groups:
+  - name: Services
+    match: service-
+    base_path: ~/dev/git/my-org/services  # cloned here
+  - name: Platform
+    match: platform-
+    # no base_path → falls back to profile base_paths[0]
+```
+
+Existing repos (detected by the presence of a `.git` directory) are skipped. Up to 8 clones run in parallel.
 
 ## Key bindings
 

@@ -11,8 +11,9 @@ import (
 )
 
 type Group struct {
-	Name  string `yaml:"name"`
-	Match string `yaml:"match"` // prefix/substring match on repo name
+	Name     string `yaml:"name"`
+	Match    string `yaml:"match"`     // prefix/substring match on repo name
+	BasePath string `yaml:"base_path"` // optional: clone destination for this group
 }
 
 // Profile holds per-profile configuration.
@@ -182,6 +183,11 @@ func normaliseProfiles(cfg *Config, fillPrefixDefaults bool) {
 		for j, path := range p.BasePaths {
 			if len(path) > 0 && path[0] == '~' {
 				p.BasePaths[j] = filepath.Join(home, path[1:])
+			}
+		}
+		for j, g := range p.Groups {
+			if len(g.BasePath) > 0 && g.BasePath[0] == '~' {
+				p.Groups[j].BasePath = filepath.Join(home, g.BasePath[1:])
 			}
 		}
 		if fillPrefixDefaults && len(p.Prefixes) == 0 {

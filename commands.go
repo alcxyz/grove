@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -342,6 +343,26 @@ func loadDetail(repo model.Repo) tea.Cmd {
 
 		return detailLoadedMsg{commits: commits, prs: prs, branches: branches, stats: stats}
 	}
+}
+
+// launchLazygit suspends grove and opens lazygit in the given repo directory.
+// When the user exits lazygit the terminal is handed back to grove. If lazygit
+// isn't on PATH or the repo path is missing, the error surfaces as a status
+// message rather than silently returning to the list.
+func launchLazygit(path string) tea.Cmd {
+	if path == "" {
+		return func() tea.Msg { return statusMsg("no repo selected") }
+	}
+	if _, err := exec.LookPath("lazygit"); err != nil {
+		return func() tea.Msg { return statusMsg("lazygit not found on PATH") }
+	}
+	c := exec.Command("lazygit", "-p", path)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return statusMsg(fmt.Sprintf("lazygit exited: %v", err))
+		}
+		return statusMsg("back in grove")
+	})
 }
 
 func loadDiff(repoPath, repoName, hash string, width int) tea.Cmd {

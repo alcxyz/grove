@@ -186,6 +186,10 @@ var SplashArtWidth = func() int {
 
 var SplashArtHeight = len(splashArtLines)
 
+// BottomChromeHeight is the number of fixed lines at the bottom of the screen
+// (status bar row + info bar row). Exported for contentHeight calculations.
+const BottomChromeHeight = 2
+
 // ssColors is the Catppuccin Mocha palette the screensaver cycles through.
 var ssColors = []string{"#cba6f7", "#89b4fa", "#a6e3a1", "#f38ba8", "#fab387", "#94e2d5", "#f9e2af"}
 
@@ -217,55 +221,34 @@ func max(a, b int) int {
 	return b
 }
 
-// RenderBottomArea renders the combined status / info / owl-mascot bottom chrome.
-// It always outputs exactly SplashArtHeight lines (no leading or trailing newline)
-// so that the caller can simply append it after the content.
-//
-// Layout (wide terminal):
-//
-//	line 0  │ status msg              │ {o,o}                     │
-//	line 1  │ info bar hints          │    ___ _ __ ___|)_)|___   │
-//	lines 2–6│ (blank)               │    … remaining art …      │
-//
-// On narrow terminals (width < artW+20) the right column is omitted.
-func RenderBottomArea(statusMsg string, loading bool, infoParts []string, blinkState, width int) string {
-	artW := SplashArtWidth
-	wide := width >= artW+20
-	leftW := width - artW
-	leftBox := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW)
-
-	var b strings.Builder
-	for i, artLine := range splashArtLines {
-		// Left column: status on row 0, info bar on row 1, blank otherwise.
-		var leftContent string
-		switch i {
-		case 0:
-			s := statusMsg
-			if loading {
-				s = "⏳ " + s
-			}
-			leftContent = StatusBarStyle.Render(s)
-		case 1:
-			leftContent = RenderInfoBar(infoParts)
-		}
-
-		if wide {
-			var right string
-			if i == 0 {
-				right = renderSplashLine(artLine, blinkState)
-			} else {
-				right = DimStyle.Render(artLine)
-			}
-			b.WriteString(leftBox.Render(leftContent) + right)
-		} else {
-			b.WriteString(leftContent)
-		}
-
-		if i < len(splashArtLines)-1 {
-			b.WriteString("\n")
-		}
+// RenderOwlEyes renders the animated owl eyes "{o,o}" with teal-coloured irises.
+// blinkState controls which eyes are closed: 0=both open, 1=left closed,
+// 2=right closed, 3=both closed.
+func RenderOwlEyes(blinkState int) string {
+	eyeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(catTeal))
+	left, right := "o", "o"
+	if blinkState == 1 || blinkState == 3 {
+		left = "-"
 	}
-	return b.String()
+	if blinkState == 2 || blinkState == 3 {
+		right = "-"
+	}
+	return HeaderStyle.Render("{") +
+		eyeStyle.Render(left) +
+		HeaderStyle.Render(",") +
+		eyeStyle.Render(right) +
+		HeaderStyle.Render("}")
+}
+
+// RenderBottomArea renders the two-line bottom chrome: status bar then info bar.
+// It outputs exactly BottomChromeHeight (2) lines with no leading or trailing newline.
+// The owl eyes are anchored on the left of the info bar line.
+func RenderBottomArea(statusMsg string, loading bool, infoParts []string, blinkState, _ int) string {
+	s := statusMsg
+	if loading {
+		s = "⏳ " + s
+	}
+	return StatusBarStyle.Render(s) + "\n" + RenderOwlEyes(blinkState) + RenderInfoBar(infoParts)
 }
 
 // renderSplashLine renders one line of the ASCII art.

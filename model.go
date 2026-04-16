@@ -16,12 +16,12 @@ type tab int
 const (
 	tabDashboard tab = iota
 	tabPRs
+	tabCI
 	tabBranches
 	tabActivity
-	tabCI
 )
 
-var tabNames = []string{"Dashboard [1]", "Pull Requests [2]", "Branches [3]", "Activity [4]", "CI [5]"}
+var tabNames = []string{"Dashboard [1]", "Pull Requests [2]", "CI [3]", "Branches [4]", "Activity [5]"}
 
 type sortOrder int
 
@@ -86,6 +86,7 @@ type appModel struct {
 	detailPRs      []model.PR
 	detailBranches []string
 	detailStats    model.RepoStats
+	detailScroll   int // scroll offset within the detail content
 
 	// Diff view (tab 4 enter)
 	showDiff       bool

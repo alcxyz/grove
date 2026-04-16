@@ -26,7 +26,7 @@ func containsAuthErr(errs []string) bool {
 
 func (m appModel) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion()}
+	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion(), splashBlinkCmd(0)}
 
 	// Background-refresh any cached data that is stale
 	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
@@ -82,8 +82,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key == "!" {
 			m.showSplash = true
-			m.splashBlink = 0
-			return m, splashBlinkCmd(0)
+			return m, nil
 		}
 
 		// Help overlay — tab/shift+tab cycle pages, anything else closes
@@ -169,10 +168,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDetail {
 			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
+				// loadAt navigates to a different repo from within the detail pane.
 				loadAt := func(c int) (appModel, tea.Cmd) {
 					repos := m.filteredRepos()
 					if c < len(repos) {
 						m.cursor = c
+						m.detailScroll = 0
 						m.loading = true
 						m.statusMsg = fmt.Sprintf("Loading %s…", repos[c].Name)
 						return m, loadDetail(repos[c])
@@ -187,31 +188,55 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						_ = ui.OpenURL(m.detailPRs[0].URL)
 					}
 				case "j", "down":
-					newC := min(m.cursor+1, m.listLen()-1)
-					if newC != m.cursor {
-						return loadAt(newC)
-					}
+					m.detailScroll++
+					m.clampDetailScroll()
 				case "k", "up":
-					if m.cursor > 0 {
-						return loadAt(m.cursor - 1)
+					if m.detailScroll > 0 {
+						m.detailScroll--
 					}
 				case "G":
-					return loadAt(max(0, m.listLen()-1))
+					sects := m.detailSectionStarts()
+					total := sects[len(sects)-1]
+					m.detailScroll = max(0, total-m.contentHeight())
 				case "g":
 					if m.prevKey == "g" {
 						m.prevKey = ""
-						return loadAt(0)
+						m.detailScroll = 0 // gg = scroll to top
+					} else {
+						m.prevKey = "g"
+						return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
+							return gTimeoutMsg{}
+						})
 					}
-					m.prevKey = "g"
-					return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
-						return gTimeoutMsg{}
-					})
 				case "[":
 					m.jumpRepo(-1)
 					return loadAt(m.cursor)
 				case "]":
 					m.jumpRepo(+1)
 					return loadAt(m.cursor)
+				case "{":
+					// Jump to previous section start.
+					sects := m.detailSectionStarts()
+					sections := sects[:len(sects)-1] // exclude sentinel
+					target := 0
+					for i := len(sections) - 1; i >= 0; i-- {
+						if sections[i] < m.detailScroll {
+							target = sections[i]
+							break
+						}
+					}
+					m.detailScroll = target
+				case "}":
+					// Jump to next section start.
+					sects := m.detailSectionStarts()
+					sections := sects[:len(sects)-1] // exclude sentinel
+					for _, s := range sections {
+						if s > m.detailScroll {
+							m.detailScroll = s
+							m.clampDetailScroll()
+							break
+						}
+					}
 				}
 				return m, nil
 			}
@@ -295,28 +320,6 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, loadPRs(m.cfg.Profiles)
 			}
 		case "3":
-			m.activeTab = tabBranches
-			m.cursor = 0
-			m.filterQuery = ""
-			m.clearCycleFilter()
-			ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-			if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-				m.loading = true
-				m.statusMsg = "Loading branches..."
-				return m, loadBranches(m.cfg.Profiles)
-			}
-		case "4":
-			m.activeTab = tabActivity
-			m.cursor = 0
-			m.filterQuery = ""
-			m.clearCycleFilter()
-			ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-			if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
-				m.loading = true
-				m.statusMsg = "Loading activity..."
-				return m, loadActivity(m.cfg.Profiles)
-			}
-		case "5":
 			m.activeTab = tabCI
 			m.cursor = 0
 			m.filterQuery = ""
@@ -327,12 +330,35 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = "Loading CI runs..."
 				return m, loadRuns(m.cfg.Profiles)
 			}
+		case "4":
+			m.activeTab = tabBranches
+			m.cursor = 0
+			m.filterQuery = ""
+			m.clearCycleFilter()
+			ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
+			if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
+				m.loading = true
+				m.statusMsg = "Loading branches..."
+				return m, loadBranches(m.cfg.Profiles)
+			}
+		case "5":
+			m.activeTab = tabActivity
+			m.cursor = 0
+			m.filterQuery = ""
+			m.clearCycleFilter()
+			ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
+			if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
+				m.loading = true
+				m.statusMsg = "Loading activity..."
+				return m, loadActivity(m.cfg.Profiles)
+			}
 		case "enter":
 			if m.activeTab == tabDashboard {
 				repos := m.filteredRepos()
 				if m.cursor < len(repos) {
 					repo := repos[m.cursor]
 					m.showDetail = true
+					m.detailScroll = 0
 					m.loading = true
 					m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
 					return m, loadDetail(repo)
@@ -639,6 +665,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.cursor < len(repos) {
 							repo := repos[m.cursor]
 							m.showDetail = true
+							m.detailScroll = 0
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
 							return m, loadDetail(repo)
@@ -794,11 +821,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, idleCheckCmd()
 
 	case splashBlinkMsg:
-		if m.showSplash {
-			m.splashBlink = msg.next
-			return m, splashBlinkCmd(msg.next)
-		}
-		m.splashBlink = 0
+		m.splashBlink = msg.next
+		return m, splashBlinkCmd(msg.next)
 
 	case ssTickMsg:
 		if !m.ssActive {

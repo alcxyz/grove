@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/alcxyz/grove/internal/config"
 	"github.com/alcxyz/grove/internal/ui"
 )
 
@@ -29,11 +30,85 @@ func (m *appModel) clampCursor() {
 	m.adjustScroll()
 }
 
+// showProfileBar returns true when the profile tab bar should be rendered.
+// Only shown when there are multiple profiles (single profile = no bar needed).
+func (m appModel) showProfileBar() bool {
+	return len(m.cfg.Profiles) > 1
+}
+
+// activeProfileObj returns the currently active profile, or the first profile
+// as a fallback. Used for single-profile grouping.
+func (m appModel) activeProfileObj() config.Profile {
+	if m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles) {
+		return m.cfg.Profiles[m.activeProfile]
+	}
+	if len(m.cfg.Profiles) > 0 {
+		return m.cfg.Profiles[0]
+	}
+	return config.Profile{}
+}
+
+// profileOrder returns a func(string) int for ordering groups by profile index.
+func (m appModel) profileOrder() func(string) int {
+	idx := make(map[string]int, len(m.cfg.Profiles))
+	for i, p := range m.cfg.Profiles {
+		idx[p.Name] = i
+	}
+	return func(name string) int {
+		if i, ok := idx[name]; ok {
+			return i
+		}
+		return 9999
+	}
+}
+
+// profileAtX returns the profile index (0..N-1 for profiles, N for "All") for a
+// mouse click at column x in the profile tab bar, or -2 if outside all tabs.
+// "All" maps to index len(cfg.Profiles) in the rendered bar, but is returned as -1.
+func (m appModel) profileAtX(x int) int {
+	names := m.profileTabNames()
+	cur := 0
+	for i, name := range names {
+		w := len(name) + 2 // padding(0,1) = 1 each side
+		if x >= cur && x < cur+w {
+			if i == len(names)-1 {
+				return -1 // "All"
+			}
+			return i
+		}
+		cur += w
+	}
+	return -2
+}
+
+// profileTabNames returns the display names for the profile tab bar.
+func (m appModel) profileTabNames() []string {
+	names := make([]string, len(m.cfg.Profiles)+1)
+	for i, p := range m.cfg.Profiles {
+		names[i] = p.Name
+	}
+	names[len(m.cfg.Profiles)] = "All"
+	return names
+}
+
+// activeProfileTabIdx returns the render index for the active profile
+// (0..N-1 for profiles, N for "All").
+func (m appModel) activeProfileTabIdx() int {
+	if m.activeProfile == -1 {
+		return len(m.cfg.Profiles)
+	}
+	return m.activeProfile
+}
+
 // contentHeight returns the number of scrollable lines available in the
 // terminal after accounting for fixed chrome (title, tabs, header row,
 // status bar, help line).
 func (m appModel) contentHeight() int {
-	h := m.height - 8 // 2 title + 2 tabs + 1 col-header + 1 blank + 1 status + 1 help
+	extra := 0
+	if m.showProfileBar() {
+		extra = 1
+	}
+	h := m.height - 8 - extra // 2 title + 2 tabs + 1 col-header + 1 blank + 1 status + 1 help
 	if h < 1 {
 		return 1
 	}
@@ -121,7 +196,7 @@ func (m appModel) maxScrollOffset() int {
 // item index, or -1 if the row is part of the chrome (title, tabs, col header)
 // or a non-selectable visual line (group header / blank separator).
 //
-// Chrome layout (rows 0-4):
+// Chrome layout without profile bar (rows 0-4):
 //
 //	0  title "grove"
 //	1  blank
@@ -129,8 +204,13 @@ func (m appModel) maxScrollOffset() int {
 //	3  blank
 //	4  column header
 //	5+ scrollable content
+//
+// With profile bar, rows shift down by 1 (profile bar is row 2, content tabs row 3).
 func (m appModel) termRowToCursor(termRow int) int {
-	const headerRows = 5
+	headerRows := 5
+	if m.showProfileBar() {
+		headerRows = 6
+	}
 	if termRow < headerRows {
 		return -1
 	}
@@ -168,7 +248,23 @@ func (m appModel) groupedRepos() []ui.RepoGroup {
 	if !m.grouped {
 		return []ui.RepoGroup{{Name: "", Repos: repos, StartIdx: 0}}
 	}
-	return ui.BuildGroups(repos, m.cfg.GroupFor, m.cfg.GroupOrder)
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		// "All" mode: group by profile name
+		lookup := make(map[string]string, len(m.repos))
+		for _, r := range m.repos {
+			lookup[r.Name] = r.Profile
+		}
+		po := m.profileOrder()
+		return ui.BuildGroups(repos,
+			func(name string) string {
+				if p, ok := lookup[name]; ok {
+					return p
+				}
+				return "other"
+			}, po)
+	}
+	p := m.activeProfileObj()
+	return ui.BuildGroups(repos, p.GroupFor, p.GroupOrder)
 }
 
 func (m appModel) groupedPRs() []ui.PRGroup {
@@ -176,7 +272,23 @@ func (m appModel) groupedPRs() []ui.PRGroup {
 	if !m.grouped {
 		return []ui.PRGroup{{Name: "", PRs: prs, StartIdx: 0}}
 	}
-	return ui.BuildPRGroups(prs, m.cfg.GroupFor, m.cfg.GroupOrder)
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		// "All" mode: group by profile name
+		lookup := make(map[string]string, len(m.prs))
+		for _, pr := range m.prs {
+			lookup[repoBaseName(pr.Repo)] = pr.Profile
+		}
+		po := m.profileOrder()
+		return ui.BuildPRGroups(prs,
+			func(name string) string {
+				if p, ok := lookup[repoBaseName(name)]; ok {
+					return p
+				}
+				return "other"
+			}, po)
+	}
+	p := m.activeProfileObj()
+	return ui.BuildPRGroups(prs, p.GroupFor, p.GroupOrder)
 }
 
 func (m appModel) groupedBranches() []ui.BranchGroup {
@@ -184,7 +296,23 @@ func (m appModel) groupedBranches() []ui.BranchGroup {
 	if !m.grouped {
 		return []ui.BranchGroup{{Name: "", Branches: branches, StartIdx: 0}}
 	}
-	return ui.BuildBranchGroups(branches, m.cfg.GroupFor, m.cfg.GroupOrder)
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		// "All" mode: group by profile name
+		lookup := make(map[string]string, len(m.branches))
+		for _, br := range m.branches {
+			lookup[repoBaseName(br.Repo)] = br.Profile
+		}
+		po := m.profileOrder()
+		return ui.BuildBranchGroups(branches,
+			func(name string) string {
+				if p, ok := lookup[repoBaseName(name)]; ok {
+					return p
+				}
+				return "other"
+			}, po)
+	}
+	p := m.activeProfileObj()
+	return ui.BuildBranchGroups(branches, p.GroupFor, p.GroupOrder)
 }
 
 func (m appModel) groupedActivity() []ui.CommitGroup {
@@ -192,7 +320,23 @@ func (m appModel) groupedActivity() []ui.CommitGroup {
 	if !m.grouped {
 		return []ui.CommitGroup{{Name: "", Commits: commits, StartIdx: 0}}
 	}
-	return ui.BuildCommitGroups(commits, m.cfg.GroupFor, m.cfg.GroupOrder)
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		// "All" mode: group by profile name
+		lookup := make(map[string]string, len(m.activity))
+		for _, c := range m.activity {
+			lookup[c.Repo] = c.Profile
+		}
+		po := m.profileOrder()
+		return ui.BuildCommitGroups(commits,
+			func(name string) string {
+				if p, ok := lookup[name]; ok {
+					return p
+				}
+				return "other"
+			}, po)
+	}
+	p := m.activeProfileObj()
+	return ui.BuildCommitGroups(commits, p.GroupFor, p.GroupOrder)
 }
 
 // blockHighlightValue returns the match string for the current highlight field

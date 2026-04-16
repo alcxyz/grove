@@ -14,6 +14,7 @@ A terminal UI for monitoring GitHub repositories. See branch status, dirty worki
 
 ## Features
 
+- **Multi-profile**: define any number of profiles (personal, work org, etc.) and switch instantly with `<` / `>` or by clicking the profile tab bar; an **All** view merges every profile at once
 - **Dashboard**: all repos in one view with branch, dirty/clean state, sync status, open PR count, branch count, last author, and last commit time
 - **Pull Requests**: open PRs across all repos with review status
 - **Branches**: all remote branches with PR and merge indicators
@@ -72,45 +73,44 @@ mv grove ~/.local/bin/
 On first run grove writes an example config to `$XDG_CONFIG_HOME/grove/config.yaml` (usually `~/.config/grove/config.yaml`). Edit it to match your setup:
 
 ```yaml
-# Path to the directory that contains your local repo checkouts
-base_path: ~/dev/git/my-org
+profiles:
+  - name: Work
+    owner: my-org          # GitHub org or your username — drives PR/branch tabs
+    base_paths:
+      - ~/dev/git/my-org
+    prefixes:
+      - service-
+      - platform-
+    groups:
+      - name: Services
+        match: service-
+      - name: Platform
+        match: platform-
 
-# GitHub organisation (used by gh CLI for PRs and branches)
-org: my-org
+  - name: Personal
+    owner: my-github-username
+    base_paths:
+      - ~/dev/git/personal
+    # prefixes omitted → all git repos in base_paths are scanned
 
-# Only repos whose names start with one of these prefixes are scanned
-prefixes:
-  - service-
-  - platform-
-
-# Auto-refresh interval in seconds (default: 300)
 refresh_secs: 300
-
-# Seconds of inactivity before the screensaver activates (0 = disabled, default: 300)
 screensaver_secs: 300
-
-# Named groups control how repos are grouped and ordered across all tabs.
-# First matching group wins; unmatched repos fall into an implicit "other" group.
-groups:
-  - name: Infrastructure
-    match: infra-
-  - name: Services
-    match: service-
-  - name: Platform
-    match: platform-
 ```
 
-You can also pass a path directly to override `base_path`:
+The legacy single-profile format (`base_path`, `org`, `prefixes` at the top level) is still supported and auto-migrates to a single profile.
+
+You can also pass one or more paths on the command line to override the first profile's `base_paths`:
 
 ```sh
 grove ~/dev/git/other-org
+grove ~/dir1 ~/dir2
 ```
 
 ### Files
 
 | Path | Purpose |
 |------|---------|
-| `$XDG_CONFIG_HOME/grove/config.yaml` | Config (falls back to `~/.grove.yaml`) |
+| `$XDG_CONFIG_HOME/grove/config.yaml` | Config (falls back to `~/.grove.yaml`); profile-based format |
 | `$XDG_CACHE_HOME/grove/` | Cached PR / branch / activity data |
 | `$XDG_STATE_HOME/grove/grove.log` | Runtime log |
 
@@ -128,6 +128,7 @@ grove ~/dev/git/other-org
 | `( )` | Jump between subject / branch / message blocks |
 | `tab` / `shift+tab` | Next / previous tab |
 | `1` `2` `3` `4` | Switch to tab directly |
+| `<` / `>` | Previous / next profile (cycles through All) |
 
 ### Filters and sort
 

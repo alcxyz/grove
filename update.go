@@ -26,17 +26,17 @@ func containsAuthErr(errs []string) bool {
 
 func (m appModel) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg), checkLatestVersion()}
+	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion()}
 
 	// Background-refresh any cached data that is stale
 	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
-		cmds = append(cmds, loadPRs(m.cfg))
+		cmds = append(cmds, loadPRs(m.cfg.Profiles))
 	}
 	if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-		cmds = append(cmds, loadBranches(m.cfg))
+		cmds = append(cmds, loadBranches(m.cfg.Profiles))
 	}
 	if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
-		cmds = append(cmds, loadActivity(m.cfg))
+		cmds = append(cmds, loadActivity(m.cfg.Profiles))
 	}
 
 	if m.autoRefresh {
@@ -163,7 +163,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.cursor < len(repos) {
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading %s…", repos[m.cursor].Name)
-							return m, loadDetail(m.cfg, repos[m.cursor])
+							return m, loadDetail(repos[m.cursor])
 						}
 					}
 				case "k", "up":
@@ -173,7 +173,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if m.cursor < len(repos) {
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading %s…", repos[m.cursor].Name)
-							return m, loadDetail(m.cfg, repos[m.cursor])
+							return m, loadDetail(repos[m.cursor])
 						}
 					}
 				}
@@ -256,7 +256,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
 				m.loading = true
 				m.statusMsg = "Loading PRs..."
-				return m, loadPRs(m.cfg)
+				return m, loadPRs(m.cfg.Profiles)
 			}
 		case "3":
 			m.activeTab = tabBranches
@@ -267,7 +267,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
 				m.loading = true
 				m.statusMsg = "Loading branches..."
-				return m, loadBranches(m.cfg)
+				return m, loadBranches(m.cfg.Profiles)
 			}
 		case "4":
 			m.activeTab = tabActivity
@@ -278,7 +278,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
 				m.loading = true
 				m.statusMsg = "Loading activity..."
-				return m, loadActivity(m.cfg)
+				return m, loadActivity(m.cfg.Profiles)
 			}
 		case "enter":
 			if m.activeTab == tabDashboard {
@@ -288,7 +288,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.showDetail = true
 					m.loading = true
 					m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-					return m, loadDetail(m.cfg, repo)
+					return m, loadDetail(repo)
 				}
 			}
 			if m.activeTab == tabPRs {
@@ -313,13 +313,13 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Refreshing..."
 			switch m.activeTab {
 			case tabDashboard:
-				return m, loadRepos(m.cfg)
+				return m, loadRepos(m.cfg.Profiles)
 			case tabPRs:
-				return m, loadPRs(m.cfg)
+				return m, loadPRs(m.cfg.Profiles)
 			case tabBranches:
-				return m, loadBranches(m.cfg)
+				return m, loadBranches(m.cfg.Profiles)
 			case tabActivity:
-				return m, loadActivity(m.cfg)
+				return m, loadActivity(m.cfg.Profiles)
 			}
 		case "R":
 			m.autoRefresh = !m.autoRefresh
@@ -340,7 +340,39 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+f":
 			m.loading = true
 			m.statusMsg = "Fetching all repos..."
-			return m, fetchAll(m.cfg)
+			return m, fetchAll(m.cfg.Profiles)
+		case "<":
+			if len(m.cfg.Profiles) > 1 {
+				if m.activeProfile == 0 {
+					m.activeProfile = -1
+				} else if m.activeProfile == -1 {
+					m.activeProfile = len(m.cfg.Profiles) - 1
+				} else {
+					m.activeProfile--
+				}
+				m.cursor = 0
+				m.filterQuery = ""
+				m.clearCycleFilter()
+				for k := range m.scrollOffset {
+					m.scrollOffset[k] = 0
+				}
+			}
+		case ">":
+			if len(m.cfg.Profiles) > 1 {
+				if m.activeProfile == len(m.cfg.Profiles)-1 {
+					m.activeProfile = -1
+				} else if m.activeProfile == -1 {
+					m.activeProfile = 0
+				} else {
+					m.activeProfile++
+				}
+				m.cursor = 0
+				m.filterQuery = ""
+				m.clearCycleFilter()
+				for k := range m.scrollOffset {
+					m.scrollOffset[k] = 0
+				}
+			}
 		// Cycle quick filters
 		case "d":
 			m.doCycleFilter("author")
@@ -422,24 +454,59 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollOffset[m.activeTab] = so
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
-				// Tab bar (rows 2–3, exact Y depends on terminal/rendering)
-				if msg.Y == 2 || msg.Y == 3 {
-					if t := tabAtX(msg.X); t >= 0 {
-						m.showDiff = false
-						m.showDetail = false
-						m.showHelp = false
-						m.showSplash = false
-						m.activeTab = tab(t)
-						m.cursor = 0
-						m.filterQuery = ""
-						m.clearCycleFilter()
-						m.scrollOffset[m.activeTab] = 0
-						return m, m.loadTabIfNeeded()
+				// Tab bar / profile bar click handling
+				if m.showProfileBar() {
+					if msg.Y == 2 {
+						// Profile tab click
+						if idx := m.profileAtX(msg.X); idx >= -1 {
+							m.activeProfile = idx
+							m.cursor = 0
+							m.filterQuery = ""
+							m.clearCycleFilter()
+							for k := range m.scrollOffset {
+								m.scrollOffset[k] = 0
+							}
+							return m, nil
+						}
+					} else if msg.Y == 3 || msg.Y == 4 {
+						// Content tab click (shifted down by 1 row due to profile bar)
+						if t := tabAtX(msg.X); t >= 0 {
+							m.showDiff = false
+							m.showDetail = false
+							m.showHelp = false
+							m.showSplash = false
+							m.activeTab = tab(t)
+							m.cursor = 0
+							m.filterQuery = ""
+							m.clearCycleFilter()
+							m.scrollOffset[m.activeTab] = 0
+							return m, m.loadTabIfNeeded()
+						}
+					} else if !m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
+						if idx := m.termRowToCursor(msg.Y); idx >= 0 && idx < m.listLen() {
+							m.cursor = idx
+							m.adjustScroll()
+						}
 					}
-				} else if !m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
-					if idx := m.termRowToCursor(msg.Y); idx >= 0 && idx < m.listLen() {
-						m.cursor = idx
-						m.adjustScroll()
+				} else {
+					if msg.Y == 2 || msg.Y == 3 {
+						if t := tabAtX(msg.X); t >= 0 {
+							m.showDiff = false
+							m.showDetail = false
+							m.showHelp = false
+							m.showSplash = false
+							m.activeTab = tab(t)
+							m.cursor = 0
+							m.filterQuery = ""
+							m.clearCycleFilter()
+							m.scrollOffset[m.activeTab] = 0
+							return m, m.loadTabIfNeeded()
+						}
+					} else if !m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
+						if idx := m.termRowToCursor(msg.Y); idx >= 0 && idx < m.listLen() {
+							m.cursor = idx
+							m.adjustScroll()
+						}
 					}
 				}
 			}
@@ -456,7 +523,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.showDetail = true
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-							return m, loadDetail(m.cfg, repo)
+							return m, loadDetail(repo)
 						}
 					}
 					if m.activeTab == tabPRs {
@@ -548,19 +615,19 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchDoneMsg:
 		m.statusMsg = msg.msg
 		m.loading = false
-		return m, loadRepos(m.cfg)
+		return m, loadRepos(m.cfg.Profiles)
 
 	case statusMsg:
 		m.statusMsg = string(msg)
 		m.loading = false
-		return m, loadRepos(m.cfg)
+		return m, loadRepos(m.cfg.Profiles)
 
 	case tickMsg:
 		if !m.autoRefresh {
 			return m, nil
 		}
 		return m, tea.Batch(
-			loadRepos(m.cfg),
+			loadRepos(m.cfg.Profiles),
 			tickCmd(time.Duration(m.cfg.RefreshSecs)*time.Second),
 		)
 

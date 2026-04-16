@@ -15,13 +15,28 @@ type Group struct {
 	Match string `yaml:"match"` // prefix/substring match on repo name
 }
 
+// Profile holds per-profile configuration.
+type Profile struct {
+	Name      string   `yaml:"name"`
+	Owner     string   `yaml:"owner"`     // GitHub org or username; "" = no GitHub
+	BasePaths []string `yaml:"base_paths"`
+	BasePath  string   `yaml:"base_path"` // legacy; merged into BasePaths on load
+	Prefixes  []string `yaml:"prefixes"`
+	Groups    []Group  `yaml:"groups"`
+}
+
 type Config struct {
-	BasePath        string   `yaml:"base_path"`
-	Org             string   `yaml:"org"`
-	Prefixes        []string `yaml:"prefixes"`
-	Groups          []Group  `yaml:"groups"`
-	RefreshSecs     int      `yaml:"refresh_secs"`
-	ScreensaverSecs int      `yaml:"screensaver_secs"`
+	// Legacy flat fields — kept for YAML backward compat only.
+	// Migrated into Profiles[0] by Load() when Profiles is empty.
+	BasePath  string   `yaml:"base_path"`
+	BasePaths []string `yaml:"base_paths"`
+	Org       string   `yaml:"org"`
+	Prefixes  []string `yaml:"prefixes"`
+	Groups    []Group  `yaml:"groups"`
+
+	Profiles        []Profile `yaml:"profiles"`
+	RefreshSecs     int       `yaml:"refresh_secs"`
+	ScreensaverSecs int       `yaml:"screensaver_secs"`
 }
 
 var Default = Config{
@@ -104,17 +119,21 @@ func Load() Config {
 
 	data, err := os.ReadFile(ConfigPath())
 	if err != nil {
+		// No config file — synthesise default profile from Default fields.
+		cfg.Profiles = []Profile{{
+			Name:      "default",
+			Owner:     cfg.Org,
+			BasePaths: cfg.BasePaths,
+			BasePath:  cfg.BasePath,
+			Prefixes:  cfg.Prefixes,
+			Groups:    cfg.Groups,
+		}}
+		normaliseProfiles(&cfg, true)
 		return cfg
 	}
 
 	_ = yaml.Unmarshal(data, &cfg)
 
-	if cfg.Org == "" {
-		cfg.Org = Default.Org
-	}
-	if len(cfg.Prefixes) == 0 {
-		cfg.Prefixes = Default.Prefixes
-	}
 	if cfg.RefreshSecs <= 0 {
 		cfg.RefreshSecs = Default.RefreshSecs
 	}
@@ -122,20 +141,67 @@ func Load() Config {
 		cfg.ScreensaverSecs = 0 // 0 = disabled
 	}
 
-	// Expand ~ in base_path
-	if len(cfg.BasePath) > 0 && cfg.BasePath[0] == '~' {
-		home, _ := os.UserHomeDir()
-		cfg.BasePath = filepath.Join(home, cfg.BasePath[1:])
+	// If no profiles defined, synthesize one from legacy flat fields.
+	synthesized := len(cfg.Profiles) == 0
+	if synthesized {
+		org := cfg.Org
+		if org == "" {
+			org = Default.Org
+		}
+		prefixes := cfg.Prefixes
+		if len(prefixes) == 0 {
+			prefixes = Default.Prefixes
+		}
+		cfg.Profiles = []Profile{{
+			Name:      "default",
+			Owner:     org,
+			BasePaths: cfg.BasePaths,
+			BasePath:  cfg.BasePath,
+			Prefixes:  prefixes,
+			Groups:    cfg.Groups,
+		}}
 	}
+
+	normaliseProfiles(&cfg, synthesized)
 
 	return cfg
 }
 
-// ResolveGroups returns the effective groups to use.  If none are configured
-// it derives one group per unique prefix from the prefixes list.
+// normaliseProfiles normalises each profile: merge legacy base_path, expand ~,
+// and (when fillPrefixDefaults is true) fill in default prefixes for profiles
+// that have none. fillPrefixDefaults is true only for synthesized profiles;
+// explicitly-defined profiles with empty prefixes match all repos.
+func normaliseProfiles(cfg *Config, fillPrefixDefaults bool) {
+	home, _ := os.UserHomeDir()
+	for i := range cfg.Profiles {
+		p := &cfg.Profiles[i]
+		if p.BasePath != "" {
+			p.BasePaths = append([]string{p.BasePath}, p.BasePaths...)
+			p.BasePath = ""
+		}
+		for j, path := range p.BasePaths {
+			if len(path) > 0 && path[0] == '~' {
+				p.BasePaths[j] = filepath.Join(home, path[1:])
+			}
+		}
+		if fillPrefixDefaults && len(p.Prefixes) == 0 {
+			if len(cfg.Prefixes) > 0 {
+				p.Prefixes = cfg.Prefixes
+			} else {
+				p.Prefixes = Default.Prefixes
+			}
+		}
+		if p.Name == "" {
+			p.Name = fmt.Sprintf("profile %d", i+1)
+		}
+	}
+}
+
+// ResolveGroups returns the effective groups for the first profile (or derived
+// from Default prefixes when no profiles exist).
 func (c Config) ResolveGroups() []Group {
-	if len(c.Groups) > 0 {
-		return c.Groups
+	if len(c.Profiles) > 0 {
+		return c.Profiles[0].ResolveGroups()
 	}
 	groups := make([]Group, len(c.Prefixes))
 	for i, p := range c.Prefixes {
@@ -148,9 +214,57 @@ func (c Config) ResolveGroups() []Group {
 }
 
 // GroupFor returns the group name for a given repo name.
-// Returns "other" if no group matches.
+// Delegates to the first profile when profiles are defined.
 func (c Config) GroupFor(repoName string) string {
-	for _, g := range c.ResolveGroups() {
+	if len(c.Profiles) > 0 {
+		return c.Profiles[0].GroupFor(repoName)
+	}
+	return "other"
+}
+
+// GroupOrder returns the position of a group name in the configured groups
+// list.  Unknown groups sort last (9999).
+func (c Config) GroupOrder(name string) int {
+	if len(c.Profiles) > 0 {
+		return c.Profiles[0].GroupOrder(name)
+	}
+	return 9999
+}
+
+// CacheKey returns a stable string that identifies the shape of this config.
+// If org or prefixes change, the key changes and cached data is invalidated.
+func (c Config) CacheKey() string {
+	var parts []string
+	for _, p := range c.Profiles {
+		prefixes := make([]string, len(p.Prefixes))
+		copy(prefixes, p.Prefixes)
+		sort.Strings(prefixes)
+		parts = append(parts, p.Owner+"|"+strings.Join(prefixes, ","))
+	}
+	return strings.Join(parts, ";")
+}
+
+// Profile methods
+
+// ResolveGroups returns the effective groups for this profile.
+func (p Profile) ResolveGroups() []Group {
+	if len(p.Groups) > 0 {
+		return p.Groups
+	}
+	groups := make([]Group, len(p.Prefixes))
+	for i, prefix := range p.Prefixes {
+		groups[i] = Group{
+			Name:  strings.TrimSuffix(prefix, "-"),
+			Match: prefix,
+		}
+	}
+	return groups
+}
+
+// GroupFor returns the group name for a given repo name.
+// Returns "other" if no group matches.
+func (p Profile) GroupFor(repoName string) string {
+	for _, g := range p.ResolveGroups() {
 		if strings.HasPrefix(repoName, g.Match) || strings.Contains(repoName, g.Match) {
 			return g.Name
 		}
@@ -158,19 +272,10 @@ func (c Config) GroupFor(repoName string) string {
 	return "other"
 }
 
-// CacheKey returns a stable string that identifies the shape of this config.
-// If org or prefixes change, the key changes and cached data is invalidated.
-func (c Config) CacheKey() string {
-	prefixes := make([]string, len(c.Prefixes))
-	copy(prefixes, c.Prefixes)
-	sort.Strings(prefixes)
-	return c.Org + "|" + strings.Join(prefixes, ",")
-}
-
 // GroupOrder returns the position of a group name in the configured groups
 // list.  Unknown groups sort last (9999).
-func (c Config) GroupOrder(name string) int {
-	for i, g := range c.ResolveGroups() {
+func (p Profile) GroupOrder(name string) int {
+	for i, g := range p.ResolveGroups() {
 		if g.Name == name {
 			return i
 		}

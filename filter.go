@@ -165,11 +165,19 @@ func (m appModel) filteredRepos() []model.Repo {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabDashboard]
 	hasCycle := m.cycleField == "author" || m.cycleField == "date"
-	if q == "" && !hasCycle && ts.Field == "" {
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.repos
+	}
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
 	}
 	out := make([]model.Repo, 0, len(m.repos))
 	for _, r := range m.repos {
+		if profileFilter && r.Profile != activeProfileName {
+			continue
+		}
 		if q != "" {
 			if !strings.Contains(strings.ToLower(r.Name), q) &&
 				!strings.Contains(strings.ToLower(r.Branch), q) &&
@@ -193,11 +201,19 @@ func (m appModel) filteredPRs() []model.PR {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabPRs]
 	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
-	if q == "" && !hasCycle && ts.Field == "" {
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.prs
+	}
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
 	}
 	out := make([]model.PR, 0, len(m.prs))
 	for _, pr := range m.prs {
+		if profileFilter && pr.Profile != activeProfileName {
+			continue
+		}
 		if q != "" {
 			if !strings.Contains(strings.ToLower(pr.Repo), q) &&
 				!strings.Contains(strings.ToLower(pr.Title), q) &&
@@ -228,11 +244,19 @@ func (m appModel) filteredBranches() []model.BranchInfo {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabBranches]
 	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "author" || m.cycleField == "date"
-	if q == "" && !hasCycle && ts.Field == "" {
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.branches
+	}
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
 	}
 	out := make([]model.BranchInfo, 0, len(m.branches))
 	for _, br := range m.branches {
+		if profileFilter && br.Profile != activeProfileName {
+			continue
+		}
 		if q != "" {
 			if !strings.Contains(strings.ToLower(br.Repo), q) &&
 				!strings.Contains(strings.ToLower(br.Name), q) &&
@@ -262,11 +286,19 @@ func (m appModel) filteredActivity() []model.Commit {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabActivity]
 	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
-	if q == "" && !hasCycle && ts.Field == "" {
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.activity
+	}
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
 	}
 	out := make([]model.Commit, 0, len(m.activity))
 	for _, c := range m.activity {
+		if profileFilter && c.Profile != activeProfileName {
+			continue
+		}
 		if q != "" {
 			if !strings.Contains(strings.ToLower(c.Repo), q) &&
 				!strings.Contains(strings.ToLower(c.Subject), q) &&

@@ -462,3 +462,15 @@ func RenderTabs(tabs []string, active int) string {
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
 }
+
+func RenderProfileTabs(tabs []string, active int) string {
+	var rendered []string
+	for i, t := range tabs {
+		if i == active {
+			rendered = append(rendered, ActiveProfileTabStyle.Render(t))
+		} else {
+			rendered = append(rendered, ProfileTabStyle.Render(t))
+		}
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+}

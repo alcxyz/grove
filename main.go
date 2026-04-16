@@ -50,31 +50,53 @@ func main() {
 
 	cfg := config.Load()
 
-	// CLI arg overrides config
+	// CLI path args override the first profile's base paths.
 	if len(os.Args) > 1 {
-		cfg.BasePath = os.Args[1]
-	}
-
-	// Resolve to absolute
-	if cfg.BasePath != "" {
-		abs, err := filepath.Abs(cfg.BasePath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error resolving path %q: %v\n", cfg.BasePath, err)
-			os.Exit(1)
+		paths := os.Args[1:]
+		home, _ := os.UserHomeDir()
+		for i, p := range paths {
+			if len(p) > 0 && p[0] == '~' {
+				paths[i] = filepath.Join(home, p[1:])
+			}
 		}
-		cfg.BasePath = abs
+		if len(cfg.Profiles) > 0 {
+			cfg.Profiles[0].BasePaths = paths
+			cfg.Profiles = cfg.Profiles[:1]
+		}
+	}
+
+	// Resolve all profile paths to absolute and validate.
+	for pi := range cfg.Profiles {
+		p := &cfg.Profiles[pi]
+		if len(p.BasePaths) == 0 {
+			abs, _ := filepath.Abs(".")
+			p.BasePaths = []string{abs}
+		}
+		for i, path := range p.BasePaths {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error resolving path %q: %v\n", path, err)
+				os.Exit(1)
+			}
+			info, err := os.Stat(abs)
+			if err != nil || !info.IsDir() {
+				fmt.Fprintf(os.Stderr, "Error: %q is not a valid directory\n", abs)
+				os.Exit(1)
+			}
+			p.BasePaths[i] = abs
+		}
+	}
+
+	var initStatus string
+	if len(cfg.Profiles) == 1 {
+		if len(cfg.Profiles[0].BasePaths) > 0 {
+			initStatus = fmt.Sprintf("Scanning %s...", cfg.Profiles[0].BasePaths[0])
+		} else {
+			initStatus = "Scanning..."
+		}
 	} else {
-		abs, _ := filepath.Abs(".")
-		cfg.BasePath = abs
+		initStatus = fmt.Sprintf("Scanning %d profiles...", len(cfg.Profiles))
 	}
-
-	info, err := os.Stat(cfg.BasePath)
-	if err != nil || !info.IsDir() {
-		fmt.Fprintf(os.Stderr, "Error: %q is not a valid directory\n", cfg.BasePath)
-		os.Exit(1)
-	}
-
-	initStatus := fmt.Sprintf("Scanning %s...", cfg.BasePath)
 	if bootstrapMsg != "" {
 		initStatus = bootstrapMsg
 	}
@@ -122,6 +144,7 @@ func main() {
 		branchesLoadedAt: initBranchesAt,
 		activity:         initActivity,
 		activityLoadedAt: initActivityAt,
+		activeProfile:    0,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

@@ -72,4 +72,15 @@ var (
 
 	// Block-jump highlight: applied to the column value that defines the current jump block
 	BlockMatchStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(catTeal))
+
+	// Profile tab bar styles
+	ProfileTabStyle = lipgloss.NewStyle().
+			Padding(0, 1).
+			Foreground(lipgloss.Color(catOverlay1))
+
+	ActiveProfileTabStyle = lipgloss.NewStyle().
+				Padding(0, 1).
+				Bold(true).
+				Foreground(lipgloss.Color(catTeal)).
+				Underline(true)
 )

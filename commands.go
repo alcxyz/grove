@@ -20,54 +20,82 @@ import (
 	"github.com/alcxyz/grove/internal/model"
 )
 
-func discoverRepoPaths(cfg config.Config) []string {
-	entries, err := os.ReadDir(cfg.BasePath)
-	if err != nil {
-		return nil
-	}
+func discoverRepoPaths(profile config.Profile) []string {
+	seen := map[string]struct{}{}
 	var paths []string
-	for _, e := range entries {
-		if !e.IsDir() {
+	for _, base := range profile.BasePaths {
+		entries, err := os.ReadDir(base)
+		if err != nil {
 			continue
 		}
-		name := e.Name()
-		matched := false
-		for _, prefix := range cfg.Prefixes {
-			if strings.HasPrefix(name, prefix) {
-				matched = true
-				break
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
 			}
-		}
-		if matched {
-			full := filepath.Join(cfg.BasePath, name)
-			if _, err := os.Stat(filepath.Join(full, ".git")); err == nil {
-				paths = append(paths, full)
+			name := e.Name()
+			// Empty prefixes = match all repos in this base_path.
+			matched := len(profile.Prefixes) == 0
+			for _, prefix := range profile.Prefixes {
+				if strings.HasPrefix(name, prefix) {
+					matched = true
+					break
+				}
 			}
+			if !matched {
+				continue
+			}
+			full := filepath.Join(base, name)
+			if _, err := os.Stat(filepath.Join(full, ".git")); err != nil {
+				continue
+			}
+			if _, dup := seen[full]; dup {
+				continue
+			}
+			seen[full] = struct{}{}
+			paths = append(paths, full)
 		}
 	}
 	sort.Strings(paths)
 	return paths
 }
 
-func loadRepos(cfg config.Config) tea.Cmd {
+func loadRepos(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		paths := discoverRepoPaths(cfg)
+		// Collect all (path, profile) pairs, deduplicated by path.
+		type pathProfile struct {
+			path    string
+			profile config.Profile
+		}
+		seen := map[string]struct{}{}
+		var pairs []pathProfile
+		for _, p := range profiles {
+			for _, path := range discoverRepoPaths(p) {
+				if _, dup := seen[path]; dup {
+					continue
+				}
+				seen[path] = struct{}{}
+				pairs = append(pairs, pathProfile{path: path, profile: p})
+			}
+		}
+
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		repos := make([]model.Repo, 0, len(paths))
+		repos := make([]model.Repo, 0, len(pairs))
 
-		for _, p := range paths {
+		for _, pp := range pairs {
 			wg.Add(1)
-			go func(path string) {
+			go func(pp pathProfile) {
 				defer wg.Done()
-				r, err := gitpkg.GetRepoStatus(path)
+				r, err := gitpkg.GetRepoStatus(pp.path)
 				if err != nil {
-					r = model.Repo{Name: filepath.Base(path), Path: path}
+					r = model.Repo{Name: filepath.Base(pp.path), Path: pp.path}
 				}
+				r.Owner = pp.profile.Owner
+				r.Profile = pp.profile.Name
 				mu.Lock()
 				repos = append(repos, r)
 				mu.Unlock()
-			}(p)
+			}(pp)
 		}
 		wg.Wait()
 
@@ -78,29 +106,37 @@ func loadRepos(cfg config.Config) tea.Cmd {
 	}
 }
 
-func loadPRs(cfg config.Config) tea.Cmd {
+func loadPRs(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		paths := discoverRepoPaths(cfg)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		var allPRs []model.PR
 		var errs []string
 
-		for _, p := range paths {
-			wg.Add(1)
-			go func(path string) {
-				defer wg.Done()
-				name := filepath.Base(path)
-				repoFull := cfg.Org + "/" + name
-				prs, err := gh.ListPRs(repoFull)
-				mu.Lock()
-				if err != nil {
-					errs = append(errs, fmt.Sprintf("%s: %v", name, err))
-				} else {
-					allPRs = append(allPRs, prs...)
-				}
-				mu.Unlock()
-			}(p)
+		for _, p := range profiles {
+			if p.Owner == "" {
+				continue
+			}
+			paths := discoverRepoPaths(p)
+			for _, path := range paths {
+				wg.Add(1)
+				go func(path string, profile config.Profile) {
+					defer wg.Done()
+					name := filepath.Base(path)
+					repoFull := profile.Owner + "/" + name
+					prs, err := gh.ListPRs(repoFull)
+					mu.Lock()
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+					} else {
+						for i := range prs {
+							prs[i].Profile = profile.Name
+						}
+						allPRs = append(allPRs, prs...)
+					}
+					mu.Unlock()
+				}(path, p)
+			}
 		}
 		wg.Wait()
 
@@ -111,47 +147,55 @@ func loadPRs(cfg config.Config) tea.Cmd {
 	}
 }
 
-func loadBranches(cfg config.Config) tea.Cmd {
+func loadBranches(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		paths := discoverRepoPaths(cfg)
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		var allBranches []model.BranchInfo
 		var errs []string
 
-		for _, p := range paths {
-			wg.Add(1)
-			go func(path string) {
-				defer wg.Done()
-				name := filepath.Base(path)
-				repoFull := cfg.Org + "/" + name
-				branches, err := gh.ListBranches(repoFull)
-				if err != nil {
-					mu.Lock()
-					errs = append(errs, fmt.Sprintf("%s: %v", name, err))
-					mu.Unlock()
-					return
-				}
-				// Populate IsMerged using local git objects (fast, no API call)
-				defaultBranch := ""
-				for _, br := range branches {
-					if br.IsDefault {
-						defaultBranch = br.Name
-						break
+		for _, p := range profiles {
+			if p.Owner == "" {
+				continue
+			}
+			paths := discoverRepoPaths(p)
+			for _, path := range paths {
+				wg.Add(1)
+				go func(path string, profile config.Profile) {
+					defer wg.Done()
+					name := filepath.Base(path)
+					repoFull := profile.Owner + "/" + name
+					branches, err := gh.ListBranches(repoFull)
+					if err != nil {
+						mu.Lock()
+						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+						mu.Unlock()
+						return
 					}
-				}
-				if defaultBranch != "" {
-					if merged, _ := gitpkg.MergedRemoteBranches(path, defaultBranch); merged != nil {
-						for i := range branches {
-							// Don't mark the default branch itself as merged
-							branches[i].IsMerged = merged[branches[i].Name] && !branches[i].IsDefault
+					// Populate IsMerged using local git objects (fast, no API call)
+					defaultBranch := ""
+					for _, br := range branches {
+						if br.IsDefault {
+							defaultBranch = br.Name
+							break
 						}
 					}
-				}
-				mu.Lock()
-				allBranches = append(allBranches, branches...)
-				mu.Unlock()
-			}(p)
+					if defaultBranch != "" {
+						if merged, _ := gitpkg.MergedRemoteBranches(path, defaultBranch); merged != nil {
+							for i := range branches {
+								// Don't mark the default branch itself as merged
+								branches[i].IsMerged = merged[branches[i].Name] && !branches[i].IsDefault
+							}
+						}
+					}
+					for i := range branches {
+						branches[i].Profile = profile.Name
+					}
+					mu.Lock()
+					allBranches = append(allBranches, branches...)
+					mu.Unlock()
+				}(path, p)
+			}
 		}
 		wg.Wait()
 
@@ -165,30 +209,47 @@ func loadBranches(cfg config.Config) tea.Cmd {
 	}
 }
 
-func loadActivity(cfg config.Config) tea.Cmd {
+func loadActivity(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		paths := discoverRepoPaths(cfg)
+		// Collect all (path, profile) pairs, deduplicated by path.
+		type pathProfile struct {
+			path    string
+			profile config.Profile
+		}
+		seen := map[string]struct{}{}
+		var pairs []pathProfile
+		for _, p := range profiles {
+			for _, path := range discoverRepoPaths(p) {
+				if _, dup := seen[path]; dup {
+					continue
+				}
+				seen[path] = struct{}{}
+				pairs = append(pairs, pathProfile{path: path, profile: p})
+			}
+		}
+
 		var mu sync.Mutex
 		var wg sync.WaitGroup
 		var all []model.Commit
 
-		for _, p := range paths {
+		for _, pp := range pairs {
 			wg.Add(1)
-			go func(path string) {
+			go func(pp pathProfile) {
 				defer wg.Done()
-				repoName := filepath.Base(path)
-				commits, err := gitpkg.RecentCommits(path, 3)
+				repoName := filepath.Base(pp.path)
+				commits, err := gitpkg.RecentCommits(pp.path, 3)
 				if err != nil {
 					return
 				}
 				for i := range commits {
 					commits[i].Repo = repoName
-					commits[i].RepoPath = path
+					commits[i].RepoPath = pp.path
+					commits[i].Profile = pp.profile.Name
 				}
 				mu.Lock()
 				all = append(all, commits...)
 				mu.Unlock()
-			}(p)
+			}(pp)
 		}
 		wg.Wait()
 
@@ -204,7 +265,7 @@ func loadActivity(cfg config.Config) tea.Cmd {
 	}
 }
 
-func loadDetail(cfg config.Config, repo model.Repo) tea.Cmd {
+func loadDetail(repo model.Repo) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var commits []model.Commit
@@ -219,7 +280,9 @@ func loadDetail(cfg config.Config, repo model.Repo) tea.Cmd {
 		}()
 		go func() {
 			defer wg.Done()
-			prs, _ = gh.ListPRs(cfg.Org + "/" + repo.Name)
+			if repo.Owner != "" {
+				prs, _ = gh.ListPRs(repo.Owner + "/" + repo.Name)
+			}
 		}()
 		go func() {
 			defer wg.Done()
@@ -249,9 +312,21 @@ func loadDiff(repoPath, repoName, hash string, width int) tea.Cmd {
 	}
 }
 
-func fetchAll(cfg config.Config) tea.Cmd {
+func fetchAll(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
-		paths := discoverRepoPaths(cfg)
+		// Collect all paths, deduplicated.
+		seen := map[string]struct{}{}
+		var paths []string
+		for _, p := range profiles {
+			for _, path := range discoverRepoPaths(p) {
+				if _, dup := seen[path]; dup {
+					continue
+				}
+				seen[path] = struct{}{}
+				paths = append(paths, path)
+			}
+		}
+
 		var wg sync.WaitGroup
 		var errCount int
 		var mu sync.Mutex
@@ -339,19 +414,19 @@ func (m *appModel) loadTabIfNeeded() tea.Cmd {
 		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading PRs..."
-			return loadPRs(m.cfg)
+			return loadPRs(m.cfg.Profiles)
 		}
 	case tabBranches:
 		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading branches..."
-			return loadBranches(m.cfg)
+			return loadBranches(m.cfg.Profiles)
 		}
 	case tabActivity:
 		if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading activity..."
-			return loadActivity(m.cfg)
+			return loadActivity(m.cfg.Profiles)
 		}
 	}
 	return nil

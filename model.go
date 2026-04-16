@@ -97,6 +97,9 @@ type appModel struct {
 	// Splash/about overlay (! key)
 	showSplash bool
 
+	// Profile switching: index into cfg.Profiles, or -1 for "All"
+	activeProfile int
+
 	// Grouping
 	grouped bool
 

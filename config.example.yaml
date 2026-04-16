@@ -2,16 +2,30 @@
 # On first run this file is written to $XDG_CONFIG_HOME/grove/config.yaml
 # (default: ~/.config/grove/config.yaml).
 
-# Absolute or ~ path to the directory that contains your local repo checkouts.
-base_path: ~/dev/git/my-org
+# Named profiles — each has its own GitHub owner (org or username),
+# repo directories, prefix filters, and groups.
+# Use base_path (single) or base_paths (list) per profile.
+profiles:
+  - name: Work
+    owner: my-org
+    base_paths:
+      - ~/dev/git/my-org
+    prefixes:
+      - service-
+      - platform-
+    groups:
+      - name: Services
+        match: service-
+      - name: Platform
+        match: platform-
 
-# GitHub organisation (used when calling the gh CLI for PRs and branches).
-org: my-org
-
-# Only directories whose names start with one of these prefixes are scanned.
-prefixes:
-  - service-
-  - platform-
+  # Personal profile: set owner to your GitHub username for PR/branch support.
+  # - name: Personal
+  #   owner: my-github-username
+  #   base_paths:
+  #     - ~/dev/git/personal
+  #   prefixes:
+  #     - my-
 
 # How often (in seconds) the dashboard auto-refreshes in the background.
 refresh_secs: 300
@@ -19,13 +33,12 @@ refresh_secs: 300
 # Seconds of idle time before the screensaver activates (0 = disabled).
 screensaver_secs: 300
 
-# Named groups control how repos are grouped and in what order they appear
-# across all tabs.  The first matching group wins; repos that match no group
-# fall into an implicit "other" group at the bottom.
-groups:
-  - name: Infrastructure
-    match: infra-
-  - name: Services
-    match: service-
-  - name: Platform
-    match: platform-
+# ── Legacy single-profile format (still supported) ───────────────────────────
+# If you prefer the flat format (no "profiles:" key), grove synthesises a
+# single "default" profile from these fields automatically.
+#
+# base_path: ~/dev/git/my-org
+# org: my-org
+# prefixes:
+#   - service-
+#   - platform-

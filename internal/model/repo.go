@@ -11,6 +11,8 @@ type Repo struct {
 	Dirty      bool
 	LastCommit time.Time
 	LastAuthor string
+	Owner      string
+	Profile    string
 }
 
 type PR struct {
@@ -24,6 +26,7 @@ type PR struct {
 	ReviewDecision string // "APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED", ""
 	UpdatedAt      time.Time
 	URL            string
+	Profile        string
 }
 
 type BranchInfo struct {
@@ -35,6 +38,7 @@ type BranchInfo struct {
 	Author     string
 	Ahead      int
 	Behind     int
+	Profile    string
 }
 
 type Commit struct {
@@ -44,6 +48,7 @@ type Commit struct {
 	Subject  string
 	Author   string
 	Date     time.Time
+	Profile  string
 }
 
 type RepoStats struct {

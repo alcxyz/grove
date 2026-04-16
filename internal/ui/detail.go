@@ -215,6 +215,7 @@ func RenderHelp(width int, version string) string {
 			{"( / )", "jump between subject/branch/message blocks"},
 			{"tab / shift+tab", "next / previous tab"},
 			{"1 / 2 / 3 / 4", "switch to tab directly"},
+			{"< / >", "switch profile  (when multiple profiles configured)"},
 		}},
 		{"Filters & sort", [][2]string{
 			{"/", "open text filter"},

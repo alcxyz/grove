@@ -123,6 +123,12 @@ func (m appModel) View() string {
 	b.WriteString(ui.TitleStyle.Render("grove"))
 	b.WriteString("\n\n")
 
+	// Profile bar — only when multiple profiles are configured
+	if m.showProfileBar() {
+		b.WriteString(ui.RenderProfileTabs(m.profileTabNames(), m.activeProfileTabIdx()))
+		b.WriteString("\n")
+	}
+
 	// Tabs
 	b.WriteString(ui.RenderTabs(tabNames, int(m.activeTab)))
 

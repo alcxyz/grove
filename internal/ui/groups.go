@@ -292,3 +292,79 @@ func CommitGroupStarts(groups []CommitGroup) []int {
 	}
 	return s
 }
+
+type CIGroup struct {
+	Name     string
+	Runs     []model.WorkflowRun
+	StartIdx int
+}
+
+func BuildCIGroups(runs []model.WorkflowRun, groupFor func(string) string, groupOrder func(string) int) []CIGroup {
+	var groups []CIGroup
+	idx := map[string]int{}
+	for _, r := range runs {
+		gname := groupFor(repoShortName(r.Repo))
+		gi, exists := idx[gname]
+		if !exists {
+			gi = len(groups)
+			idx[gname] = gi
+			groups = append(groups, CIGroup{Name: gname})
+		}
+		groups[gi].Runs = append(groups[gi].Runs, r)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groupOrder(groups[i].Name) < groupOrder(groups[j].Name)
+	})
+	si := 0
+	for i := range groups {
+		groups[i].StartIdx = si
+		si += len(groups[i].Runs)
+	}
+	return groups
+}
+
+func CICursorLine(groups []CIGroup, cursor int) int {
+	vl := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			vl++
+		}
+		if g.Name != "" {
+			vl++
+		}
+		for i := range g.Runs {
+			if g.StartIdx+i == cursor {
+				return vl
+			}
+			vl++
+		}
+	}
+	return 0
+}
+
+func CIIndexAtVL(groups []CIGroup, vl int) int {
+	cur := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			cur++
+		}
+		if g.Name != "" {
+			cur++
+		}
+		for i := range g.Runs {
+			if cur == vl {
+				return g.StartIdx + i
+			}
+			cur++
+		}
+	}
+	return -1
+}
+
+func CIGroupStarts(groups []CIGroup) []int {
+	s := make([]int, len(groups))
+	for i, g := range groups {
+		s[i] = g.StartIdx
+	}
+	return s
+}

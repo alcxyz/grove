@@ -265,6 +265,47 @@ func loadActivity(profiles []config.Profile) tea.Cmd {
 	}
 }
 
+func loadRuns(profiles []config.Profile) tea.Cmd {
+	return func() tea.Msg {
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		var allRuns []model.WorkflowRun
+		var errs []string
+
+		for _, p := range profiles {
+			if p.Owner == "" {
+				continue
+			}
+			paths := discoverRepoPaths(p)
+			for _, path := range paths {
+				wg.Add(1)
+				go func(path string, profile config.Profile) {
+					defer wg.Done()
+					name := filepath.Base(path)
+					repoFull := profile.Owner + "/" + name
+					runs, err := gh.ListWorkflowRuns(repoFull)
+					mu.Lock()
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+					} else {
+						for i := range runs {
+							runs[i].Profile = profile.Name
+						}
+						allRuns = append(allRuns, runs...)
+					}
+					mu.Unlock()
+				}(path, p)
+			}
+		}
+		wg.Wait()
+
+		sort.Slice(allRuns, func(i, j int) bool {
+			return allRuns[i].UpdatedAt.After(allRuns[j].UpdatedAt)
+		})
+		return runsLoadedMsg{runs: allRuns, errors: errs}
+	}
+}
+
 func loadDetail(repo model.Repo) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
@@ -446,6 +487,12 @@ func (m *appModel) loadTabIfNeeded() tea.Cmd {
 			m.loading = true
 			m.statusMsg = "Loading activity..."
 			return loadActivity(m.cfg.Profiles)
+		}
+	case tabCI:
+		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
+			m.loading = true
+			m.statusMsg = "Loading CI runs..."
+			return loadRuns(m.cfg.Profiles)
 		}
 	}
 	return nil

@@ -123,6 +123,8 @@ func main() {
 	var initBranchesAt time.Time
 	var initActivity []model.Commit
 	var initActivityAt time.Time
+	var initRuns []model.WorkflowRun
+	var initRunsAt time.Time
 
 	cacheKey := cfg.CacheKey()
 
@@ -134,6 +136,9 @@ func main() {
 	}
 	if activity, at, err := cache.LoadActivity(cacheDir, cacheKey); err == nil {
 		initActivity, initActivityAt = activity, at
+	}
+	if runs, at, err := cache.LoadRuns(cacheDir, cacheKey); err == nil {
+		initRuns, initRunsAt = runs, at
 	}
 
 	m := appModel{
@@ -157,6 +162,8 @@ func main() {
 		branchesLoadedAt: initBranchesAt,
 		activity:         initActivity,
 		activityLoadedAt: initActivityAt,
+		runs:             initRuns,
+		runsLoadedAt:     initRunsAt,
 		activeProfile:    0,
 	}
 

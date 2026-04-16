@@ -212,9 +212,9 @@ func RenderHelp(width int, version string) string {
 			{"gg / G", "first / last item"},
 			{"{ / }", "jump between groups"},
 			{"[ / ]", "jump between repo blocks  (tab 1: dirty/behind repos)"},
-			{"( / )", "jump between subject/branch/message blocks"},
+			{"( / )", "jump between CI status blocks (tab 1) · subject/branch/message blocks (tabs 2–5)"},
 			{"tab / shift+tab", "next / previous tab"},
-			{"1 / 2 / 3 / 4", "switch to tab directly"},
+			{"1 / 2 / 3 / 4 / 5", "switch to tab directly"},
 			{"< / >", "switch profile  (when multiple profiles configured)"},
 		}},
 		{"Filters & sort", [][2]string{
@@ -231,8 +231,8 @@ func RenderHelp(width int, version string) string {
 			{"tab 3  ∈", "branch merged into default branch"},
 		}},
 		{"Actions", [][2]string{
-			{"enter", "open detail (tab 1) · open diff (tab 4)"},
-			{"o", "open PR in browser  (tabs 2 4)"},
+			{"enter", "open detail (tab 1) · open diff (tab 4) · open run (tab 5)"},
+			{"o", "open PR in browser  (tabs 2 4) · open run in browser  (tab 5)"},
 			{"r", "refresh current tab"},
 			{"R", "toggle auto-refresh on / off"},
 			{"ctrl+f", "git fetch all repos"},

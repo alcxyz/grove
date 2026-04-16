@@ -96,6 +96,23 @@ func (m appModel) infoBarParts() []string {
 			fmt.Sprintf("%d commits", len(commits)),
 			fmt.Sprintf("%d repos", len(repos)),
 		)
+	case tabCI:
+		runs := m.filteredRuns()
+		repos := map[string]struct{}{}
+		failed := 0
+		for _, r := range runs {
+			repos[repoBaseName(r.Repo)] = struct{}{}
+			if r.Conclusion == "failure" || r.Conclusion == "timed_out" || r.Conclusion == "startup_failure" {
+				failed++
+			}
+		}
+		parts = append(parts,
+			fmt.Sprintf("%d runs", len(runs)),
+			fmt.Sprintf("%d repos", len(repos)),
+		)
+		if failed > 0 {
+			parts = append(parts, ui.FailStyle.Render(fmt.Sprintf("%d failed", failed)))
+		}
 	}
 	if !m.grouped {
 		parts = append(parts, ui.CycleStyle.Render("flat"))
@@ -152,6 +169,7 @@ func (m appModel) View() string {
 				tabPRs:       "updated",
 				tabBranches:  "date",
 				tabActivity:  "date",
+				tabCI:        "updated",
 			}[m.activeTab]
 		} else if ts.Field == "subject" {
 			label = map[tab]string{
@@ -159,6 +177,7 @@ func (m appModel) View() string {
 				tabPRs:       "title",
 				tabBranches:  "branch",
 				tabActivity:  "subject",
+				tabCI:        "workflow",
 			}[m.activeTab]
 		} else if ts.Field == "repo" {
 			label = "repo"
@@ -200,7 +219,15 @@ func (m appModel) View() string {
 			for _, br := range m.branches {
 				branchCounts[repoBaseName(br.Repo)]++
 			}
-			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, width, so, ch, prCounts, branchCounts, hlField, hlValue))
+			// Latest CI run per repo (runs are sorted newest-first)
+			ciStatus := map[string]string{}
+			for _, r := range m.runs {
+				name := repoBaseName(r.Repo)
+				if _, seen := ciStatus[name]; !seen {
+					ciStatus[name] = ui.CIStatusIcon(r.Status, r.Conclusion)
+				}
+			}
+			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, width, so, ch, prCounts, branchCounts, ciStatus, hlField, hlValue))
 		case tabPRs:
 			if m.authErr {
 				b.WriteString(ui.RenderAuthError())
@@ -225,6 +252,15 @@ func (m appModel) View() string {
 			}
 		case tabActivity:
 			b.WriteString(ui.RenderActivity(m.groupedActivity(), m.cursor, width, so, ch, hlField, hlValue))
+		case tabCI:
+			if m.authErr {
+				b.WriteString(ui.RenderAuthError())
+			} else {
+				b.WriteString(ui.RenderCI(m.groupedRuns(), m.cursor, width, so, ch, hlField, hlValue))
+				if len(m.runs) == 0 && len(m.errLog) > 0 {
+					b.WriteString(ui.RenderErrors(m.errLog))
+				}
+			}
 		}
 	}
 

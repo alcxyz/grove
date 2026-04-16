@@ -1,3 +1,15 @@
+// Package gh wraps the gh CLI to fetch GitHub data.
+//
+// All outbound calls go through a shared semaphore (sem) that caps concurrent
+// gh invocations at 5.  This keeps grove well within GitHub's REST API rate
+// limit of 5 000 authenticated requests per hour: with a semaphore of 5 and
+// typical round-trip times of 200–500 ms, the theoretical maximum is around
+// 36 000–90 000 requests per hour, but in practice grove only fetches on
+// startup and on explicit refresh, so the actual call volume is far lower.
+//
+// The cap of 5 is intentionally conservative so that grove does not monopolise
+// a user's rate-limit budget when they also have other tools (GitHub CLI, CI
+// systems) running concurrently.
 package gh
 
 import (
@@ -15,7 +27,8 @@ import (
 // ErrNotLoggedIn is returned when gh reports an authentication failure.
 var ErrNotLoggedIn = errors.New("not logged in — run: gh auth login")
 
-// sem limits concurrent gh CLI invocations to avoid hitting GitHub rate limits.
+// sem is a counting semaphore that limits concurrent gh CLI invocations to 5.
+// See the package comment for the reasoning behind this value.
 var sem = make(chan struct{}, 5)
 
 func acquire() { sem <- struct{}{} }
@@ -95,6 +108,60 @@ func ListPRs(repoFullName string) ([]model.PR, error) {
 // branchQuery fetches branch names, last commit date/author, and the default
 // branch in a single GraphQL call — far more efficient than N REST calls.
 const branchQuery = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){defaultBranchRef{name}refs(refPrefix:"refs/heads/",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC}){nodes{name target{... on Commit{committedDate author{name}}}}}}}`
+
+func ListWorkflowRuns(repoFullName string) ([]model.WorkflowRun, error) {
+	acquire()
+	defer release()
+
+	cmd := exec.Command("gh", "run", "list",
+		"--repo", repoFullName,
+		"--limit", "20",
+		"--json", "databaseId,number,status,conclusion,workflowName,headBranch,event,startedAt,updatedAt,url",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		var stderr []byte
+		if errors.As(err, &ee) {
+			stderr = ee.Stderr
+		}
+		return nil, wrapErr(repoFullName, err, stderr)
+	}
+
+	var raw []struct {
+		DatabaseID   int64     `json:"databaseId"`
+		Number       int       `json:"number"`
+		Status       string    `json:"status"`
+		Conclusion   string    `json:"conclusion"`
+		WorkflowName string    `json:"workflowName"`
+		HeadBranch   string    `json:"headBranch"`
+		Event        string    `json:"event"`
+		StartedAt    time.Time `json:"startedAt"`
+		UpdatedAt    time.Time `json:"updatedAt"`
+		URL          string    `json:"url"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("gh run list %s: parse: %w", repoFullName, err)
+	}
+
+	runs := make([]model.WorkflowRun, len(raw))
+	for i, r := range raw {
+		runs[i] = model.WorkflowRun{
+			Repo:         repoFullName,
+			WorkflowName: r.WorkflowName,
+			Branch:       r.HeadBranch,
+			Event:        r.Event,
+			Status:       r.Status,
+			Conclusion:   r.Conclusion,
+			RunID:        r.DatabaseID,
+			Number:       r.Number,
+			StartedAt:    r.StartedAt,
+			UpdatedAt:    r.UpdatedAt,
+			URL:          r.URL,
+		}
+	}
+	return runs, nil
+}
 
 func ListBranches(repoFullName string) ([]model.BranchInfo, error) {
 	acquire()

@@ -48,6 +48,13 @@ func main() {
 		}
 	}
 
+	// Version flag — print and exit before any TUI setup.
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
+		fmt.Printf("grove %s\nconfig: %s\ncache:  %s\nlog:    %s\n",
+			version, config.ConfigPath(), config.CacheDir(), config.LogPath())
+		return
+	}
+
 	cfg := config.Load()
 
 	// CLI path args override the first profile's base paths.

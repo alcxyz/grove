@@ -17,12 +17,15 @@ func (m appModel) infoBarParts() []string {
 	if m.showDiff {
 		return []string{
 			fmt.Sprintf("%s  %s", m.diffRepo, m.diffHash),
-			"j/k next/prev commit",
+			"j/k scroll",
+			"[/] next/prev commit",
+			"{/} files",
+			"o open on GitHub",
 			"esc back",
 		}
 	}
 	if m.showDetail {
-		return []string{"j/k scroll", "[/] next/prev repo", "{/} sections", "o open PR", "esc back"}
+		return []string{"j/k scroll", "[/] next/prev repo", "{/} sections", "o open on GitHub", "esc back"}
 	}
 	if m.filtering {
 		return []string{"type to filter", "enter confirm", "esc clear"}
@@ -221,26 +224,34 @@ func (m appModel) View() string {
 	} else if m.showHelp {
 		b.WriteString(ui.RenderHelp(width, m.helpPage, version))
 	} else if m.showDiff {
-		// Diff pane
-		b.WriteString(ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.contentHeight(), m.diffPreColored))
+		// Diff pane — render full content, slice to viewport using diffScroll.
+		content := ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.diffPreColored)
+		lines := strings.Split(content, "\n")
+		start := m.diffScroll
+		if start > len(lines) {
+			start = len(lines)
+		}
+		end := start + m.contentHeight()
+		if end > len(lines) {
+			end = len(lines)
+		}
+		b.WriteString(strings.Join(lines[start:end], "\n"))
 	} else if m.showDetail {
 		// Detail pane — filter remote branches and CI runs for the current repo.
-		repos := m.filteredRepos()
-		if m.cursor < len(repos) {
-			repoName := repos[m.cursor].Name
+		if repo, ok := m.repoAtCursor(); ok {
 			var remoteBranches []model.BranchInfo
 			for _, br := range m.branches {
-				if repoBaseName(br.Repo) == repoName {
+				if repoBaseName(br.Repo) == repo.Name {
 					remoteBranches = append(remoteBranches, br)
 				}
 			}
 			var ciRuns []model.WorkflowRun
 			for _, r := range m.runs {
-				if repoBaseName(r.Repo) == repoName {
+				if repoBaseName(r.Repo) == repo.Name {
 					ciRuns = append(ciRuns, r)
 				}
 			}
-			content := ui.RenderRepoDetail(repos[m.cursor], m.detailCommits, m.detailPRs, m.detailBranches, remoteBranches, ciRuns, m.detailStats, cw)
+			content := ui.RenderRepoDetail(repo, m.detailCommits, m.detailPRs, m.detailBranches, remoteBranches, ciRuns, m.detailStats, cw)
 			lines := strings.Split(content, "\n")
 			start := m.detailScroll
 			if start > len(lines) {

@@ -347,9 +347,10 @@ var helpPages = [2][]struct {
 			{"< / >", "switch profile  (when multiple profiles configured)"},
 		}},
 		{"Actions", [][2]string{
-			{"enter", "open detail (tab 1) · open diff (tab 5) · open run (tab 3)"},
-			{"o", "open PR in browser  (tab 2) · open run in browser  (tab 3)"},
-			{"p", "git pull current repo  (tab 1)"},
+			{"enter", "open detail pane (tabs 1–4) · open diff (tab 5)"},
+			{"o", "open on GitHub in browser  (all tabs)"},
+			{"space", "open lazygit for current repo  (all tabs)"},
+			{"p", "git pull current repo  (all tabs)"},
 			{"r", "refresh current tab"},
 			{"R", "toggle auto-refresh on / off"},
 			{"ctrl+f", "git fetch all repos"},
@@ -487,31 +488,24 @@ func RenderInfoBar(parts []string) string {
 
 // ── Diff view ─────────────────────────────────────────────────────────────
 
-// RenderDiff renders a diff patch, clipped to maxLines.
+// RenderDiff returns the fully-rendered diff as a string; the caller is
+// responsible for slicing it against a scroll offset to fit the viewport.
 // When preColored is true the content is already ANSI-colored (e.g. via delta)
 // and colorDiffLine is skipped.
-func RenderDiff(repoName, hash, content string, maxLines int, preColored bool) string {
+func RenderDiff(repoName, hash, content string, preColored bool) string {
 	var b strings.Builder
 	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s  %s", repoName, hash)))
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  "+strings.Repeat("─", 86)))
 	b.WriteString("\n")
 
-	lines := strings.Split(content, "\n")
-	shown := 0
-	for _, line := range lines {
-		if shown >= maxLines-2 { // -2 for the two header lines above
-			b.WriteString(DimStyle.Render(fmt.Sprintf("  … %d more lines", len(lines)-shown)))
-			b.WriteString("\n")
-			break
-		}
+	for _, line := range strings.Split(content, "\n") {
 		if preColored {
 			b.WriteString(line)
 		} else {
 			b.WriteString(colorDiffLine(line))
 		}
 		b.WriteString("\n")
-		shown++
 	}
 	return b.String()
 }

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
 )
 
@@ -631,6 +634,153 @@ func (m *appModel) jumpTo(starts []int, dir int) {
 	}
 }
 
+// repoPathFor returns the local filesystem path for a repo matched by base name.
+func (m appModel) repoPathFor(baseName string) string {
+	for _, r := range m.repos {
+		if r.Name == baseName {
+			return r.Path
+		}
+	}
+	return ""
+}
+
+// repoByName returns the full Repo struct matched by base name.
+func (m appModel) repoByName(baseName string) (model.Repo, bool) {
+	for _, r := range m.repos {
+		if r.Name == baseName {
+			return r, true
+		}
+	}
+	return model.Repo{}, false
+}
+
+// repoPathAtCursor returns the local path for the currently selected item by
+// walking the grouped structure. This is necessary because BuildGroups sorts
+// groups and reassigns StartIdx in group order, so m.cursor is an index into
+// the grouped flat sequence — not the original filteredRepos() order.
+func (m appModel) repoPathAtCursor() string {
+	flat := 0
+	switch m.activeTab {
+	case tabDashboard:
+		for _, g := range m.groupedRepos() {
+			for _, r := range g.Repos {
+				if flat == m.cursor {
+					return r.Path
+				}
+				flat++
+			}
+		}
+	case tabPRs:
+		for _, g := range m.groupedPRs() {
+			for _, pr := range g.PRs {
+				if flat == m.cursor {
+					return m.repoPathFor(repoBaseName(pr.Repo))
+				}
+				flat++
+			}
+		}
+	case tabBranches:
+		for _, g := range m.groupedBranches() {
+			for _, br := range g.Branches {
+				if flat == m.cursor {
+					return m.repoPathFor(repoBaseName(br.Repo))
+				}
+				flat++
+			}
+		}
+	case tabActivity:
+		for _, g := range m.groupedActivity() {
+			for _, c := range g.Commits {
+				if flat == m.cursor {
+					return c.RepoPath
+				}
+				flat++
+			}
+		}
+	case tabCI:
+		for _, g := range m.groupedRuns() {
+			for _, r := range g.Runs {
+				if flat == m.cursor {
+					return m.repoPathFor(repoBaseName(r.Repo))
+				}
+				flat++
+			}
+		}
+	}
+	return ""
+}
+
+// repoAtCursor returns the repo at the cursor by walking grouped order.
+// Returns (repo, true) or (zero, false) if cursor is out of range.
+func (m appModel) repoAtCursor() (model.Repo, bool) {
+	flat := 0
+	for _, g := range m.groupedRepos() {
+		for _, r := range g.Repos {
+			if flat == m.cursor {
+				return r, true
+			}
+			flat++
+		}
+	}
+	return model.Repo{}, false
+}
+
+// prAtCursor returns the PR at the cursor by walking grouped order.
+func (m appModel) prAtCursor() (model.PR, bool) {
+	flat := 0
+	for _, g := range m.groupedPRs() {
+		for _, pr := range g.PRs {
+			if flat == m.cursor {
+				return pr, true
+			}
+			flat++
+		}
+	}
+	return model.PR{}, false
+}
+
+// branchAtCursor returns the branch at the cursor by walking grouped order.
+func (m appModel) branchAtCursor() (model.BranchInfo, bool) {
+	flat := 0
+	for _, g := range m.groupedBranches() {
+		for _, br := range g.Branches {
+			if flat == m.cursor {
+				return br, true
+			}
+			flat++
+		}
+	}
+	return model.BranchInfo{}, false
+}
+
+// commitAtCursor returns the Activity commit at the cursor by walking grouped order.
+func (m appModel) commitAtCursor() (model.Commit, bool) {
+	flat := 0
+	for _, g := range m.groupedActivity() {
+		for _, c := range g.Commits {
+			if flat == m.cursor {
+				return c, true
+			}
+			flat++
+		}
+	}
+	return model.Commit{}, false
+}
+
+// runAtCursor returns the CI run at the cursor by walking grouped order.
+func (m appModel) runAtCursor() (model.WorkflowRun, bool) {
+	flat := 0
+	for _, g := range m.groupedRuns() {
+		for _, r := range g.Runs {
+			if flat == m.cursor {
+				return r, true
+			}
+			flat++
+		}
+	}
+	return model.WorkflowRun{}, false
+}
+
 // detailSectionStarts returns the line indices where each section of the detail pane
 // starts, plus a sentinel total-line-count as the last element.
 // Indices: [0]header, [1]local branches, [2]remote branches,
@@ -663,16 +813,14 @@ func (m appModel) detailSectionStarts() []int {
 
 	// Count remote branches and CI runs for the repo currently shown in detail.
 	var remoteCount, ciCount int
-	repos := m.filteredRepos()
-	if m.cursor < len(repos) {
-		repoName := repos[m.cursor].Name
+	if repo, ok := m.repoAtCursor(); ok {
 		for _, br := range m.branches {
-			if repoBaseName(br.Repo) == repoName {
+			if repoBaseName(br.Repo) == repo.Name {
 				remoteCount++
 			}
 		}
 		for _, r := range m.runs {
-			if repoBaseName(r.Repo) == repoName {
+			if repoBaseName(r.Repo) == repo.Name {
 				ciCount++
 			}
 		}
@@ -697,6 +845,36 @@ func (m appModel) detailSectionStarts() []int {
 	starts = append(starts, pos)               // sentinel = total line count
 
 	return starts
+}
+
+// diffTotalLines returns the total number of rendered lines in the diff pane,
+// matching what RenderDiff emits (2 header lines + content lines + trailing blank).
+func (m appModel) diffTotalLines() int {
+	content := ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.diffPreColored)
+	return len(strings.Split(content, "\n"))
+}
+
+// diffFileStarts returns the rendered-line indices where each file change begins
+// ("diff --git ..." lines), offset by the 2-line RenderDiff header.
+func (m appModel) diffFileStarts() []int {
+	var starts []int
+	for i, line := range strings.Split(m.diffContent, "\n") {
+		if strings.HasPrefix(line, "diff --git") {
+			starts = append(starts, i+2) // +2 for title + divider added by RenderDiff
+		}
+	}
+	return starts
+}
+
+// clampDiffScroll clamps m.diffScroll to [0, totalLines-contentHeight].
+func (m *appModel) clampDiffScroll() {
+	maxScroll := max(0, m.diffTotalLines()-m.contentHeight())
+	if m.diffScroll > maxScroll {
+		m.diffScroll = maxScroll
+	}
+	if m.diffScroll < 0 {
+		m.diffScroll = 0
+	}
 }
 
 // clampDetailScroll clamps m.detailScroll to [0, totalLines-contentHeight].

@@ -57,6 +57,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
+		// ctrl+c always quits, regardless of mode/overlay.
+		if key == "ctrl+c" {
+			return m, tea.Quit
+		}
+
 		// Any key dismisses screensaver
 		if m.ssActive {
 			m.ssActive = false
@@ -80,7 +85,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showSplash = false
 			return m, nil
 		}
-		if key == "!" {
+		if key == "!" && !m.filtering {
 			m.showSplash = true
 			return m, nil
 		}
@@ -98,7 +103,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if key == "?" {
+		if key == "?" && !m.filtering {
 			m.showHelp = true
 			m.helpPage = 0
 			return m, nil
@@ -132,30 +137,76 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDiff {
 			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
+				// loadCommitAt fetches the diff for cursor c (grouped-order index)
+				// and resets diffScroll so the new diff starts at the top.
+				loadCommitAt := func(c int) (appModel, tea.Cmd) {
+					m.cursor = c
+					if cm, ok := m.commitAtCursor(); ok {
+						m.diffScroll = 0
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading diff %s…", cm.Hash)
+						return m, loadDiff(cm.RepoPath, cm.Repo, cm.Hash, m.width)
+					}
+					return m, nil
+				}
 				switch key {
 				case "esc", "backspace", "q":
 					m.showDiff = false
-				case "j", "down":
-					newC := min(m.cursor+1, m.listLen()-1)
-					if newC != m.cursor {
-						m.cursor = newC
-						acts := m.filteredActivity()
-						if m.cursor < len(acts) {
-							c := acts[m.cursor]
-							m.loading = true
-							m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
-							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
+				case "o":
+					if c, ok := m.commitAtCursor(); ok {
+						if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
+							_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
 						}
 					}
+				case " ":
+					if c, ok := m.commitAtCursor(); ok {
+						return m, launchLazygit(c.RepoPath)
+					}
+				case "j", "down":
+					m.diffScroll++
+					m.clampDiffScroll()
 				case "k", "up":
+					if m.diffScroll > 0 {
+						m.diffScroll--
+					}
+				case "G":
+					m.diffScroll = max(0, m.diffTotalLines()-m.contentHeight())
+				case "g":
+					if m.prevKey == "g" {
+						m.prevKey = ""
+						m.diffScroll = 0 // gg = scroll to top
+					} else {
+						m.prevKey = "g"
+						return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
+							return gTimeoutMsg{}
+						})
+					}
+				case "[":
 					if m.cursor > 0 {
-						m.cursor--
-						acts := m.filteredActivity()
-						if m.cursor < len(acts) {
-							c := acts[m.cursor]
-							m.loading = true
-							m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
-							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
+						return loadCommitAt(m.cursor - 1)
+					}
+				case "]":
+					if m.cursor < m.listLen()-1 {
+						return loadCommitAt(m.cursor + 1)
+					}
+				case "{":
+					// Jump to previous file header.
+					starts := m.diffFileStarts()
+					target := 0
+					for i := len(starts) - 1; i >= 0; i-- {
+						if starts[i] < m.diffScroll {
+							target = starts[i]
+							break
+						}
+					}
+					m.diffScroll = target
+				case "}":
+					// Jump to next file header.
+					for _, s := range m.diffFileStarts() {
+						if s > m.diffScroll {
+							m.diffScroll = s
+							m.clampDiffScroll()
+							break
 						}
 					}
 				}
@@ -169,14 +220,20 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				// loadAt navigates to a different repo from within the detail pane.
+				// Walks the grouped structure so that [/] respects the current grouping.
 				loadAt := func(c int) (appModel, tea.Cmd) {
-					repos := m.filteredRepos()
-					if c < len(repos) {
-						m.cursor = c
-						m.detailScroll = 0
-						m.loading = true
-						m.statusMsg = fmt.Sprintf("Loading %s…", repos[c].Name)
-						return m, loadDetail(repos[c])
+					flat := 0
+					for _, g := range m.groupedRepos() {
+						for _, r := range g.Repos {
+							if flat == c {
+								m.cursor = c
+								m.detailScroll = 0
+								m.loading = true
+								m.statusMsg = fmt.Sprintf("Loading %s…", r.Name)
+								return m, loadDetail(r)
+							}
+							flat++
+						}
 					}
 					return m, nil
 				}
@@ -184,8 +241,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "esc", "backspace", "q":
 					m.showDetail = false
 				case "o":
-					if len(m.detailPRs) > 0 {
-						_ = ui.OpenURL(m.detailPRs[0].URL)
+					if r, ok := m.repoAtCursor(); ok && r.Owner != "" {
+						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					}
+				case " ":
+					if path := m.repoPathAtCursor(); path != "" {
+						return m, launchLazygit(path)
 					}
 				case "j", "down":
 					m.detailScroll++
@@ -209,10 +270,14 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						})
 					}
 				case "[":
-					m.jumpRepo(-1)
+					if m.cursor > 0 {
+						m.cursor--
+					}
 					return loadAt(m.cursor)
 				case "]":
-					m.jumpRepo(+1)
+					if m.cursor < m.listLen()-1 {
+						m.cursor++
+					}
 					return loadAt(m.cursor)
 				case "{":
 					// Jump to previous section start.
@@ -270,7 +335,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Normal mode
 		switch key {
-		case "q", "ctrl+c":
+		case "q":
 			return m, tea.Quit
 		case "/":
 			m.filtering = true
@@ -353,38 +418,54 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, loadActivity(m.cfg.Profiles)
 			}
 		case "enter":
-			if m.activeTab == tabDashboard {
-				repos := m.filteredRepos()
-				if m.cursor < len(repos) {
-					repo := repos[m.cursor]
+			// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
+			switch m.activeTab {
+			case tabDashboard:
+				if r, ok := m.repoAtCursor(); ok {
 					m.showDetail = true
 					m.detailScroll = 0
 					m.loading = true
-					m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-					return m, loadDetail(repo)
+					m.statusMsg = fmt.Sprintf("Loading %s details…", r.Name)
+					return m, loadDetail(r)
 				}
-			}
-			if m.activeTab == tabPRs {
-				prs := m.filteredPRs()
-				if m.cursor < len(prs) {
-					_ = ui.OpenURL(prs[m.cursor].URL)
+			case tabPRs:
+				if pr, ok := m.prAtCursor(); ok {
+					if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
+						m.showDetail = true
+						m.detailScroll = 0
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+						return m, loadDetail(repo)
+					}
 				}
-			}
-			if m.activeTab == tabActivity {
-				acts := m.filteredActivity()
-				if m.cursor < len(acts) {
-					c := acts[m.cursor]
+			case tabBranches:
+				if br, ok := m.branchAtCursor(); ok {
+					if repo, ok := m.repoByName(repoBaseName(br.Repo)); ok {
+						m.showDetail = true
+						m.detailScroll = 0
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+						return m, loadDetail(repo)
+					}
+				}
+			case tabActivity:
+				if c, ok := m.commitAtCursor(); ok {
 					m.showDiff = true
 					m.diffContent = ""
+					m.diffScroll = 0
 					m.loading = true
 					m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
 					return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 				}
-			}
-			if m.activeTab == tabCI {
-				runs := m.filteredRuns()
-				if m.cursor < len(runs) {
-					_ = ui.OpenURL(runs[m.cursor].URL)
+			case tabCI:
+				if r, ok := m.runAtCursor(); ok {
+					if repo, ok := m.repoByName(repoBaseName(r.Repo)); ok {
+						m.showDetail = true
+						m.detailScroll = 0
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+						return m, loadDetail(repo)
+					}
 				}
 			}
 		case "r":
@@ -520,33 +601,50 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tabCI:
 				m.cycleSortField("ci")
 			}
+		case " ":
+			if path := m.repoPathAtCursor(); path != "" {
+				return m, launchLazygit(path)
+			}
 		case "p":
-			if m.activeTab == tabDashboard {
-				repos := m.filteredRepos()
-				if m.cursor < len(repos) {
-					repo := repos[m.cursor]
-					m.loading = true
-					m.statusMsg = fmt.Sprintf("Pulling %s...", repo.Name)
-					return m, func() tea.Msg {
-						_, err := gitpkg.Pull(repo.Path)
-						if err != nil {
-							return statusMsg(fmt.Sprintf("Pull %s failed: %v", repo.Name, err))
-						}
-						return statusMsg(fmt.Sprintf("Pulled %s", repo.Name))
+			// p = git pull the repo for the selected item (all tabs).
+			if path := m.repoPathAtCursor(); path != "" {
+				name := repoBaseName(path)
+				m.loading = true
+				m.statusMsg = fmt.Sprintf("Pulling %s...", name)
+				return m, func() tea.Msg {
+					_, err := gitpkg.Pull(path)
+					if err != nil {
+						return statusMsg(fmt.Sprintf("Pull %s failed: %v", name, err))
 					}
+					return statusMsg(fmt.Sprintf("Pulled %s", name))
 				}
 			}
 		case "o":
-			if m.activeTab == tabPRs {
-				prs := m.filteredPRs()
-				if m.cursor < len(prs) {
-					_ = ui.OpenURL(prs[m.cursor].URL)
+			// o = open on GitHub in browser.
+			switch m.activeTab {
+			case tabDashboard:
+				if r, ok := m.repoAtCursor(); ok {
+					if r.Owner != "" {
+						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					}
 				}
-			}
-			if m.activeTab == tabCI {
-				runs := m.filteredRuns()
-				if m.cursor < len(runs) {
-					_ = ui.OpenURL(runs[m.cursor].URL)
+			case tabPRs:
+				if pr, ok := m.prAtCursor(); ok {
+					_ = ui.OpenURL(pr.URL)
+				}
+			case tabBranches:
+				if br, ok := m.branchAtCursor(); ok {
+					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/tree/%s", br.Repo, br.Name))
+				}
+			case tabActivity:
+				if c, ok := m.commitAtCursor(); ok {
+					if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
+						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+					}
+				}
+			case tabCI:
+				if r, ok := m.runAtCursor(); ok {
+					_ = ui.OpenURL(r.URL)
 				}
 			}
 		case "up", "k":
@@ -583,19 +681,33 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
-			so := m.scrollOffset[m.activeTab]
-			if so >= 3 {
-				so -= 3
+			if m.showDiff {
+				m.diffScroll = max(0, m.diffScroll-3)
+			} else if m.showDetail {
+				m.detailScroll = max(0, m.detailScroll-3)
 			} else {
-				so = 0
+				so := m.scrollOffset[m.activeTab]
+				if so >= 3 {
+					so -= 3
+				} else {
+					so = 0
+				}
+				m.scrollOffset[m.activeTab] = so
 			}
-			m.scrollOffset[m.activeTab] = so
 		case tea.MouseButtonWheelDown:
-			so := m.scrollOffset[m.activeTab] + 3
-			if mso := m.maxScrollOffset(); so > mso {
-				so = mso
+			if m.showDiff {
+				m.diffScroll += 3
+				m.clampDiffScroll()
+			} else if m.showDetail {
+				m.detailScroll += 3
+				m.clampDetailScroll()
+			} else {
+				so := m.scrollOffset[m.activeTab] + 3
+				if mso := m.maxScrollOffset(); so > mso {
+					so = mso
+				}
+				m.scrollOffset[m.activeTab] = so
 			}
-			m.scrollOffset[m.activeTab] = so
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
 				// Tab bar / profile bar click handling
@@ -654,44 +766,60 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft &&
+				!m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
 				// double-click detection: same row as last click within 500ms
 				now := time.Now()
 				if msg.Y == m.lastClickY && now.Sub(m.lastClickAt) < 500*time.Millisecond {
 					m.lastClickAt = time.Time{}
-					// synthesise enter
-					if m.activeTab == tabDashboard {
-						repos := m.filteredRepos()
-						if m.cursor < len(repos) {
-							repo := repos[m.cursor]
+					// synthesise enter — same semantics as the keyboard handler
+					switch m.activeTab {
+					case tabDashboard:
+						if r, ok := m.repoAtCursor(); ok {
 							m.showDetail = true
 							m.detailScroll = 0
 							m.loading = true
-							m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-							return m, loadDetail(repo)
+							m.statusMsg = fmt.Sprintf("Loading %s details…", r.Name)
+							return m, loadDetail(r)
 						}
-					}
-					if m.activeTab == tabPRs {
-						prs := m.filteredPRs()
-						if m.cursor < len(prs) {
-							_ = ui.OpenURL(prs[m.cursor].URL)
+					case tabPRs:
+						if pr, ok := m.prAtCursor(); ok {
+							if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
+								m.showDetail = true
+								m.detailScroll = 0
+								m.loading = true
+								m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+								return m, loadDetail(repo)
+							}
 						}
-					}
-					if m.activeTab == tabActivity {
-						acts := m.filteredActivity()
-						if m.cursor < len(acts) {
-							c := acts[m.cursor]
+					case tabBranches:
+						if br, ok := m.branchAtCursor(); ok {
+							if repo, ok := m.repoByName(repoBaseName(br.Repo)); ok {
+								m.showDetail = true
+								m.detailScroll = 0
+								m.loading = true
+								m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+								return m, loadDetail(repo)
+							}
+						}
+					case tabActivity:
+						if c, ok := m.commitAtCursor(); ok {
 							m.showDiff = true
 							m.diffContent = ""
+							m.diffScroll = 0
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
 							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 						}
-					}
-					if m.activeTab == tabCI {
-						runs := m.filteredRuns()
-						if m.cursor < len(runs) {
-							_ = ui.OpenURL(runs[m.cursor].URL)
+					case tabCI:
+						if r, ok := m.runAtCursor(); ok {
+							if repo, ok := m.repoByName(repoBaseName(r.Repo)); ok {
+								m.showDetail = true
+								m.detailScroll = 0
+								m.loading = true
+								m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+								return m, loadDetail(repo)
+							}
 						}
 					}
 				} else {

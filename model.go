@@ -94,6 +94,7 @@ type appModel struct {
 	diffRepo       string
 	diffHash       string
 	diffPreColored bool // true when content is already ANSI-colored (e.g. via delta)
+	diffScroll     int  // scroll offset within the diff content
 
 	// Help overlay (two pages, cycled with tab)
 	showHelp bool

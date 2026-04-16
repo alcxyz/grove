@@ -217,6 +217,21 @@ func max(a, b int) int {
 	return b
 }
 
+// RenderOwlEyes renders just the "{o,o}" face with teal eyes for inline use
+// (e.g. the info bar).  blinkState follows the same convention as splashBlink:
+// 0=both open, 1=left closed, 2=right closed, 3=both closed.
+func RenderOwlEyes(blinkState int) string {
+	eyeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(catTeal))
+	left, right := "o", "o"
+	if blinkState == 1 || blinkState == 3 {
+		left = "-"
+	}
+	if blinkState == 2 || blinkState == 3 {
+		right = "-"
+	}
+	return "{" + eyeStyle.Render(left) + "," + eyeStyle.Render(right) + "}"
+}
+
 // renderSplashLine renders one line of the ASCII art.
 // The eyes in "{o,o}" are coloured teal; blinkState controls which are closed:
 // 0=both open  1=left closed  2=right closed  3=both closed.
@@ -313,8 +328,8 @@ var helpPages = [2][]struct {
 			{"< / >", "switch profile  (when multiple profiles configured)"},
 		}},
 		{"Actions", [][2]string{
-			{"enter", "open detail (tab 1) · open diff (tab 4) · open run (tab 5)"},
-			{"o", "open PR in browser  (tabs 2 4) · open run in browser  (tab 5)"},
+			{"enter", "open detail (tab 1) · open diff (tab 5) · open run (tab 3)"},
+			{"o", "open PR in browser  (tab 2) · open run in browser  (tab 3)"},
 			{"p", "git pull current repo  (tab 1)"},
 			{"r", "refresh current tab"},
 			{"R", "toggle auto-refresh on / off"},
@@ -331,18 +346,18 @@ var helpPages = [2][]struct {
 			{"/", "open text filter  ·  esc clear"},
 			{"d / D", "cycle by author  ·  sort ↑↓ by author"},
 			{"s / S", "cycle by subject prefix  ·  sort ↑↓ by name/title/branch/subject"},
-			{"a / A", "cycle by repository  ·  sort ↑↓ by repository  (tabs 2 3 4)"},
+			{"a / A", "cycle by repository  ·  sort ↑↓ by repository  (tabs 2–5)"},
 			{"f / F", "cycle by date  ·  sort ↑↓ by date/updated"},
-			{"x / X", "cycle · sort  PR count / review status  (tabs 1 2 3)"},
-			{"c / C", "cycle · sort  branch count / merged  (tabs 1 3 5)"},
-			{"v / V", "cycle · sort  CI status / checks result  (tabs 1 2 5)"},
+			{"x / X", "cycle · sort  PR count / review status  (tabs 1 2 4)"},
+			{"c / C", "cycle · sort  branch count / merged  (tabs 1 3 4)"},
+			{"v / V", "cycle · sort  CI status / checks result  (tabs 1 2 3)"},
 		}},
 		{"Column reference", [][2]string{
 			{"PR / Br  (tab 1)", "open PR count · branch count  (heat: blue→yellow→red)"},
 			{"CI  (tab 1)", "latest run: ✓ success · ✗ failure · ● running · — none"},
 			{"Checks  (tab 2)", "PR status check rollup: ✓ pass · ✗ fail · ● pending · — none"},
-			{"●  (tab 3)", "branch has an open PR"},
-			{"∈  (tab 3)", "branch merged into the default branch"},
+			{"●  (tab 4)", "branch has an open PR"},
+			{"∈  (tab 4)", "branch merged into the default branch"},
 		}},
 		{"CLI", [][2]string{
 			{"grove clone", "clone missing org repos into base_paths"},

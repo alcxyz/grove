@@ -631,6 +631,87 @@ func (m *appModel) jumpTo(starts []int, dir int) {
 	}
 }
 
+// detailSectionStarts returns the line indices where each section of the detail pane
+// starts, plus a sentinel total-line-count as the last element.
+// Indices: [0]header, [1]local branches, [2]remote branches,
+//          [3]open PRs, [4]CI runs, [5]recent commits, [6]sentinel.
+func (m appModel) detailSectionStarts() []int {
+	// itemLines is the number of data rows a section with n items renders.
+	itemLines := func(n, cap int) int {
+		if n == 0 {
+			return 1 // "(none)" line
+		}
+		if n <= cap {
+			return n
+		}
+		return cap + 1 // cap rows + "… N more"
+	}
+	// sh is total line height of one section: title + items + optional blank separator.
+	sh := func(n, cap int, blank bool) int {
+		h := 1 + itemLines(n, cap)
+		if blank {
+			h++ // trailing blank line between sections
+		}
+		return h
+	}
+
+	// Header block: name + divider + blank + (branch, status, sync, path) + optional stats + blank
+	headerLines := 8
+	if m.detailStats.CommitCount > 0 || m.detailStats.Contributors > 0 {
+		headerLines++
+	}
+
+	// Count remote branches and CI runs for the repo currently shown in detail.
+	var remoteCount, ciCount int
+	repos := m.filteredRepos()
+	if m.cursor < len(repos) {
+		repoName := repos[m.cursor].Name
+		for _, br := range m.branches {
+			if repoBaseName(br.Repo) == repoName {
+				remoteCount++
+			}
+		}
+		for _, r := range m.runs {
+			if repoBaseName(r.Repo) == repoName {
+				ciCount++
+			}
+		}
+	}
+
+	pos := headerLines
+	starts := []int{0, pos} // header=0, local_branches=headerLines
+
+	pos += sh(len(m.detailBranches), 12, true)
+	starts = append(starts, pos) // remote_branches
+
+	pos += sh(remoteCount, 12, true)
+	starts = append(starts, pos) // prs
+
+	pos += sh(len(m.detailPRs), 10, true)
+	starts = append(starts, pos) // ci_runs
+
+	pos += sh(ciCount, 8, true)
+	starts = append(starts, pos) // commits
+
+	pos += sh(len(m.detailCommits), 10, false) // last section: no trailing blank
+	starts = append(starts, pos)               // sentinel = total line count
+
+	return starts
+}
+
+// clampDetailScroll clamps m.detailScroll to [0, totalLines-contentHeight].
+func (m *appModel) clampDetailScroll() {
+	sects := m.detailSectionStarts()
+	total := sects[len(sects)-1]
+	maxScroll := max(0, total-m.contentHeight())
+	if m.detailScroll > maxScroll {
+		m.detailScroll = maxScroll
+	}
+	if m.detailScroll < 0 {
+		m.detailScroll = 0
+	}
+}
+
 // jumpGroup moves the cursor to the start of the next (+1) or previous (-1) group.
 func (m *appModel) jumpGroup(dir int) {
 	var starts []int

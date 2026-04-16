@@ -122,7 +122,7 @@ func (m appModel) infoBarParts() []string {
 		parts = append(parts, ui.DimStyle.Render("auto-refresh off"))
 	}
 	parts = append(parts, ui.DimStyle.Render("? help"))
-	parts = append(parts, ui.RenderOwlEyes(m.splashBlink)+" "+ui.DimStyle.Render("v"+version))
+	parts = append(parts, ui.DimStyle.Render("v"+version))
 	if m.latestVersion != "" {
 		parts = append(parts, ui.PendingStyle.Render("↑ "+m.latestVersion+" available"))
 	}
@@ -311,19 +311,10 @@ func (m appModel) View() string {
 		}
 	}
 
-	// Status bar
-	b.WriteString("\n")
-	status := m.statusMsg
-	if m.loading {
-		status = "⏳ " + status
-	}
-	b.WriteString(ui.StatusBarStyle.Render(status))
-	b.WriteString("\n")
-
-	// Info bar — no trailing newline: strings.Split on a "\n"-terminated string
-	// produces an extra empty element, making len(lines) == height+1 and causing
-	// bubbletea to drop line 0 (the title) from the rendered frame.
-	b.WriteString(ui.RenderInfoBar(m.infoBarParts()))
+	// Bottom chrome — owl mascot + status/info.  No leading or trailing newline:
+	// the content area above ends with its own "\n" per item, and a trailing "\n"
+	// here would create an extra line that shifts the title off-screen.
+	b.WriteString(ui.RenderBottomArea(m.statusMsg, m.loading, m.infoBarParts(), m.splashBlink, width))
 
 	return b.String()
 }

@@ -217,19 +217,55 @@ func max(a, b int) int {
 	return b
 }
 
-// RenderOwlEyes renders just the "{o,o}" face with teal eyes for inline use
-// (e.g. the info bar).  blinkState follows the same convention as splashBlink:
-// 0=both open, 1=left closed, 2=right closed, 3=both closed.
-func RenderOwlEyes(blinkState int) string {
-	eyeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(catTeal))
-	left, right := "o", "o"
-	if blinkState == 1 || blinkState == 3 {
-		left = "-"
+// RenderBottomArea renders the combined status / info / owl-mascot bottom chrome.
+// It always outputs exactly SplashArtHeight lines (no leading or trailing newline)
+// so that the caller can simply append it after the content.
+//
+// Layout (wide terminal):
+//
+//	line 0  │ status msg              │ {o,o}                     │
+//	line 1  │ info bar hints          │    ___ _ __ ___|)_)|___   │
+//	lines 2–6│ (blank)               │    … remaining art …      │
+//
+// On narrow terminals (width < artW+20) the right column is omitted.
+func RenderBottomArea(statusMsg string, loading bool, infoParts []string, blinkState, width int) string {
+	artW := SplashArtWidth
+	wide := width >= artW+20
+	leftW := width - artW
+	leftBox := lipgloss.NewStyle().Width(leftW).MaxWidth(leftW)
+
+	var b strings.Builder
+	for i, artLine := range splashArtLines {
+		// Left column: status on row 0, info bar on row 1, blank otherwise.
+		var leftContent string
+		switch i {
+		case 0:
+			s := statusMsg
+			if loading {
+				s = "⏳ " + s
+			}
+			leftContent = StatusBarStyle.Render(s)
+		case 1:
+			leftContent = RenderInfoBar(infoParts)
+		}
+
+		if wide {
+			var right string
+			if i == 0 {
+				right = renderSplashLine(artLine, blinkState)
+			} else {
+				right = DimStyle.Render(artLine)
+			}
+			b.WriteString(leftBox.Render(leftContent) + right)
+		} else {
+			b.WriteString(leftContent)
+		}
+
+		if i < len(splashArtLines)-1 {
+			b.WriteString("\n")
+		}
 	}
-	if blinkState == 2 || blinkState == 3 {
-		right = "-"
-	}
-	return "{" + eyeStyle.Render(left) + "," + eyeStyle.Render(right) + "}"
+	return b.String()
 }
 
 // renderSplashLine renders one line of the ASCII art.

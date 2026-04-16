@@ -103,14 +103,14 @@ func (m appModel) activeProfileTabIdx() int {
 }
 
 // contentHeight returns the number of scrollable lines available in the
-// terminal after accounting for fixed chrome (title, tabs, header row,
-// status bar, help line).
+// terminal after accounting for fixed chrome (title, tabs, owl bottom area).
 func (m appModel) contentHeight() int {
 	extra := 0
 	if m.showProfileBar() {
 		extra = 1
 	}
-	h := m.height - 8 - extra // 2 title + 2 tabs + 1 col-header + 1 blank + 1 status + 1 help
+	// 4 top (title + blank + tabs + blank) + ui.SplashArtHeight bottom + extra for profile bar
+	h := m.height - 4 - ui.SplashArtHeight - extra
 	if h < 1 {
 		return 1
 	}

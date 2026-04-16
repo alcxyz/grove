@@ -104,6 +104,10 @@ func (m appModel) infoBarParts() []string {
 		parts = append(parts, ui.DimStyle.Render("auto-refresh off"))
 	}
 	parts = append(parts, ui.DimStyle.Render("? help"))
+	parts = append(parts, ui.DimStyle.Render("v"+version))
+	if m.latestVersion != "" {
+		parts = append(parts, ui.PendingStyle.Render("↑ "+m.latestVersion+" available"))
+	}
 	return parts
 }
 
@@ -166,10 +170,10 @@ func (m appModel) View() string {
 	if m.showSplash {
 		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, version, width))
 	} else if m.showHelp {
-		b.WriteString(ui.RenderHelp(width))
+		b.WriteString(ui.RenderHelp(width, version))
 	} else if m.showDiff {
 		// Diff pane
-		b.WriteString(ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.contentHeight()))
+		b.WriteString(ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.contentHeight(), m.diffPreColored))
 	} else if m.showDetail {
 		// Detail pane
 		repos := m.filteredRepos()
@@ -227,9 +231,10 @@ func (m appModel) View() string {
 	b.WriteString(ui.StatusBarStyle.Render(status))
 	b.WriteString("\n")
 
-	// Info bar
+	// Info bar — no trailing newline: strings.Split on a "\n"-terminated string
+	// produces an extra empty element, making len(lines) == height+1 and causing
+	// bubbletea to drop line 0 (the title) from the rendered frame.
 	b.WriteString(ui.RenderInfoBar(m.infoBarParts()))
-	b.WriteString("\n")
 
 	return b.String()
 }

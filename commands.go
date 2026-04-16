@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -236,13 +239,13 @@ func loadDetail(cfg config.Config, repo model.Repo) tea.Cmd {
 	}
 }
 
-func loadDiff(repoPath, repoName, hash string) tea.Cmd {
+func loadDiff(repoPath, repoName, hash string, width int) tea.Cmd {
 	return func() tea.Msg {
-		content, err := gitpkg.CommitDiff(repoPath, hash)
+		content, preColored, err := gitpkg.CommitDiffFormatted(repoPath, hash, width)
 		if err != nil {
 			content = fmt.Sprintf("error running git show: %v", err)
 		}
-		return diffLoadedMsg{content: content, repo: repoName, hash: hash}
+		return diffLoadedMsg{content: content, repo: repoName, hash: hash, preColored: preColored}
 	}
 }
 
@@ -271,6 +274,45 @@ func fetchAll(cfg config.Config) tea.Cmd {
 			msg += fmt.Sprintf(" (%d failed)", errCount)
 		}
 		return fetchDoneMsg{msg}
+	}
+}
+
+// checkLatestVersion fetches the latest GitHub release tag in the background
+// and returns a versionCheckMsg if a newer version is available.
+// Silently no-ops for dev builds or when the network is unavailable.
+func checkLatestVersion() tea.Cmd {
+	return func() tea.Msg {
+		if version == "dev" {
+			return versionCheckMsg{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			"https://api.github.com/repos/alcxyz/grove/releases/latest", nil)
+		if err != nil {
+			return versionCheckMsg{}
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "grove/"+version)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return versionCheckMsg{}
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return versionCheckMsg{}
+		}
+		var payload struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return versionCheckMsg{}
+		}
+		// tag_name is "v0.2.0"; version is "0.2.0" (injected by goreleaser without v-prefix)
+		if payload.TagName == "v"+version || payload.TagName == version {
+			return versionCheckMsg{}
+		}
+		return versionCheckMsg{latest: payload.TagName}
 	}
 }
 

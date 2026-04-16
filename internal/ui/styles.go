@@ -53,12 +53,6 @@ var (
 	ChangesStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color(catRed))
 	ReviewStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(catBlue))
 
-	// Full-row selection: text on a raised surface
-	SelectedRowStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color(catText)).
-				Background(lipgloss.Color(catSurface1))
-
 	// Group header separator
 	GroupHeaderStyle = lipgloss.NewStyle().
 				Bold(true).

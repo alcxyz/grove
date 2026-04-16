@@ -85,10 +85,11 @@ type appModel struct {
 	detailStats    model.RepoStats
 
 	// Diff view (tab 4 enter)
-	showDiff    bool
-	diffContent string
-	diffRepo    string
-	diffHash    string
+	showDiff       bool
+	diffContent    string
+	diffRepo       string
+	diffHash       string
+	diffPreColored bool // true when content is already ANSI-colored (e.g. via delta)
 
 	// Help overlay
 	showHelp bool
@@ -115,6 +116,9 @@ type appModel struct {
 
 	// Auto-refresh (R toggles)
 	autoRefresh bool
+
+	// Version update check
+	latestVersion string // non-empty when a newer release is available
 
 	// Cache directory and config-derived key for invalidation
 	cacheDir string
@@ -144,11 +148,13 @@ type detailLoadedMsg struct {
 }
 
 type diffLoadedMsg struct {
-	content string
-	repo    string
-	hash    string
+	content    string
+	repo       string
+	hash       string
+	preColored bool
 }
 
+type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
 type ssTickMsg struct{}   // screensaver animation frame
 type idleCheckMsg struct{} // periodic idle-time check

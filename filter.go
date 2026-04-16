@@ -29,6 +29,64 @@ func cyclePrefix(s string) string {
 	return s
 }
 
+// normalizeCI maps a run's status/conclusion to a simple string used for cycle
+// filtering and sorting.  Returns "" for unknown/no-data (skipped by add()).
+func normalizeCI(status, conclusion string) string {
+	if status != "completed" {
+		return "running"
+	}
+	switch conclusion {
+	case "success":
+		return "success"
+	case "failure", "timed_out", "startup_failure":
+		return "failure"
+	case "cancelled":
+		return "cancelled"
+	default:
+		return ""
+	}
+}
+
+// repoPRCounts returns a map of repo base-name → open PR count derived from m.prs.
+func (m appModel) repoPRCounts() map[string]int {
+	counts := map[string]int{}
+	for _, pr := range m.prs {
+		counts[repoBaseName(pr.Repo)]++
+	}
+	return counts
+}
+
+// repoBranchCounts returns a map of repo base-name → remote branch count derived from m.branches.
+func (m appModel) repoBranchCounts() map[string]int {
+	counts := map[string]int{}
+	for _, br := range m.branches {
+		counts[repoBaseName(br.Repo)]++
+	}
+	return counts
+}
+
+// repoLatestCI returns a map of repo base-name → normalised CI conclusion
+// (runs are assumed newest-first so the first entry per repo wins).
+func (m appModel) repoLatestCI() map[string]string {
+	ci := map[string]string{}
+	for _, r := range m.runs {
+		name := repoBaseName(r.Repo)
+		if _, seen := ci[name]; !seen {
+			ci[name] = normalizeCI(r.Status, r.Conclusion)
+		}
+	}
+	return ci
+}
+
+// prBranchSet returns the set of branch names that have an open PR.
+func (m appModel) prBranchSet() map[string]bool {
+	set := map[string]bool{}
+	for _, pr := range m.prs {
+		set[pr.Branch] = true
+	}
+	return set
+}
+
 func applyRepoSort(out []model.Repo, ts tabSortState) {
 	asc := ts.Order == sortAsc
 	byName := func(i, j int) bool {
@@ -89,6 +147,20 @@ func applyPRSort(out []model.PR, ts tabSortState) {
 			}
 			return ri > rj
 		})
+	case "review":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].ReviewDecision < out[j].ReviewDecision
+			}
+			return out[i].ReviewDecision > out[j].ReviewDecision
+		})
+	case "checks":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].Checks < out[j].Checks
+			}
+			return out[i].Checks > out[j].Checks
+		})
 	}
 }
 
@@ -124,6 +196,14 @@ func applyBranchSort(out []model.BranchInfo, ts tabSortState) {
 			}
 			return ri > rj
 		})
+	case "merged":
+		sort.SliceStable(out, func(i, j int) bool {
+			mi, mj := out[i].IsMerged, out[j].IsMerged
+			if asc {
+				return !mi && mj // false < true: not-merged first
+			}
+			return mi && !mj // true > false: merged first
+		})
 	}
 }
 
@@ -151,6 +231,22 @@ func applyRunSort(out []model.WorkflowRun, ts tabSortState) {
 				return ri < rj
 			}
 			return ri > rj
+		})
+	case "ci":
+		sort.SliceStable(out, func(i, j int) bool {
+			ci := normalizeCI(out[i].Status, out[i].Conclusion)
+			cj := normalizeCI(out[j].Status, out[j].Conclusion)
+			if asc {
+				return ci < cj
+			}
+			return ci > cj
+		})
+	case "branch":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].Branch < out[j].Branch
+			}
+			return out[i].Branch > out[j].Branch
 		})
 	}
 }
@@ -192,7 +288,8 @@ func applyCommitSort(out []model.Commit, ts tabSortState) {
 func (m appModel) filteredRepos() []model.Repo {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabDashboard]
-	hasCycle := m.cycleField == "author" || m.cycleField == "date"
+	hasCycle := m.cycleField == "author" || m.cycleField == "date" ||
+		m.cycleField == "prcount" || m.cycleField == "brcount" || m.cycleField == "ci"
 	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
 	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.repos
@@ -200,6 +297,19 @@ func (m appModel) filteredRepos() []model.Repo {
 	activeProfileName := ""
 	if profileFilter {
 		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
+	}
+	// Compute derived maps only when needed for cycle filtering.
+	var prCounts map[string]int
+	if m.cycleField == "prcount" {
+		prCounts = m.repoPRCounts()
+	}
+	var brCounts map[string]int
+	if m.cycleField == "brcount" {
+		brCounts = m.repoBranchCounts()
+	}
+	var ciMap map[string]string
+	if m.cycleField == "ci" {
+		ciMap = m.repoLatestCI()
 	}
 	out := make([]model.Repo, 0, len(m.repos))
 	for _, r := range m.repos {
@@ -219,16 +329,70 @@ func (m appModel) filteredRepos() []model.Repo {
 		if !m.cycleMatchDate(r.LastCommit) {
 			continue
 		}
+		if prCounts != nil {
+			bucket := "no PRs"
+			if prCounts[r.Name] > 0 {
+				bucket = "has PRs"
+			}
+			if !m.cycleMatch("prcount", bucket) {
+				continue
+			}
+		}
+		if brCounts != nil {
+			bucket := "no branches"
+			if brCounts[r.Name] > 0 {
+				bucket = "has branches"
+			}
+			if !m.cycleMatch("brcount", bucket) {
+				continue
+			}
+		}
+		if ciMap != nil {
+			if !m.cycleMatch("ci", ciMap[r.Name]) {
+				continue
+			}
+		}
 		out = append(out, r)
 	}
-	applyRepoSort(out, ts)
+	// Special sort fields require derived data.
+	asc := ts.Order == sortAsc
+	switch ts.Field {
+	case "prcount":
+		pc := m.repoPRCounts()
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return pc[out[i].Name] < pc[out[j].Name]
+			}
+			return pc[out[i].Name] > pc[out[j].Name]
+		})
+	case "brcount":
+		bc := m.repoBranchCounts()
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return bc[out[i].Name] < bc[out[j].Name]
+			}
+			return bc[out[i].Name] > bc[out[j].Name]
+		})
+	case "ci":
+		cm := m.repoLatestCI()
+		sort.SliceStable(out, func(i, j int) bool {
+			ci, cj := cm[out[i].Name], cm[out[j].Name]
+			if asc {
+				return ci < cj
+			}
+			return ci > cj
+		})
+	default:
+		applyRepoSort(out, ts)
+	}
 	return out
 }
 
 func (m appModel) filteredPRs() []model.PR {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabPRs]
-	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
+	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" ||
+		m.cycleField == "date" || m.cycleField == "review" || m.cycleField == "checks"
 	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
 	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.prs
@@ -262,6 +426,12 @@ func (m appModel) filteredPRs() []model.PR {
 		if !m.cycleMatchDate(pr.UpdatedAt) {
 			continue
 		}
+		if !m.cycleMatch("review", pr.ReviewDecision) {
+			continue
+		}
+		if !m.cycleMatch("checks", pr.Checks) {
+			continue
+		}
 		out = append(out, pr)
 	}
 	applyPRSort(out, ts)
@@ -271,7 +441,8 @@ func (m appModel) filteredPRs() []model.PR {
 func (m appModel) filteredBranches() []model.BranchInfo {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabBranches]
-	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "author" || m.cycleField == "date"
+	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "author" ||
+		m.cycleField == "date" || m.cycleField == "prcount" || m.cycleField == "merged"
 	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
 	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.branches
@@ -279,6 +450,10 @@ func (m appModel) filteredBranches() []model.BranchInfo {
 	activeProfileName := ""
 	if profileFilter {
 		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
+	}
+	var prBranchesMap map[string]bool
+	if m.cycleField == "prcount" {
+		prBranchesMap = m.prBranchSet()
 	}
 	out := make([]model.BranchInfo, 0, len(m.branches))
 	for _, br := range m.branches {
@@ -304,16 +479,46 @@ func (m appModel) filteredBranches() []model.BranchInfo {
 		if !m.cycleMatchDate(br.LastCommit) {
 			continue
 		}
+		if prBranchesMap != nil {
+			bucket := "no PR"
+			if prBranchesMap[br.Name] {
+				bucket = "has PR"
+			}
+			if !m.cycleMatch("prcount", bucket) {
+				continue
+			}
+		}
+		mergedVal := "not merged"
+		if br.IsMerged {
+			mergedVal = "merged"
+		}
+		if !m.cycleMatch("merged", mergedVal) {
+			continue
+		}
 		out = append(out, br)
 	}
-	applyBranchSort(out, ts)
+	// "prcount" (has-PR) sort requires the prBranches set.
+	if ts.Field == "prcount" {
+		pb := m.prBranchSet()
+		asc := ts.Order == sortAsc
+		sort.SliceStable(out, func(i, j int) bool {
+			hi, hj := pb[out[i].Name], pb[out[j].Name]
+			if asc {
+				return !hi && hj
+			}
+			return hi && !hj
+		})
+	} else {
+		applyBranchSort(out, ts)
+	}
 	return out
 }
 
 func (m appModel) filteredRuns() []model.WorkflowRun {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabCI]
-	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
+	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date" ||
+		m.cycleField == "ci" || m.cycleField == "branch"
 	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
 	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
 		return m.runs
@@ -342,6 +547,12 @@ func (m appModel) filteredRuns() []model.WorkflowRun {
 			continue
 		}
 		if !m.cycleMatchDate(r.UpdatedAt) {
+			continue
+		}
+		if !m.cycleMatch("ci", normalizeCI(r.Status, r.Conclusion)) {
+			continue
+		}
+		if !m.cycleMatch("branch", cyclePrefix(r.Branch)) {
 			continue
 		}
 		out = append(out, r)
@@ -493,13 +704,60 @@ func (m appModel) collectCycleValues(field string) []string {
 	}
 	switch m.activeTab {
 	case tabDashboard:
-		if field != "author" {
-			return nil
-		}
-		for _, r := range m.repos {
-			if match(r.Name, r.Branch, r.LastAuthor) {
-				add(r.LastAuthor)
+		switch field {
+		case "author":
+			for _, r := range m.repos {
+				if match(r.Name, r.Branch, r.LastAuthor) {
+					add(r.LastAuthor)
+				}
 			}
+		case "prcount":
+			pc := m.repoPRCounts()
+			seenNone, seenAny := false, false
+			for _, r := range m.repos {
+				if match(r.Name, r.Branch, r.LastAuthor) {
+					if pc[r.Name] == 0 {
+						seenNone = true
+					} else {
+						seenAny = true
+					}
+				}
+			}
+			if seenNone {
+				vals = append(vals, "no PRs")
+			}
+			if seenAny {
+				vals = append(vals, "has PRs")
+			}
+			return vals // fixed order — skip sort.Strings
+		case "brcount":
+			bc := m.repoBranchCounts()
+			seenNone, seenAny := false, false
+			for _, r := range m.repos {
+				if match(r.Name, r.Branch, r.LastAuthor) {
+					if bc[r.Name] == 0 {
+						seenNone = true
+					} else {
+						seenAny = true
+					}
+				}
+			}
+			if seenNone {
+				vals = append(vals, "no branches")
+			}
+			if seenAny {
+				vals = append(vals, "has branches")
+			}
+			return vals
+		case "ci":
+			cm := m.repoLatestCI()
+			for _, r := range m.repos {
+				if match(r.Name, r.Branch, r.LastAuthor) {
+					add(cm[r.Name])
+				}
+			}
+		default:
+			return nil
 		}
 	case tabPRs:
 		for _, pr := range m.prs {
@@ -513,21 +771,69 @@ func (m appModel) collectCycleValues(field string) []string {
 				add(cyclePrefix(pr.Title))
 			case "repo":
 				add(repoBaseName(pr.Repo))
+			case "review":
+				add(pr.ReviewDecision)
+			case "checks":
+				add(pr.Checks)
 			}
 		}
 	case tabBranches:
-		for _, br := range m.branches {
-			if !match(br.Repo, br.Name, br.Author) {
-				continue
+		switch field {
+		case "author", "subject", "repo":
+			for _, br := range m.branches {
+				if !match(br.Repo, br.Name, br.Author) {
+					continue
+				}
+				switch field {
+				case "author":
+					add(br.Author)
+				case "subject":
+					add(cyclePrefix(br.Name))
+				case "repo":
+					add(repoBaseName(br.Repo))
+				}
 			}
-			switch field {
-			case "author":
-				add(br.Author)
-			case "subject":
-				add(cyclePrefix(br.Name))
-			case "repo":
-				add(repoBaseName(br.Repo))
+		case "prcount":
+			prBranches := m.prBranchSet()
+			seenNo, seenYes := false, false
+			for _, br := range m.branches {
+				if !match(br.Repo, br.Name, br.Author) {
+					continue
+				}
+				if prBranches[br.Name] {
+					seenYes = true
+				} else {
+					seenNo = true
+				}
 			}
+			if seenNo {
+				vals = append(vals, "no PR")
+			}
+			if seenYes {
+				vals = append(vals, "has PR")
+			}
+			return vals
+		case "merged":
+			seenNo, seenYes := false, false
+			for _, br := range m.branches {
+				if !match(br.Repo, br.Name, br.Author) {
+					continue
+				}
+				if br.IsMerged {
+					seenYes = true
+				} else {
+					seenNo = true
+				}
+			}
+			if seenNo {
+				vals = append(vals, "not merged")
+			}
+			if seenYes {
+				vals = append(vals, "merged")
+			}
+			return vals
+		default:
+			return nil
 		}
 	case tabActivity:
 		for _, c := range m.activity {
@@ -550,9 +856,13 @@ func (m appModel) collectCycleValues(field string) []string {
 			}
 			switch field {
 			case "subject":
-				add(r.WorkflowName)
+				add(cyclePrefix(r.WorkflowName))
 			case "repo":
 				add(repoBaseName(r.Repo))
+			case "ci":
+				add(normalizeCI(r.Status, r.Conclusion))
+			case "branch":
+				add(cyclePrefix(r.Branch))
 			}
 		}
 	}

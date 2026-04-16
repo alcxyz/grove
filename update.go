@@ -67,6 +67,16 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Splash overlay
 		if m.showSplash {
+			if key == "tab" {
+				// tab in the about screen launches the screensaver
+				m.showSplash = false
+				m.ssActive = true
+				m.ssX = max(0, (m.width-ui.SplashArtWidth)/2)
+				m.ssY = max(0, (m.height-ui.SplashArtHeight)/2)
+				m.ssDX, m.ssDY = 1, 1
+				m.ssColor = 0
+				return m, tea.Batch(idleCheckCmd(), ssTickCmd())
+			}
 			m.showSplash = false
 			return m, nil
 		}
@@ -75,15 +85,22 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Help overlay
+		// Help overlay — tab/shift+tab cycle pages, anything else closes
 		if m.showHelp {
-			if key == "?" || key == "esc" || key == "q" {
+			switch key {
+			case "tab":
+				m.helpPage = (m.helpPage + 1) % 2
+			case "shift+tab":
+				m.helpPage = (m.helpPage + 1) % 2 // only 2 pages so same as +1
+			case "?", "esc", "q":
 				m.showHelp = false
+				m.helpPage = 0
 			}
 			return m, nil
 		}
 		if key == "?" {
 			m.showHelp = true
+			m.helpPage = 0
 			return m, nil
 		}
 
@@ -404,6 +421,63 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.doCycleFilter("repo")
 		case "f":
 			m.doCycleFilter("date")
+		// x/X — PR column: PR count (tab 1) · ReviewDecision (tab 2) · has-PR (tab 3)
+		case "x":
+			switch m.activeTab {
+			case tabDashboard:
+				m.doCycleFilter("prcount")
+			case tabPRs:
+				m.doCycleFilter("review")
+			case tabBranches:
+				m.doCycleFilter("prcount")
+			}
+		case "X":
+			switch m.activeTab {
+			case tabDashboard:
+				m.cycleSortField("prcount")
+			case tabPRs:
+				m.cycleSortField("review")
+			case tabBranches:
+				m.cycleSortField("prcount")
+			}
+		// c/C — Br column: branch count (tab 1) · merged (tab 3) · branch prefix (tab 5)
+		case "c":
+			switch m.activeTab {
+			case tabDashboard:
+				m.doCycleFilter("brcount")
+			case tabBranches:
+				m.doCycleFilter("merged")
+			case tabCI:
+				m.doCycleFilter("branch")
+			}
+		case "C":
+			switch m.activeTab {
+			case tabDashboard:
+				m.cycleSortField("brcount")
+			case tabBranches:
+				m.cycleSortField("merged")
+			case tabCI:
+				m.cycleSortField("branch")
+			}
+		// v/V — CI column: CI conclusion (tabs 1 5) · PR checks (tab 2)
+		case "v":
+			switch m.activeTab {
+			case tabDashboard:
+				m.doCycleFilter("ci")
+			case tabPRs:
+				m.doCycleFilter("checks")
+			case tabCI:
+				m.doCycleFilter("ci")
+			}
+		case "V":
+			switch m.activeTab {
+			case tabDashboard:
+				m.cycleSortField("ci")
+			case tabPRs:
+				m.cycleSortField("checks")
+			case tabCI:
+				m.cycleSortField("ci")
+			}
 		case "p":
 			if m.activeTab == tabDashboard {
 				repos := m.filteredRepos()

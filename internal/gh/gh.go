@@ -54,6 +54,41 @@ type ghAuthor struct {
 	Login string `json:"login"`
 }
 
+// summarizeChecks maps a PR's statusCheckRollup array to a single "pass" /
+// "fail" / "pending" / "" value.  Each element may be a CheckRun (has
+// status/conclusion) or a legacy StatusContext (has state).
+func summarizeChecks(rollup []struct {
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	State      string `json:"state"`
+}) string {
+	if len(rollup) == 0 {
+		return ""
+	}
+	hasPending := false
+	for _, c := range rollup {
+		// CheckRun: use status/conclusion pair
+		if c.Status != "" && strings.ToUpper(c.Status) != "COMPLETED" {
+			hasPending = true
+			continue
+		}
+		conc := c.Conclusion
+		if conc == "" {
+			conc = c.State // StatusContext fallback
+		}
+		switch strings.ToUpper(conc) {
+		case "FAILURE", "TIMED_OUT", "ERROR", "STARTUP_FAILURE":
+			return "fail"
+		case "PENDING", "IN_PROGRESS", "EXPECTED", "QUEUED", "WAITING":
+			hasPending = true
+		}
+	}
+	if hasPending {
+		return "pending"
+	}
+	return "pass"
+}
+
 func ListPRs(repoFullName string) ([]model.PR, error) {
 	acquire()
 	defer release()
@@ -61,7 +96,7 @@ func ListPRs(repoFullName string) ([]model.PR, error) {
 	cmd := exec.Command("gh", "pr", "list",
 		"--repo", repoFullName,
 		"--state", "open",
-		"--json", "number,title,author,headRefName,state,updatedAt,url,reviewDecision",
+		"--json", "number,title,author,headRefName,state,updatedAt,url,reviewDecision,statusCheckRollup",
 		"--limit", "50",
 	)
 	out, err := cmd.Output()
@@ -83,6 +118,11 @@ func ListPRs(repoFullName string) ([]model.PR, error) {
 		UpdatedAt      time.Time `json:"updatedAt"`
 		URL            string    `json:"url"`
 		ReviewDecision string    `json:"reviewDecision"`
+		StatusCheckRollup []struct {
+			Status     string `json:"status"`
+			Conclusion string `json:"conclusion"`
+			State      string `json:"state"`
+		} `json:"statusCheckRollup"`
 	}
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, fmt.Errorf("gh pr list %s: parse: %w", repoFullName, err)
@@ -97,6 +137,7 @@ func ListPRs(repoFullName string) ([]model.PR, error) {
 			Author:         r.Author.Login,
 			Branch:         r.HeadRef,
 			State:          r.State,
+			Checks:         summarizeChecks(r.StatusCheckRollup),
 			ReviewDecision: r.ReviewDecision,
 			UpdatedAt:      r.UpdatedAt,
 			URL:            r.URL,

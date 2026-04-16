@@ -354,10 +354,29 @@ func fetchAll(profiles []config.Profile) tea.Cmd {
 
 // checkLatestVersion fetches the latest GitHub release tag in the background
 // and returns a versionCheckMsg if a newer version is available.
-// Silently no-ops for dev builds or when the network is unavailable.
+// isSemver returns true when v looks like a release version (x.y.z).
+// Hash builds (from nix or local builds without a tag) skip the update check.
+func isSemver(v string) bool {
+	parts := strings.SplitN(v, ".", 3)
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		for _, c := range p {
+			if c < '0' || c > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// checkLatestVersion fetches the latest GitHub release tag in the background
+// and returns a versionCheckMsg if a newer version is available.
+// Silently no-ops for dev builds, hash builds, or when the network is unavailable.
 func checkLatestVersion() tea.Cmd {
 	return func() tea.Msg {
-		if version == "dev" {
+		if !isSemver(version) {
 			return versionCheckMsg{}
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -195,6 +195,11 @@ Existing repos (detected by the presence of a `.git` directory) are skipped. Up 
 | `s` / `S` | Cycle by subject prefix, sort by name / title / branch / subject |
 | `a` / `A` | Cycle by repository, sort by repository |
 | `f` / `F` | Cycle by date, sort by date / updated |
+| `x` / `X` | Cycle · sort by **PR count** (tab 1) · **review status** (tab 2) · **has-PR** (tab 3) |
+| `c` / `C` | Cycle · sort by **branch count** (tab 1) · **merged** (tab 3) · **branch prefix** (tab 5) |
+| `v` / `V` | Cycle · sort by **CI status** (tabs 1 5) · **checks result** (tab 2) |
+
+The `x` / `c` / `v` keys follow the spatial layout of the columns they target (PR · Br · CI on the dashboard).
 
 Date buckets: today, yesterday, this week, last week, this month, last month, this quarter, last quarter.
 
@@ -239,6 +244,7 @@ The **Dashboard** tab (tab 1) also shows a compact CI status icon (`✓` / `✗`
 | `CI` | Latest CI run: `✓` success · `✗` failure · `●` running · `—` no data |
 | `●` (tab 3) | Branch has an open PR |
 | `∈` (tab 3) | Branch is merged into the default branch |
+| `Checks` (tab 2) | PR status check rollup: `✓ pass` · `✗ fail` · `● pending` · `—` none |
 
 ## Mouse
 

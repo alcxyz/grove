@@ -350,8 +350,8 @@ func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlFie
 
 func renderPRRow(pr model.PR, selected bool, hlField, hlValue string) string {
 	repo := truncate(repoShortName(pr.Repo), 26)
-	title := truncate(pr.Title, 32)
-	author := truncate(pr.Author, 22)
+	title := truncate(pr.Title, 26)
+	author := truncate(pr.Author, 14)
 	ago := timeAgo(pr.UpdatedAt)
 
 	repoStyled := hlText(repo, "repo", hlField, hlValue)
@@ -359,9 +359,10 @@ func renderPRRow(pr model.PR, selected bool, hlField, hlValue string) string {
 	row := "  " +
 		cell(repoStyled, 28) +
 		cell(fmt.Sprintf("#%-4d", pr.Number), 7) +
-		cell(titleStyled, 34) +
-		cell(DimStyle.Render(author), 24) +
+		cell(titleStyled, 28) +
+		cell(DimStyle.Render(author), 16) +
 		cell(formatReview(pr.ReviewDecision), 14) +
+		cell(formatChecks(pr.Checks), 12) +
 		DimStyle.Render(ago)
 	if selected {
 		return selRow(row)
@@ -382,6 +383,19 @@ func formatReview(decision string) string {
 	}
 }
 
+func formatChecks(checks string) string {
+	switch checks {
+	case "pass":
+		return PassStyle.Render("✓ pass")
+	case "fail":
+		return FailStyle.Render("✗ fail")
+	case "pending":
+		return PendingStyle.Render("● pending")
+	default:
+		return DimStyle.Render("—")
+	}
+}
+
 func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlField, hlValue string) string {
 	total := 0
 	for _, g := range groups {
@@ -393,8 +407,8 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 
 	var b strings.Builder
 	header := "  " +
-		cell("Repository", 28) + cell("PR#", 7) + cell("Title", 34) +
-		cell("Author", 24) + cell("Review", 14) + "Updated"
+		cell("Repository", 28) + cell("PR#", 7) + cell("Title", 28) +
+		cell("Author", 16) + cell("Review", 14) + cell("Checks", 12) + "Updated"
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 

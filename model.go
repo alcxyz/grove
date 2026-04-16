@@ -94,8 +94,9 @@ type appModel struct {
 	diffHash       string
 	diffPreColored bool // true when content is already ANSI-colored (e.g. via delta)
 
-	// Help overlay
+	// Help overlay (two pages, cycled with tab)
 	showHelp bool
+	helpPage int
 
 	// Splash/about overlay (! key)
 	showSplash bool

@@ -152,12 +152,30 @@ func max(a, b int) int {
 	return b
 }
 
+// renderSplashLine renders one line of the ASCII art.
+// The eyes in "{o,o}" are coloured teal; everything else uses HeaderStyle.
+func renderSplashLine(l string) string {
+	const eyes = "{o,o}"
+	idx := strings.Index(l, eyes)
+	if idx < 0 {
+		return HeaderStyle.Render(l)
+	}
+	eyeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(catTeal))
+	return HeaderStyle.Render(l[:idx]) +
+		HeaderStyle.Render("{") +
+		eyeStyle.Render("o") +
+		HeaderStyle.Render(",") +
+		eyeStyle.Render("o") +
+		HeaderStyle.Render("}") +
+		HeaderStyle.Render(l[idx+len(eyes):])
+}
+
 // RenderSplash renders the about/splash overlay (! key).
 func RenderSplash(configPath, cacheDir, logPath, version string, width int) string {
 	var lines []string
 	lines = append(lines, "")
 	for _, l := range strings.Split(splashArt, "\n") {
-		lines = append(lines, "  "+HeaderStyle.Render(l))
+		lines = append(lines, "  "+renderSplashLine(l))
 	}
 	lines = append(lines, "")
 	lines = append(lines, "  "+DimStyle.Render("press ! to close"))
@@ -201,12 +219,15 @@ func RenderSortIndicator(field string, asc bool) string {
 
 // ── Help overlay ──────────────────────────────────────────────────────────
 
-// RenderHelp renders a full keybinding reference as a centred bordered box.
-func RenderHelp(width int, version string) string {
-	sections := []struct {
-		title string
-		rows  [][2]string
-	}{
+// helpPages holds the two pages of key-binding reference shown by the ? overlay.
+// Page 0 — daily-use navigation and actions.
+// Page 1 — filters, sort, column reference, CLI.
+var helpPages = [2][]struct {
+	title string
+	rows  [][2]string
+}{
+	// ── Page 1: Navigation & Actions ─────────────────────────────────────────
+	{
 		{"Navigation", [][2]string{
 			{"j / k", "move down / up"},
 			{"gg / G", "first / last item"},
@@ -217,55 +238,127 @@ func RenderHelp(width int, version string) string {
 			{"1 / 2 / 3 / 4 / 5", "switch to tab directly"},
 			{"< / >", "switch profile  (when multiple profiles configured)"},
 		}},
-		{"Filters & sort", [][2]string{
-			{"/", "open text filter"},
-			{"esc", "clear active filter / close pane"},
-			{"d / D", "cycle by author  ·  sort ↑↓ by author  (all tabs)"},
-			{"s / S", "cycle by subject prefix  ·  sort ↑↓ by name/title/branch/subject"},
-			{"a / A", "cycle by repository  ·  sort ↑↓ by repository  (tabs 2 3 4)"},
-			{"f / F", "cycle by date  ·  sort ↑↓ by date/updated  (all tabs)"},
-		}},
-		{"Dashboard columns", [][2]string{
-			{"PR / Br", "open PR count · branch count  (heat: blue→yellow→red)"},
-			{"tab 3  ●", "branch has an open PR"},
-			{"tab 3  ∈", "branch merged into default branch"},
-		}},
 		{"Actions", [][2]string{
 			{"enter", "open detail (tab 1) · open diff (tab 4) · open run (tab 5)"},
 			{"o", "open PR in browser  (tabs 2 4) · open run in browser  (tab 5)"},
+			{"p", "git pull current repo  (tab 1)"},
 			{"r", "refresh current tab"},
 			{"R", "toggle auto-refresh on / off"},
 			{"ctrl+f", "git fetch all repos"},
-			{"p", "git pull current repo  (tab 1)"},
-			{"!", "about / paths"},
+			{"g  (single, 400 ms)", "toggle grouped / flat view"},
+			{"!", "about / paths  (tab → screensaver)"},
+			{"?", "toggle this help"},
+			{"q / ctrl+c", "quit"},
+		}},
+	},
+	// ── Page 2: Filters, Sort & Reference ────────────────────────────────────
+	{
+		{"Filters & sort", [][2]string{
+			{"/", "open text filter  ·  esc clear"},
+			{"d / D", "cycle by author  ·  sort ↑↓ by author"},
+			{"s / S", "cycle by subject prefix  ·  sort ↑↓ by name/title/branch/subject"},
+			{"a / A", "cycle by repository  ·  sort ↑↓ by repository  (tabs 2 3 4)"},
+			{"f / F", "cycle by date  ·  sort ↑↓ by date/updated"},
+			{"x / X", "cycle · sort  PR count / review status  (tabs 1 2 3)"},
+			{"c / C", "cycle · sort  branch count / merged  (tabs 1 3 5)"},
+			{"v / V", "cycle · sort  CI status / checks result  (tabs 1 2 5)"},
+		}},
+		{"Column reference", [][2]string{
+			{"PR / Br  (tab 1)", "open PR count · branch count  (heat: blue→yellow→red)"},
+			{"CI  (tab 1)", "latest run: ✓ success · ✗ failure · ● running · — none"},
+			{"Checks  (tab 2)", "PR status check rollup: ✓ pass · ✗ fail · ● pending · — none"},
+			{"●  (tab 3)", "branch has an open PR"},
+			{"∈  (tab 3)", "branch merged into the default branch"},
 		}},
 		{"CLI", [][2]string{
 			{"grove clone", "clone missing org repos into base_paths"},
 			{"grove clone <profile>", "clone for a specific profile only"},
 			{"grove -v", "print version and config/cache/log paths"},
 		}},
-		{"Panes", [][2]string{
-			{"j / k  (in detail/diff)", "navigate to next / previous item"},
-			{"g  (single, 400 ms)", "toggle grouped / flat view"},
-			{"?", "toggle this help"},
-		}},
+	},
+}
+
+// wrapHelpLine renders one help-row entry with a hanging indent so that
+// description text that overflows the available width continues aligned
+// under itself, not under the key label.
+//
+// contentW is the box content width (same value passed to lipgloss Width).
+// keyW is the padded key column width.
+func wrapHelpLine(key, desc string, keyW, contentW int) string {
+	prefixW := 2 + keyW                     // "  " + padded key column
+	descW := contentW - prefixW             // chars available for description
+	prefix := "  " + cell(DimStyle.Render(key), keyW)
+	if descW <= 0 {
+		return prefix + desc
 	}
 
+	// All characters used in help descriptions are single display-column wide
+	// (ASCII + ✓ ✗ · ↑ ↓ ● ∈ —), so rune count == visual width here.
+	runes := []rune(desc)
+	if len(runes) <= descW {
+		return prefix + desc
+	}
+
+	indent := strings.Repeat(" ", prefixW)
+	var segments []string
+	start := 0
+	for start < len(runes) {
+		end := start + descW
+		if end >= len(runes) {
+			segments = append(segments, string(runes[start:]))
+			break
+		}
+		// Walk back from end to find the last space to break on.
+		bp := -1
+		for i := end; i > start; i-- {
+			if runes[i] == ' ' {
+				bp = i
+				break
+			}
+		}
+		if bp < 0 {
+			bp = end // hard break — no space found
+		}
+		segments = append(segments, strings.TrimRight(string(runes[start:bp]), " "))
+		// Skip any spaces at the break point so the next segment starts clean.
+		start = bp
+		for start < len(runes) && runes[start] == ' ' {
+			start++
+		}
+	}
+
+	if len(segments) == 0 {
+		return prefix + desc
+	}
+	out := prefix + segments[0]
+	for _, seg := range segments[1:] {
+		out += "\n" + indent + seg
+	}
+	return out
+}
+
+// RenderHelp renders the keybinding reference as a centred bordered box.
+// page selects which of the two pages to show (0 or 1).
+func RenderHelp(width, page int, version string) string {
+	page = page % 2
+	sections := helpPages[page]
+
+	boxW := min(width-4, 72)
 	keyW := 26
 	var lines []string
 	for _, s := range sections {
 		lines = append(lines, "")
 		lines = append(lines, HeaderStyle.Render(s.title))
 		for _, r := range s.rows {
-			key := cell(DimStyle.Render(r[0]), keyW)
-			lines = append(lines, "  "+key+r[1])
+			lines = append(lines, wrapHelpLine(r[0], r[1], keyW, boxW))
 		}
 	}
 	lines = append(lines, "")
-	lines = append(lines, DimStyle.Render("  grove  v"+version))
+	lines = append(lines, DimStyle.Render(fmt.Sprintf("  grove  v%s", version))+
+		"   "+DimStyle.Render(fmt.Sprintf("page %d / 2", page+1))+
+		"   "+DimStyle.Render("tab · shift+tab  flip page"))
 	lines = append(lines, "")
 
-	boxW := min(width-4, 72)
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("241")).

@@ -181,6 +181,24 @@ func (m appModel) View() string {
 			}[m.activeTab]
 		} else if ts.Field == "repo" {
 			label = "repo"
+		} else if ts.Field == "prcount" {
+			if m.activeTab == tabBranches {
+				label = "has PR"
+			} else {
+				label = "PR count"
+			}
+		} else if ts.Field == "brcount" {
+			label = "branch count"
+		} else if ts.Field == "ci" {
+			label = "CI status"
+		} else if ts.Field == "review" {
+			label = "review"
+		} else if ts.Field == "checks" {
+			label = "checks"
+		} else if ts.Field == "merged" {
+			label = "merged"
+		} else if ts.Field == "branch" {
+			label = "branch"
 		}
 		b.WriteString(ui.RenderSortIndicator(label, ts.Order == sortAsc))
 	}
@@ -195,7 +213,7 @@ func (m appModel) View() string {
 	if m.showSplash {
 		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, version, width))
 	} else if m.showHelp {
-		b.WriteString(ui.RenderHelp(width, version))
+		b.WriteString(ui.RenderHelp(width, m.helpPage, version))
 	} else if m.showDiff {
 		// Diff pane
 		b.WriteString(ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.contentHeight(), m.diffPreColored))

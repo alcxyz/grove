@@ -175,9 +175,26 @@ func branchHeat(n int) string { return heatCount(n, 3, 8, 16) }
 
 // ── Repo row ──────────────────────────────────────────────────────────────
 
-// col widths: indent(2) name(24) branch(14) status(8) sync(10) pr(4) br(4) author(14) ago(rest)
-func renderRepoRow(r model.Repo, selected bool, prCount, branchCount int, hlField, hlValue string) string {
-	name := truncate(r.Name, 22)
+// CIStatusIcon returns a compact status icon for the dashboard CI column.
+func CIStatusIcon(status, conclusion string) string {
+	if status != "completed" {
+		return PendingStyle.Render("●")
+	}
+	switch conclusion {
+	case "success":
+		return PassStyle.Render("✓")
+	case "failure", "timed_out", "startup_failure":
+		return FailStyle.Render("✗")
+	case "cancelled":
+		return DimStyle.Render("⊘")
+	default:
+		return DimStyle.Render("—")
+	}
+}
+
+// col widths: indent(2) name(30) branch(14) status(8) sync(10) pr(4) br(4) ci(4) author(14) ago(rest)
+func renderRepoRow(r model.Repo, selected bool, prCount, branchCount int, ciIcon, hlField, hlValue string) string {
+	name := truncate(r.Name, 28)
 	branch := truncate(r.Branch, 12)
 	ago := timeAgo(r.LastCommit)
 	author := truncate(r.LastAuthor, 12)
@@ -199,25 +216,30 @@ func renderRepoRow(r model.Repo, selected bool, prCount, branchCount int, hlFiel
 	if syncStyled == "" {
 		syncStyled = CleanStyle.Render("✓")
 	}
-	branchStyled := hlText(branch, "subject", hlField, hlValue)
+	// In CI-block-jump mode (hlField=="subject") the highlight value is a CI
+	// conclusion string, so we highlight the repo name to make the group clear.
+	nameStyled := hlText(name, "subject", hlField, hlValue)
+	if ciIcon == "" {
+		ciIcon = DimStyle.Render("—")
+	}
 
 	row := "  " +
-		cell(name, 24) + cell(branchStyled, 14) + cell(statusStyled, 8) +
+		cell(nameStyled, 30) + cell(branch, 14) + cell(statusStyled, 8) +
 		cell(syncStyled, 10) + cell(prHeat(prCount), 4) + cell(branchHeat(branchCount), 4) +
-		cell(DimStyle.Render(author), 14) + DimStyle.Render(ago)
+		cell(ciIcon, 4) + cell(DimStyle.Render(author), 14) + DimStyle.Render(ago)
 	if selected {
 		return selRow(row)
 	}
 	return row
 }
 
-func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts map[string]int, hlField, hlValue string) string {
+func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts map[string]int, ciStatus map[string]string, hlField, hlValue string) string {
 	var b strings.Builder
 
 	// Column header — always visible, outside the scroll window
 	header := "  " +
-		cell("Repository", 24) + cell("Branch", 14) + cell("Status", 8) +
-		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("Author", 14) + "Last Commit"
+		cell("Repository", 30) + cell("Branch", 14) + cell("Status", 8) +
+		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("CI", 4) + cell("Author", 14) + "Last Commit"
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -231,7 +253,92 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, r := range g.Repos {
-			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], hlField, hlValue))
+			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], ciStatus[r.Name], hlField, hlValue))
+			flatIdx++
+		}
+	}
+	b.WriteString(sw.string())
+	return b.String()
+}
+
+// ── CI row ────────────────────────────────────────────────────────────────
+
+func formatCIStatus(status, conclusion string) string {
+	if status != "completed" {
+		return PendingStyle.Render("● " + status)
+	}
+	switch conclusion {
+	case "success":
+		return PassStyle.Render("✓ success")
+	case "failure":
+		return FailStyle.Render("✗ failure")
+	case "timed_out":
+		return FailStyle.Render("✗ timed_out")
+	case "startup_failure":
+		return FailStyle.Render("✗ startup_failure")
+	case "cancelled":
+		return DimStyle.Render("⊘ cancelled")
+	case "skipped":
+		return DimStyle.Render("— skipped")
+	default:
+		if conclusion != "" {
+			return DimStyle.Render(conclusion)
+		}
+		return DimStyle.Render("—")
+	}
+}
+
+func renderCIRow(r model.WorkflowRun, selected bool, hlField, hlValue string) string {
+	repo := truncate(repoShortName(r.Repo), 26)
+	wf := truncate(r.WorkflowName, 22)
+	branch := truncate(r.Branch, 14)
+	event := truncate(r.Event, 10)
+	ago := timeAgo(r.UpdatedAt)
+
+	repoStyled := hlText(repo, "repo", hlField, hlValue)
+	wfStyled := hlText(wf, "subject", hlField, hlValue)
+	statusStyled := formatCIStatus(r.Status, r.Conclusion)
+
+	row := "  " +
+		cell(repoStyled, 28) +
+		cell(wfStyled, 24) +
+		cell(DimStyle.Render(branch), 16) +
+		cell(statusStyled, 18) +
+		cell(DimStyle.Render(event), 12) +
+		DimStyle.Render(ago)
+	if selected {
+		return selRow(row)
+	}
+	return row
+}
+
+func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlField, hlValue string) string {
+	total := 0
+	for _, g := range groups {
+		total += len(g.Runs)
+	}
+	if total == 0 {
+		return DimStyle.Render("\n  No CI run data found.\n")
+	}
+
+	var b strings.Builder
+	header := "  " +
+		cell("Repository", 28) + cell("Workflow", 24) + cell("Branch", 16) +
+		cell("Status", 18) + cell("Event", 12) + "When"
+	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	sw := newScrollWriter(scrollOffset, maxLines)
+	flatIdx := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			sw.writeLine("")
+		}
+		if g.Name != "" {
+			sw.writeLine(groupHeader(g.Name, width))
+		}
+		for _, r := range g.Runs {
+			sw.writeLine(renderCIRow(r, flatIdx == cursor, hlField, hlValue))
 			flatIdx++
 		}
 	}
@@ -242,7 +349,7 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 // ── PR row ────────────────────────────────────────────────────────────────
 
 func renderPRRow(pr model.PR, selected bool, hlField, hlValue string) string {
-	repo := truncate(repoShortName(pr.Repo), 20)
+	repo := truncate(repoShortName(pr.Repo), 26)
 	title := truncate(pr.Title, 32)
 	author := truncate(pr.Author, 22)
 	ago := timeAgo(pr.UpdatedAt)
@@ -250,7 +357,7 @@ func renderPRRow(pr model.PR, selected bool, hlField, hlValue string) string {
 	repoStyled := hlText(repo, "repo", hlField, hlValue)
 	titleStyled := hlText(title, "subject", hlField, hlValue)
 	row := "  " +
-		cell(repoStyled, 22) +
+		cell(repoStyled, 28) +
 		cell(fmt.Sprintf("#%-4d", pr.Number), 7) +
 		cell(titleStyled, 34) +
 		cell(DimStyle.Render(author), 24) +
@@ -286,7 +393,7 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 
 	var b strings.Builder
 	header := "  " +
-		cell("Repository", 22) + cell("PR#", 7) + cell("Title", 34) +
+		cell("Repository", 28) + cell("PR#", 7) + cell("Title", 34) +
 		cell("Author", 24) + cell("Review", 14) + "Updated"
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
@@ -321,7 +428,7 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 	}
 
 	var b strings.Builder
-	header := "  " + cell("Repository", 22) + cell("Branch", 28) + cell("Author", 18) + cell("When", 10) + cell("PR", 3) + "∈"
+	header := "  " + cell("Repository", 28) + cell("Branch", 28) + cell("Author", 18) + cell("When", 10) + cell("PR", 3) + "∈"
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -335,7 +442,7 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, br := range g.Branches {
-			repo := truncate(repoShortName(br.Repo), 20)
+			repo := truncate(repoShortName(br.Repo), 26)
 			name := truncate(br.Name, 26)
 			author := truncate(br.Author, 16)
 			ago := timeAgo(br.LastCommit)
@@ -362,7 +469,7 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 			}
 			repoStyled := hlText(repo, "repo", hlField, hlValue)
 			row := "  " +
-				cell(repoStyled, 22) + cell(nameStyled, 28) +
+				cell(repoStyled, 28) + cell(nameStyled, 28) +
 				cell(DimStyle.Render(author), 18) + cell(DimStyle.Render(ago), 10) +
 				cell(prStyled, 3) + mergedStyled
 			if flatIdx == cursor {
@@ -390,7 +497,7 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 
 	var b strings.Builder
 	header := "  " +
-		cell("Repository", 20) + cell("Hash", 9) +
+		cell("Repository", 26) + cell("Hash", 9) +
 		cell("Message", 52) + cell("Author", 18) + "When"
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
@@ -405,14 +512,14 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, c := range g.Commits {
-			repo := truncate(c.Repo, 18)
+			repo := truncate(c.Repo, 24)
 			subject := truncate(c.Subject, 50)
 			ago := timeAgo(c.Date)
 			author := truncate(c.Author, 16)
 			repoStyled := hlText(repo, "repo", hlField, hlValue)
 			subjectStyled := hlText(subject, "subject", hlField, hlValue)
 			row := "  " +
-				cell(repoStyled, 20) + cell(DimStyle.Render(c.Hash), 9) +
+				cell(repoStyled, 26) + cell(DimStyle.Render(c.Hash), 9) +
 				cell(subjectStyled, 52) + cell(DimStyle.Render(author), 18) +
 				DimStyle.Render(ago)
 			if flatIdx == cursor {

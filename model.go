@@ -18,9 +18,10 @@ const (
 	tabPRs
 	tabBranches
 	tabActivity
+	tabCI
 )
 
-var tabNames = []string{"Dashboard [1]", "Pull Requests [2]", "Branches [3]", "Activity [4]"}
+var tabNames = []string{"Dashboard [1]", "Pull Requests [2]", "Branches [3]", "Activity [4]", "CI [5]"}
 
 type sortOrder int
 
@@ -43,6 +44,7 @@ type appModel struct {
 	prs      []model.PR
 	branches []model.BranchInfo
 	activity []model.Commit
+	runs     []model.WorkflowRun
 
 	activeTab tab
 	cursor    int
@@ -59,6 +61,7 @@ type appModel struct {
 	prsLoadedAt      time.Time
 	branchesLoadedAt time.Time
 	activityLoadedAt time.Time
+	runsLoadedAt     time.Time
 
 	// Load errors — shown in view when a tab has no data
 	errLog  []string
@@ -157,7 +160,12 @@ type diffLoadedMsg struct {
 	preColored bool
 }
 
+type runsLoadedMsg struct {
+	runs   []model.WorkflowRun
+	errors []string
+}
+
 type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
-type ssTickMsg struct{}   // screensaver animation frame
+type ssTickMsg struct{}    // screensaver animation frame
 type idleCheckMsg struct{} // periodic idle-time check

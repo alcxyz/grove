@@ -127,6 +127,34 @@ func applyBranchSort(out []model.BranchInfo, ts tabSortState) {
 	}
 }
 
+func applyRunSort(out []model.WorkflowRun, ts tabSortState) {
+	asc := ts.Order == sortAsc
+	switch ts.Field {
+	case "date":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].UpdatedAt.Before(out[j].UpdatedAt)
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		})
+	case "subject":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].WorkflowName < out[j].WorkflowName
+			}
+			return out[i].WorkflowName > out[j].WorkflowName
+		})
+	case "repo":
+		sort.SliceStable(out, func(i, j int) bool {
+			ri, rj := repoBaseName(out[i].Repo), repoBaseName(out[j].Repo)
+			if asc {
+				return ri < rj
+			}
+			return ri > rj
+		})
+	}
+}
+
 func applyCommitSort(out []model.Commit, ts tabSortState) {
 	asc := ts.Order == sortAsc
 	switch ts.Field {
@@ -279,6 +307,46 @@ func (m appModel) filteredBranches() []model.BranchInfo {
 		out = append(out, br)
 	}
 	applyBranchSort(out, ts)
+	return out
+}
+
+func (m appModel) filteredRuns() []model.WorkflowRun {
+	q := strings.ToLower(m.filterQuery)
+	ts := m.tabSort[tabCI]
+	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
+		return m.runs
+	}
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
+	}
+	out := make([]model.WorkflowRun, 0, len(m.runs))
+	for _, r := range m.runs {
+		if profileFilter && r.Profile != activeProfileName {
+			continue
+		}
+		if q != "" {
+			if !strings.Contains(strings.ToLower(repoBaseName(r.Repo)), q) &&
+				!strings.Contains(strings.ToLower(r.WorkflowName), q) &&
+				!strings.Contains(strings.ToLower(r.Branch), q) &&
+				!strings.Contains(strings.ToLower(r.Conclusion), q) {
+				continue
+			}
+		}
+		if !m.cycleMatch("subject", r.WorkflowName) {
+			continue
+		}
+		if !m.cycleMatch("repo", repoBaseName(r.Repo)) {
+			continue
+		}
+		if !m.cycleMatchDate(r.UpdatedAt) {
+			continue
+		}
+		out = append(out, r)
+	}
+	applyRunSort(out, ts)
 	return out
 }
 
@@ -473,6 +541,18 @@ func (m appModel) collectCycleValues(field string) []string {
 				add(cyclePrefix(c.Subject))
 			case "repo":
 				add(c.Repo)
+			}
+		}
+	case tabCI:
+		for _, r := range m.runs {
+			if !match(repoBaseName(r.Repo), r.WorkflowName, r.Branch, r.Conclusion) {
+				continue
+			}
+			switch field {
+			case "subject":
+				add(r.WorkflowName)
+			case "repo":
+				add(repoBaseName(r.Repo))
 			}
 		}
 	}

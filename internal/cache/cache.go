@@ -1,3 +1,15 @@
+// Package cache provides disk-backed persistence for GitHub API responses.
+//
+// Each data type (PRs, branches, activity, CI runs) is stored as a single JSON
+// file under $XDG_CACHE_HOME/grove/.  Every file wraps its payload in an
+// envelope that records when it was written (cached_at) and a config-derived
+// key (config_key).  If the key no longer matches the running config — because
+// the user changed their profile owner or prefixes — the data is discarded and
+// the caller must re-fetch.
+//
+// The cache is read synchronously at startup so the TUI can render immediately
+// with last-known state.  Writes happen asynchronously (go cache.SaveX(...)) so
+// they never block the UI event loop.
 package cache
 
 import (
@@ -16,6 +28,7 @@ const (
 	maxPRs      = 500
 	maxBranches = 2000
 	maxActivity = 100
+	maxRuns     = 500
 )
 
 // ErrConfigChanged is returned by Load* when the stored config key doesn't
@@ -88,4 +101,12 @@ func LoadActivity(dir, configKey string) ([]model.Commit, time.Time, error) {
 
 func SaveActivity(dir, configKey string, data []model.Commit) error {
 	return save(dir, "activity", configKey, capSlice(data, maxActivity))
+}
+
+func LoadRuns(dir, configKey string) ([]model.WorkflowRun, time.Time, error) {
+	return load[[]model.WorkflowRun](dir, "runs", configKey)
+}
+
+func SaveRuns(dir, configKey string, data []model.WorkflowRun) error {
+	return save(dir, "runs", configKey, capSlice(data, maxRuns))
 }

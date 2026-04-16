@@ -38,6 +38,9 @@ func (m appModel) Init() tea.Cmd {
 	if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
 		cmds = append(cmds, loadActivity(m.cfg.Profiles))
 	}
+	if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
+		cmds = append(cmds, loadRuns(m.cfg.Profiles))
+	}
 
 	if m.autoRefresh {
 		cmds = append(cmds, tickCmd(ttl))
@@ -110,7 +113,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Diff view input
 		if m.showDiff {
-			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4"
+			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				switch key {
 				case "esc", "backspace", "q":
@@ -146,7 +149,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Detail pane input
 		if m.showDetail {
-			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4"
+			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				switch key {
 				case "esc", "backspace", "q":
@@ -228,14 +231,14 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.highlightField = ""
 			}
 		case "tab":
-			m.activeTab = (m.activeTab + 1) % 4
+			m.activeTab = (m.activeTab + 1) % 5
 			m.cursor = 0
 			m.filterQuery = ""
 			m.clearCycleFilter()
 			m.scrollOffset[m.activeTab] = 0
 			return m, m.loadTabIfNeeded()
 		case "shift+tab":
-			m.activeTab = (m.activeTab + 3) % 4
+			m.activeTab = (m.activeTab + 4) % 5
 			m.cursor = 0
 			m.filterQuery = ""
 			m.clearCycleFilter()
@@ -280,6 +283,17 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = "Loading activity..."
 				return m, loadActivity(m.cfg.Profiles)
 			}
+		case "5":
+			m.activeTab = tabCI
+			m.cursor = 0
+			m.filterQuery = ""
+			m.clearCycleFilter()
+			ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
+			if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
+				m.loading = true
+				m.statusMsg = "Loading CI runs..."
+				return m, loadRuns(m.cfg.Profiles)
+			}
 		case "enter":
 			if m.activeTab == tabDashboard {
 				repos := m.filteredRepos()
@@ -308,6 +322,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 				}
 			}
+			if m.activeTab == tabCI {
+				runs := m.filteredRuns()
+				if m.cursor < len(runs) {
+					_ = ui.OpenURL(runs[m.cursor].URL)
+				}
+			}
 		case "r":
 			m.loading = true
 			m.statusMsg = "Refreshing..."
@@ -320,6 +340,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, loadBranches(m.cfg.Profiles)
 			case tabActivity:
 				return m, loadActivity(m.cfg.Profiles)
+			case tabCI:
+				return m, loadRuns(m.cfg.Profiles)
 			}
 		case "R":
 			m.autoRefresh = !m.autoRefresh
@@ -403,6 +425,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prs := m.filteredPRs()
 				if m.cursor < len(prs) {
 					_ = ui.OpenURL(prs[m.cursor].URL)
+				}
+			}
+			if m.activeTab == tabCI {
+				runs := m.filteredRuns()
+				if m.cursor < len(runs) {
+					_ = ui.OpenURL(runs[m.cursor].URL)
 				}
 			}
 		case "up", "k":
@@ -543,6 +571,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 						}
 					}
+					if m.activeTab == tabCI {
+						runs := m.filteredRuns()
+						if m.cursor < len(runs) {
+							_ = ui.OpenURL(runs[m.cursor].URL)
+						}
+					}
 				} else {
 					m.lastClickY = msg.Y
 					m.lastClickAt = now
@@ -592,6 +626,19 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.statusMsg = fmt.Sprintf("%d recent commits", len(msg.commits))
 		go cache.SaveActivity(m.cacheDir, m.cacheKey, msg.commits) //nolint:errcheck
+
+	case runsLoadedMsg:
+		m.runs = msg.runs
+		m.errLog = msg.errors
+		m.authErr = containsAuthErr(msg.errors)
+		m.runsLoadedAt = time.Now()
+		m.loading = false
+		if len(msg.errors) > 0 {
+			m.statusMsg = fmt.Sprintf("%d CI runs (%d repos failed)", len(msg.runs), len(msg.errors))
+		} else {
+			m.statusMsg = fmt.Sprintf("%d CI runs", len(msg.runs))
+		}
+		go cache.SaveRuns(m.cacheDir, m.cacheKey, msg.runs) //nolint:errcheck
 
 	case detailLoadedMsg:
 		m.detailCommits = msg.commits

@@ -55,3 +55,18 @@ type RepoStats struct {
 	CommitCount  int
 	Contributors int
 }
+
+type WorkflowRun struct {
+	Repo         string // "owner/name"
+	WorkflowName string
+	Branch       string
+	Event        string // "push", "pull_request", "schedule", "workflow_dispatch", etc.
+	Status       string // "queued", "in_progress", "completed"
+	Conclusion   string // "success", "failure", "cancelled", "skipped", "" when not completed
+	RunID        int64
+	Number       int
+	StartedAt    time.Time
+	UpdatedAt    time.Time
+	URL          string
+	Profile      string
+}

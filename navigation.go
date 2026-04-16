@@ -15,6 +15,8 @@ func (m appModel) listLen() int {
 		return len(m.filteredBranches())
 	case tabActivity:
 		return len(m.filteredActivity())
+	case tabCI:
+		return len(m.filteredRuns())
 	}
 	return 0
 }
@@ -132,6 +134,8 @@ func (m *appModel) adjustScroll() {
 		cvl = ui.BranchCursorLine(m.groupedBranches(), m.cursor)
 	case tabActivity:
 		cvl = ui.CommitCursorLine(m.groupedActivity(), m.cursor)
+	case tabCI:
+		cvl = ui.CICursorLine(m.groupedRuns(), m.cursor)
 	}
 
 	so := m.scrollOffset[m.activeTab]
@@ -184,6 +188,14 @@ func (m appModel) maxScrollOffset() int {
 				totalVL = ui.CommitCursorLine(groups, g.StartIdx+len(g.Commits)-1) + 1
 			}
 		}
+	case tabCI:
+		groups := m.groupedRuns()
+		if len(groups) > 0 {
+			g := groups[len(groups)-1]
+			if len(g.Runs) > 0 {
+				totalVL = ui.CICursorLine(groups, g.StartIdx+len(g.Runs)-1) + 1
+			}
+		}
 	}
 	mso := totalVL - m.contentHeight()
 	if mso < 0 {
@@ -224,6 +236,8 @@ func (m appModel) termRowToCursor(termRow int) int {
 		return ui.BranchIndexAtVL(m.groupedBranches(), vl)
 	case tabActivity:
 		return ui.CommitIndexAtVL(m.groupedActivity(), vl)
+	case tabCI:
+		return ui.CIIndexAtVL(m.groupedRuns(), vl)
 	}
 	return -1
 }
@@ -315,6 +329,29 @@ func (m appModel) groupedBranches() []ui.BranchGroup {
 	return ui.BuildBranchGroups(branches, p.GroupFor, p.GroupOrder)
 }
 
+func (m appModel) groupedRuns() []ui.CIGroup {
+	runs := m.filteredRuns()
+	if !m.grouped {
+		return []ui.CIGroup{{Name: "", Runs: runs, StartIdx: 0}}
+	}
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		lookup := make(map[string]string, len(m.runs))
+		for _, r := range m.runs {
+			lookup[repoBaseName(r.Repo)] = r.Profile
+		}
+		po := m.profileOrder()
+		return ui.BuildCIGroups(runs,
+			func(name string) string {
+				if p, ok := lookup[name]; ok {
+					return p
+				}
+				return "other"
+			}, po)
+	}
+	p := m.activeProfileObj()
+	return ui.BuildCIGroups(runs, p.GroupFor, p.GroupOrder)
+}
+
 func (m appModel) groupedActivity() []ui.CommitGroup {
 	commits := m.filteredActivity()
 	if !m.grouped {
@@ -351,10 +388,25 @@ func (m appModel) blockHighlightValue() string {
 		if m.highlightField != "subject" {
 			return ""
 		}
+		ciConclusion := map[string]string{}
+		for _, r := range m.runs {
+			name := repoBaseName(r.Repo)
+			if _, seen := ciConclusion[name]; !seen {
+				if r.Status != "completed" {
+					ciConclusion[name] = "running"
+				} else {
+					ciConclusion[name] = r.Conclusion
+				}
+			}
+		}
 		for _, g := range m.groupedRepos() {
 			for _, r := range g.Repos {
 				if flat == m.cursor {
-					return r.Branch
+					s := ciConclusion[r.Name]
+					if s == "" {
+						s = "—"
+					}
+					return s
 				}
 				flat++
 			}
@@ -391,6 +443,18 @@ func (m appModel) blockHighlightValue() string {
 						return c.Repo
 					}
 					return cyclePrefix(c.Subject)
+				}
+				flat++
+			}
+		}
+	case tabCI:
+		for _, g := range m.groupedRuns() {
+			for _, r := range g.Runs {
+				if flat == m.cursor {
+					if m.highlightField == "repo" {
+						return repoBaseName(r.Repo)
+					}
+					return cyclePrefix(r.WorkflowName)
 				}
 				flat++
 			}
@@ -445,6 +509,16 @@ func (m *appModel) jumpRepo(dir int) {
 				}
 			}
 		}
+	case tabCI:
+		last := ""
+		for _, g := range m.groupedRuns() {
+			for j, r := range g.Runs {
+				if name := repoBaseName(r.Repo); name != last {
+					starts = append(starts, g.StartIdx+j)
+					last = name
+				}
+			}
+		}
 	}
 	m.jumpTo(starts, dir)
 }
@@ -456,12 +530,28 @@ func (m *appModel) jumpSubject(dir int) {
 	var starts []int
 	switch m.activeTab {
 	case tabDashboard:
+		// Build a CI-conclusion lookup (runs are sorted newest-first).
+		ciConclusion := map[string]string{}
+		for _, r := range m.runs {
+			name := repoBaseName(r.Repo)
+			if _, seen := ciConclusion[name]; !seen {
+				if r.Status != "completed" {
+					ciConclusion[name] = "running"
+				} else {
+					ciConclusion[name] = r.Conclusion
+				}
+			}
+		}
 		last := ""
 		for _, g := range m.groupedRepos() {
 			for j, r := range g.Repos {
-				if r.Branch != last {
+				status := ciConclusion[r.Name]
+				if status == "" {
+					status = "—"
+				}
+				if status != last {
 					starts = append(starts, g.StartIdx+j)
-					last = r.Branch
+					last = status
 				}
 			}
 		}
@@ -490,6 +580,16 @@ func (m *appModel) jumpSubject(dir int) {
 		for _, g := range m.groupedActivity() {
 			for j, c := range g.Commits {
 				if p := cyclePrefix(c.Subject); p != last {
+					starts = append(starts, g.StartIdx+j)
+					last = p
+				}
+			}
+		}
+	case tabCI:
+		last := ""
+		for _, g := range m.groupedRuns() {
+			for j, r := range g.Runs {
+				if p := cyclePrefix(r.WorkflowName); p != last {
 					starts = append(starts, g.StartIdx+j)
 					last = p
 				}
@@ -545,6 +645,8 @@ func (m *appModel) jumpGroup(dir int) {
 		starts = ui.BranchGroupStarts(m.groupedBranches())
 	case tabActivity:
 		starts = ui.CommitGroupStarts(m.groupedActivity())
+	case tabCI:
+		starts = ui.CIGroupStarts(m.groupedRuns())
 	}
 	m.jumpTo(starts, dir)
 }

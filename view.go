@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
 )
 
@@ -218,10 +219,23 @@ func (m appModel) View() string {
 		// Diff pane
 		b.WriteString(ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.contentHeight(), m.diffPreColored))
 	} else if m.showDetail {
-		// Detail pane
+		// Detail pane — filter remote branches and CI runs for the current repo.
 		repos := m.filteredRepos()
 		if m.cursor < len(repos) {
-			b.WriteString(ui.RenderRepoDetail(repos[m.cursor], m.detailCommits, m.detailPRs, m.detailBranches, m.detailStats, width))
+			repoName := repos[m.cursor].Name
+			var remoteBranches []model.BranchInfo
+			for _, br := range m.branches {
+				if repoBaseName(br.Repo) == repoName {
+					remoteBranches = append(remoteBranches, br)
+				}
+			}
+			var ciRuns []model.WorkflowRun
+			for _, r := range m.runs {
+				if repoBaseName(r.Repo) == repoName {
+					ciRuns = append(ciRuns, r)
+				}
+			}
+			b.WriteString(ui.RenderRepoDetail(repos[m.cursor], m.detailCommits, m.detailPRs, m.detailBranches, remoteBranches, ciRuns, m.detailStats, width))
 		}
 	} else {
 		so := m.scrollOffset[m.activeTab]

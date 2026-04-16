@@ -8,7 +8,28 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, branches []string, stats model.RepoStats, width int) string {
+// detailSection writes a section header and returns a helper that writes rows,
+// capped at maxRows, appending a "… N more" dim line when truncated.
+func detailSection(b *strings.Builder, title string, total, maxRows int) func(row string) {
+	b.WriteString(HeaderStyle.Render(title))
+	b.WriteString("\n")
+	written := 0
+	return func(row string) {
+		if written < maxRows {
+			b.WriteString(row)
+			b.WriteString("\n")
+		} else if written == maxRows {
+			remaining := total - maxRows
+			if remaining > 0 {
+				b.WriteString(DimStyle.Render(fmt.Sprintf("  … %d more", remaining)))
+				b.WriteString("\n")
+			}
+		}
+		written++
+	}
+}
+
+func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int) string {
 	var b strings.Builder
 
 	// Repo header
@@ -49,47 +70,91 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, b
 	}
 	b.WriteString("\n")
 
-	// Local branches
-	b.WriteString(HeaderStyle.Render("  Branches"))
-	b.WriteString("\n")
-	if len(branches) == 0 {
+	// ── Local branches ───────────────────────────────────────────────────────
+	write := detailSection(&b, fmt.Sprintf("  Local branches (%d)", len(localBranches)), len(localBranches), 12)
+	if len(localBranches) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
 	} else {
-		for _, br := range branches {
+		for _, br := range localBranches {
 			marker := "  "
 			if br == repo.Branch {
 				marker = SelectedStyle.Render("* ")
 			}
-			b.WriteString(fmt.Sprintf("  %s%s\n", marker, br))
+			write(fmt.Sprintf("  %s%s", marker, br))
 		}
 	}
 	b.WriteString("\n")
 
-	// Open PRs
-	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  Open PRs (%d)", len(prs))))
+	// ── Remote branches ──────────────────────────────────────────────────────
+	// Build PR-branch set from loaded PRs.
+	prBranches := map[string]bool{}
+	for _, pr := range prs {
+		prBranches[pr.Branch] = true
+	}
+	write = detailSection(&b, fmt.Sprintf("  Remote branches (%d)", len(remoteBranches)), len(remoteBranches), 12)
+	if len(remoteBranches) == 0 {
+		b.WriteString(DimStyle.Render("  (none)\n"))
+	} else {
+		for _, br := range remoteBranches {
+			marker := "  "
+			if br.Name == repo.Branch {
+				marker = SelectedStyle.Render("* ")
+			}
+			name := truncate(br.Name, 28)
+			author := truncate(br.Author, 14)
+			ago := timeAgo(br.LastCommit)
+			prMark := "  "
+			if prBranches[br.Name] {
+				prMark = ReviewStyle.Render("●") + " "
+			}
+			mergedMark := "  "
+			if br.IsMerged {
+				mergedMark = CleanStyle.Render("∈") + " "
+			}
+			write("  " + marker + cell(name, 30) + prMark + mergedMark +
+				cell(DimStyle.Render(author), 16) + DimStyle.Render(ago))
+		}
+	}
 	b.WriteString("\n")
+
+	// ── Open PRs ─────────────────────────────────────────────────────────────
+	write = detailSection(&b, fmt.Sprintf("  Open PRs (%d)", len(prs)), len(prs), 10)
 	if len(prs) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
 	} else {
 		for _, pr := range prs {
-			title := truncate(pr.Title, 60)
-			b.WriteString(fmt.Sprintf("  #%-4d %s  %s\n",
-				pr.Number, title, DimStyle.Render(pr.Author)))
+			title := truncate(pr.Title, 52)
+			write(fmt.Sprintf("  #%-4d %s  %s  %s",
+				pr.Number, title, formatReview(pr.ReviewDecision), DimStyle.Render(pr.Author)))
 		}
 	}
 	b.WriteString("\n")
 
-	// Recent commits
-	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  Recent Commits (%d)", len(commits))))
+	// ── CI runs ──────────────────────────────────────────────────────────────
+	write = detailSection(&b, fmt.Sprintf("  CI runs (%d)", len(runs)), len(runs), 8)
+	if len(runs) == 0 {
+		b.WriteString(DimStyle.Render("  (none)\n"))
+	} else {
+		for _, r := range runs {
+			wf := truncate(r.WorkflowName, 24)
+			branch := truncate(r.Branch, 18)
+			ago := timeAgo(r.UpdatedAt)
+			write("  " + cell(CIStatusIcon(r.Status, r.Conclusion), 14) +
+				cell(wf, 26) + cell(DimStyle.Render(branch), 20) + DimStyle.Render(ago))
+		}
+	}
 	b.WriteString("\n")
+
+	// ── Recent commits ───────────────────────────────────────────────────────
+	write = detailSection(&b, fmt.Sprintf("  Recent commits (%d)", len(commits)), len(commits), 10)
 	if len(commits) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
 	} else {
 		for _, c := range commits {
-			subject := truncate(c.Subject, 55)
+			subject := truncate(c.Subject, 50)
 			ago := timeAgo(c.Date)
-			b.WriteString(fmt.Sprintf("  %s %s  %s  %s\n",
-				DimStyle.Render(c.Hash), subject, DimStyle.Render(c.Author), DimStyle.Render(ago)))
+			write("  " + cell(DimStyle.Render(c.Hash), 9) +
+				cell(subject, 52) + cell(DimStyle.Render(c.Author), 16) + DimStyle.Render(ago))
 		}
 	}
 

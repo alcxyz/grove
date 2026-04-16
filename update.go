@@ -169,6 +169,16 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDetail {
 			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
+				loadAt := func(c int) (appModel, tea.Cmd) {
+					repos := m.filteredRepos()
+					if c < len(repos) {
+						m.cursor = c
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading %s…", repos[c].Name)
+						return m, loadDetail(repos[c])
+					}
+					return m, nil
+				}
 				switch key {
 				case "esc", "backspace", "q":
 					m.showDetail = false
@@ -179,24 +189,29 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "j", "down":
 					newC := min(m.cursor+1, m.listLen()-1)
 					if newC != m.cursor {
-						m.cursor = newC
-						repos := m.filteredRepos()
-						if m.cursor < len(repos) {
-							m.loading = true
-							m.statusMsg = fmt.Sprintf("Loading %s…", repos[m.cursor].Name)
-							return m, loadDetail(repos[m.cursor])
-						}
+						return loadAt(newC)
 					}
 				case "k", "up":
 					if m.cursor > 0 {
-						m.cursor--
-						repos := m.filteredRepos()
-						if m.cursor < len(repos) {
-							m.loading = true
-							m.statusMsg = fmt.Sprintf("Loading %s…", repos[m.cursor].Name)
-							return m, loadDetail(repos[m.cursor])
-						}
+						return loadAt(m.cursor - 1)
 					}
+				case "G":
+					return loadAt(max(0, m.listLen()-1))
+				case "g":
+					if m.prevKey == "g" {
+						m.prevKey = ""
+						return loadAt(0)
+					}
+					m.prevKey = "g"
+					return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
+						return gTimeoutMsg{}
+					})
+				case "[":
+					m.jumpRepo(-1)
+					return loadAt(m.cursor)
+				case "]":
+					m.jumpRepo(+1)
+					return loadAt(m.cursor)
 				}
 				return m, nil
 			}
@@ -755,10 +770,13 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case gTimeoutMsg:
 		if m.prevKey == "g" {
-			m.grouped = !m.grouped
 			m.prevKey = ""
-			m.cursor = 0
-			m.adjustScroll()
+			// In a detail or diff pane a single g is a no-op (gg was the intent).
+			if !m.showDetail && !m.showDiff {
+				m.grouped = !m.grouped
+				m.cursor = 0
+				m.adjustScroll()
+			}
 		}
 
 	case idleCheckMsg:

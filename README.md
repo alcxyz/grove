@@ -22,27 +22,45 @@ A terminal UI for monitoring GitHub repositories. See the status of all your rep
 - **Block-jump navigation** — jump between repos `[ ]`, subject blocks `( )`, or config groups `{ }`
 - **Detail pane** — full repo detail with local branches, open PRs, recent commits, and stats
 - **Diff viewer** — inline `git show` output with syntax colouring
-- **Mouse support** — scroll wheel and click to select
+- **Mouse support** — scroll wheel, click to select, tab-bar clicks, double-click to open
 - **Screensaver** — bouncing logo after configurable idle timeout
 - Catppuccin Mocha colour palette
 
-## Requirements
-
-- Go 1.21+
-- [gh](https://cli.github.com/) CLI, authenticated (`gh auth login`)
-- Git
-
 ## Installation
+
+### Homebrew
+
+```sh
+brew tap alcxyz/tap
+brew install grove
+```
+
+### Nix
+
+```sh
+nix profile install github:alcxyz/grove
+```
+
+Or in a flake:
+
+```nix
+inputs.grove.url = "github:alcxyz/grove";
+```
+
+### AUR (Arch Linux)
+
+```sh
+yay -S grove-bin
+```
+
+### Build from source
+
+Requires Go 1.22+ and the [gh](https://cli.github.com/) CLI authenticated (`gh auth login`).
 
 ```sh
 git clone git@github.com:alcxyz/grove.git
 cd grove
 go build -o grove .
-```
-
-Move the binary somewhere on your `$PATH`, e.g.:
-
-```sh
 mv grove ~/.local/bin/
 ```
 
@@ -71,10 +89,12 @@ screensaver_secs: 300
 # Named groups — controls grouping order across all tabs.
 # First matching group wins; unmatched repos fall into "other".
 groups:
-  - name: Platform
-    match: platform-
+  - name: Infrastructure
+    match: infra-
   - name: Services
     match: service-
+  - name: Platform
+    match: platform-
 ```
 
 You can also pass a path directly as an argument to override `base_path`:
@@ -131,7 +151,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 | `ctrl+f` | `git fetch` all repos |
 | `g` *(single, 400 ms)* | Toggle grouped / flat view |
 | `?` | Toggle help overlay |
-| `!` | About / paths |
+| `!` | About — version, config path, cache and log locations |
 | `q` / `ctrl+c` | Quit |
 
 ### Dashboard indicators
@@ -145,5 +165,13 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 
 ## Mouse
 
-- **Scroll wheel** — scroll 3 lines per tick
-- **Left click** — select item (ignored on group headers and chrome rows)
+| Action | Effect |
+|--------|--------|
+| Scroll wheel | Scroll 3 lines per tick |
+| Left click — tab bar | Switch tab |
+| Left click — row | Select item |
+| Double-click — row | Open (same as `enter`) |
+
+## License
+
+MIT — see [LICENSE](LICENSE).

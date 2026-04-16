@@ -211,7 +211,7 @@ func (m appModel) View() string {
 
 	// Splash overlay replaces main content
 	if m.showSplash {
-		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, version, width))
+		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, version, width, m.splashBlink))
 	} else if m.showHelp {
 		b.WriteString(ui.RenderHelp(width, m.helpPage, version))
 	} else if m.showDiff {

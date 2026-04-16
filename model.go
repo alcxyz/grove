@@ -98,8 +98,9 @@ type appModel struct {
 	showHelp bool
 	helpPage int
 
-	// Splash/about overlay (! key)
-	showSplash bool
+	// Splash/about overlay (! key) with blink animation
+	showSplash  bool
+	splashBlink int // 0=both open 1=left closed 2=right closed 3=both closed
 
 	// Profile switching: index into cfg.Profiles, or -1 for "All"
 	activeProfile int
@@ -168,5 +169,6 @@ type runsLoadedMsg struct {
 
 type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
-type ssTickMsg struct{}    // screensaver animation frame
-type idleCheckMsg struct{} // periodic idle-time check
+type ssTickMsg struct{}           // screensaver animation frame
+type idleCheckMsg struct{}        // periodic idle-time check
+type splashBlinkMsg struct{ next int } // next blink state

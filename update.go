@@ -82,7 +82,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key == "!" {
 			m.showSplash = true
-			return m, nil
+			m.splashBlink = 0
+			return m, splashBlinkCmd(0)
 		}
 
 		// Help overlay — tab/shift+tab cycle pages, anything else closes
@@ -773,6 +774,13 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, idleCheckCmd()
+
+	case splashBlinkMsg:
+		if m.showSplash {
+			m.splashBlink = msg.next
+			return m, splashBlinkCmd(msg.next)
+		}
+		m.splashBlink = 0
 
 	case ssTickMsg:
 		if !m.ssActive {

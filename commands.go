@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -463,6 +464,24 @@ func ssTickCmd() tea.Cmd {
 
 func idleCheckCmd() tea.Cmd {
 	return tea.Tick(30*time.Second, func(time.Time) tea.Msg { return idleCheckMsg{} })
+}
+
+// splashBlinkCmd schedules the next eye-blink frame for the ! splash overlay.
+//
+//   - When current==0 (eyes open): wait 1.5–4 s, then randomly blink one eye
+//     or both (states 1, 2, 3).
+//   - When current!=0 (eyes closed): wait 80–150 ms, then reopen (state 0).
+func splashBlinkCmd(current int) tea.Cmd {
+	var d time.Duration
+	var next int
+	if current == 0 {
+		d = time.Duration(1500+rand.Intn(2500)) * time.Millisecond
+		next = rand.Intn(3) + 1 // 1=left, 2=right, 3=both
+	} else {
+		d = time.Duration(80+rand.Intn(70)) * time.Millisecond
+		next = 0
+	}
+	return tea.Tick(d, func(time.Time) tea.Msg { return splashBlinkMsg{next: next} })
 }
 
 // loadTabIfNeeded returns a load command when the active tab's data is stale

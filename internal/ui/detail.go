@@ -153,29 +153,38 @@ func max(a, b int) int {
 }
 
 // renderSplashLine renders one line of the ASCII art.
-// The eyes in "{o,o}" are coloured teal; everything else uses HeaderStyle.
-func renderSplashLine(l string) string {
+// The eyes in "{o,o}" are coloured teal; blinkState controls which are closed:
+// 0=both open  1=left closed  2=right closed  3=both closed.
+func renderSplashLine(l string, blinkState int) string {
 	const eyes = "{o,o}"
 	idx := strings.Index(l, eyes)
 	if idx < 0 {
 		return HeaderStyle.Render(l)
 	}
 	eyeStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(catTeal))
+	left, right := "o", "o"
+	if blinkState == 1 || blinkState == 3 {
+		left = "-"
+	}
+	if blinkState == 2 || blinkState == 3 {
+		right = "-"
+	}
 	return HeaderStyle.Render(l[:idx]) +
 		HeaderStyle.Render("{") +
-		eyeStyle.Render("o") +
+		eyeStyle.Render(left) +
 		HeaderStyle.Render(",") +
-		eyeStyle.Render("o") +
+		eyeStyle.Render(right) +
 		HeaderStyle.Render("}") +
 		HeaderStyle.Render(l[idx+len(eyes):])
 }
 
 // RenderSplash renders the about/splash overlay (! key).
-func RenderSplash(configPath, cacheDir, logPath, version string, width int) string {
+// blinkState drives the eye-blink animation (0=open, 1=left, 2=right, 3=both).
+func RenderSplash(configPath, cacheDir, logPath, version string, width, blinkState int) string {
 	var lines []string
 	lines = append(lines, "")
 	for _, l := range strings.Split(splashArt, "\n") {
-		lines = append(lines, "  "+renderSplashLine(l))
+		lines = append(lines, "  "+renderSplashLine(l, blinkState))
 	}
 	lines = append(lines, "")
 	lines = append(lines, "  "+DimStyle.Render("press ! to close"))

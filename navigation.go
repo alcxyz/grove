@@ -109,8 +109,8 @@ func (m appModel) contentHeight() int {
 	if m.showProfileBar() {
 		extra = 1
 	}
-	// 4 top (title + blank + tabs + blank) + ui.SplashArtHeight bottom + extra for profile bar
-	h := m.height - 4 - ui.SplashArtHeight - extra
+	// 5 top (title + blank + tabs + indicator + blank) + ui.BottomChromeHeight bottom + extra for profile bar
+	h := m.height - 5 - ui.BottomChromeHeight - extra
 	if h < 1 {
 		return 1
 	}

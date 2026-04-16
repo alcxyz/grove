@@ -11,6 +11,17 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// selRow applies the selected-row background across an entire pre-rendered row.
+// Because lipgloss (and every inner style) terminates with \033[0m, a naive
+// outer Render() wrapper loses the background after the first inner reset.
+// Instead we re-inject the background escape after every reset so it persists
+// through all nested colour sequences.
+// catSurface1 (#45475a) → RGB(69, 71, 90)
+func selRow(s string) string {
+	const bg = "\033[48;2;69;71;90m"
+	return bg + strings.ReplaceAll(s, "\033[0m", "\033[0m"+bg) + "\033[0m"
+}
+
 // cell renders s then pads to visible width w using lipgloss.Width so ANSI
 // codes don't break column alignment.
 func cell(s string, w int) string {
@@ -165,39 +176,11 @@ func branchHeat(n int) string { return heatCount(n, 3, 8, 16) }
 // ── Repo row ──────────────────────────────────────────────────────────────
 
 // col widths: indent(2) name(24) branch(14) status(8) sync(10) pr(4) br(4) author(14) ago(rest)
-func renderRepoRow(r model.Repo, selected bool, rowWidth, prCount, branchCount int, hlField, hlValue string) string {
+func renderRepoRow(r model.Repo, selected bool, prCount, branchCount int, hlField, hlValue string) string {
 	name := truncate(r.Name, 22)
 	branch := truncate(r.Branch, 12)
 	ago := timeAgo(r.LastCommit)
 	author := truncate(r.LastAuthor, 12)
-
-	var syncText string
-	switch {
-	case r.Ahead > 0 && r.Behind > 0:
-		syncText = fmt.Sprintf("↑%d↓%d", r.Ahead, r.Behind)
-	case r.Ahead > 0:
-		syncText = fmt.Sprintf("↑%d", r.Ahead)
-	case r.Behind > 0:
-		syncText = fmt.Sprintf("↓%d", r.Behind)
-	default:
-		syncText = "✓"
-	}
-
-	if selected {
-		statusText := "clean"
-		if r.Dirty {
-			statusText = "dirty"
-		}
-		line := "▶ " +
-			cell(name, 24) + cell(branch, 14) + cell(statusText, 8) +
-			cell(syncText, 10) + cell(strconv.Itoa(prCount), 4) + cell(strconv.Itoa(branchCount), 4) +
-			cell(author, 14) + ago
-		pad := rowWidth - lipgloss.Width(line)
-		if pad > 0 {
-			line += strings.Repeat(" ", pad)
-		}
-		return SelectedRowStyle.Render(line)
-	}
 
 	statusStyled := CleanStyle.Render("clean")
 	if r.Dirty {
@@ -217,10 +200,15 @@ func renderRepoRow(r model.Repo, selected bool, rowWidth, prCount, branchCount i
 		syncStyled = CleanStyle.Render("✓")
 	}
 	branchStyled := hlText(branch, "subject", hlField, hlValue)
-	return "  " +
+
+	row := "  " +
 		cell(name, 24) + cell(branchStyled, 14) + cell(statusStyled, 8) +
 		cell(syncStyled, 10) + cell(prHeat(prCount), 4) + cell(branchHeat(branchCount), 4) +
 		cell(DimStyle.Render(author), 14) + DimStyle.Render(ago)
+	if selected {
+		return selRow(row)
+	}
+	return row
 }
 
 func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts map[string]int, hlField, hlValue string) string {
@@ -243,7 +231,7 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, r := range g.Repos {
-			sw.writeLine(renderRepoRow(r, flatIdx == cursor, width, prCounts[r.Name], branchCounts[r.Name], hlField, hlValue))
+			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], hlField, hlValue))
 			flatIdx++
 		}
 	}
@@ -253,48 +241,25 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 
 // ── PR row ────────────────────────────────────────────────────────────────
 
-func renderPRRow(pr model.PR, selected bool, rowWidth int, hlField, hlValue string) string {
+func renderPRRow(pr model.PR, selected bool, hlField, hlValue string) string {
 	repo := truncate(repoShortName(pr.Repo), 20)
 	title := truncate(pr.Title, 32)
 	author := truncate(pr.Author, 22)
 	ago := timeAgo(pr.UpdatedAt)
 
-	if selected {
-		line := "▶ " +
-			cell(repo, 22) +
-			cell(fmt.Sprintf("#%-4d", pr.Number), 7) +
-			cell(title, 34) +
-			cell(author, 24) +
-			cell(reviewPlain(pr.ReviewDecision), 14) +
-			ago
-		pad := rowWidth - lipgloss.Width(line)
-		if pad > 0 {
-			line += strings.Repeat(" ", pad)
-		}
-		return SelectedRowStyle.Render(line)
-	}
 	repoStyled := hlText(repo, "repo", hlField, hlValue)
 	titleStyled := hlText(title, "subject", hlField, hlValue)
-	return "  " +
+	row := "  " +
 		cell(repoStyled, 22) +
 		cell(fmt.Sprintf("#%-4d", pr.Number), 7) +
 		cell(titleStyled, 34) +
 		cell(DimStyle.Render(author), 24) +
 		cell(formatReview(pr.ReviewDecision), 14) +
 		DimStyle.Render(ago)
-}
-
-func reviewPlain(decision string) string {
-	switch decision {
-	case "APPROVED":
-		return "✓ approved"
-	case "CHANGES_REQUESTED":
-		return "✗ changes"
-	case "REVIEW_REQUIRED":
-		return "● review"
-	default:
-		return "-"
+	if selected {
+		return selRow(row)
 	}
+	return row
 }
 
 func formatReview(decision string) string {
@@ -336,7 +301,7 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, pr := range g.PRs {
-			sw.writeLine(renderPRRow(pr, flatIdx == cursor, width, hlField, hlValue))
+			sw.writeLine(renderPRRow(pr, flatIdx == cursor, hlField, hlValue))
 			flatIdx++
 		}
 	}
@@ -378,46 +343,32 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 			if br.IsDefault {
 				name = "* " + name
 			}
-			if flatIdx == cursor {
-				prMark := " "
-				if hasPR {
-					prMark = "●"
-				}
-				mMark := " "
-				if br.IsMerged {
-					mMark = "✓"
-				}
-				line := "▶ " +
-					cell(repo, 22) + cell(name, 28) + cell(author, 18) + cell(ago, 10) +
-					cell(prMark, 3) + mMark
-				pad := width - lipgloss.Width(line)
-				if pad > 0 {
-					line += strings.Repeat(" ", pad)
-				}
-				sw.writeLine(SelectedRowStyle.Render(line))
+			prStyled := "   "
+			if hasPR {
+				prStyled = ReviewStyle.Render("●") + "  "
+			}
+			mergedStyled := ""
+			if br.IsMerged {
+				mergedStyled = CleanStyle.Render("✓")
+			}
+			nameHL := hlText(name, "subject", hlField, hlValue)
+			var nameStyled string
+			if nameHL != name {
+				nameStyled = nameHL // block-match overrides normal styling
+			} else if br.IsDefault {
+				nameStyled = CleanStyle.Render(name)
 			} else {
-				prStyled := "   "
-				if hasPR {
-					prStyled = ReviewStyle.Render("●") + "  "
-				}
-				mergedStyled := ""
-				if br.IsMerged {
-					mergedStyled = CleanStyle.Render("✓")
-				}
-				nameHL := hlText(name, "subject", hlField, hlValue)
-				var nameStyled string
-				if nameHL != name {
-					nameStyled = nameHL // block-match overrides normal styling
-				} else if br.IsDefault {
-					nameStyled = CleanStyle.Render(name)
-				} else {
-					nameStyled = DimStyle.Render(name)
-				}
-				repoStyled := hlText(repo, "repo", hlField, hlValue)
-				sw.writeLine("  " +
-					cell(repoStyled, 22) + cell(nameStyled, 28) +
-					cell(DimStyle.Render(author), 18) + cell(DimStyle.Render(ago), 10) +
-					cell(prStyled, 3) + mergedStyled)
+				nameStyled = DimStyle.Render(name)
+			}
+			repoStyled := hlText(repo, "repo", hlField, hlValue)
+			row := "  " +
+				cell(repoStyled, 22) + cell(nameStyled, 28) +
+				cell(DimStyle.Render(author), 18) + cell(DimStyle.Render(ago), 10) +
+				cell(prStyled, 3) + mergedStyled
+			if flatIdx == cursor {
+				sw.writeLine(selRow(row))
+			} else {
+				sw.writeLine(row)
 			}
 			flatIdx++
 		}
@@ -458,22 +409,16 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 			subject := truncate(c.Subject, 50)
 			ago := timeAgo(c.Date)
 			author := truncate(c.Author, 16)
+			repoStyled := hlText(repo, "repo", hlField, hlValue)
+			subjectStyled := hlText(subject, "subject", hlField, hlValue)
+			row := "  " +
+				cell(repoStyled, 20) + cell(DimStyle.Render(c.Hash), 9) +
+				cell(subjectStyled, 52) + cell(DimStyle.Render(author), 18) +
+				DimStyle.Render(ago)
 			if flatIdx == cursor {
-				line := "▶ " +
-					cell(repo, 20) + cell(c.Hash, 9) +
-					cell(subject, 52) + cell(author, 18) + ago
-				pad := width - lipgloss.Width(line)
-				if pad > 0 {
-					line += strings.Repeat(" ", pad)
-				}
-				sw.writeLine(SelectedRowStyle.Render(line))
+				sw.writeLine(selRow(row))
 			} else {
-				repoStyled := hlText(repo, "repo", hlField, hlValue)
-				subjectStyled := hlText(subject, "subject", hlField, hlValue)
-				sw.writeLine("  " +
-					cell(repoStyled, 20) + cell(DimStyle.Render(c.Hash), 9) +
-					cell(subjectStyled, 52) + cell(DimStyle.Render(author), 18) +
-					DimStyle.Render(ago))
+				sw.writeLine(row)
 			}
 			flatIdx++
 		}

@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -97,9 +98,68 @@ func LocalBranches(path string) ([]string, error) {
 	return strings.Split(out, "\n"), nil
 }
 
-// CommitDiff returns the full patch for a single commit (git show).
+// CommitDiff returns the full patch for a single commit (git show), no color.
 func CommitDiff(repoPath, hash string) (string, error) {
 	return run(repoPath, "show", "--stat", "--patch", "--no-color", hash)
+}
+
+// diffPager returns the user's configured diff pager.
+// Priority: GIT_PAGER env → git config core.pager → PAGER env → ""
+func diffPager(repoPath string) string {
+	if p := os.Getenv("GIT_PAGER"); p != "" {
+		return p
+	}
+	if out, err := run(repoPath, "config", "core.pager"); err == nil && out != "" {
+		return out
+	}
+	if p := os.Getenv("PAGER"); p != "" {
+		return p
+	}
+	return ""
+}
+
+// runThroughDelta pipes git output through delta (or bat) with no paging.
+// Unknown pagers fall through and the original input is returned.
+func runThroughDelta(pagerCmd, input string, width int) (string, error) {
+	base := filepath.Base(strings.Fields(pagerCmd)[0])
+	var cmd *exec.Cmd
+	switch base {
+	case "delta":
+		cmd = exec.Command("delta", "--paging=never", fmt.Sprintf("--width=%d", width))
+	case "bat":
+		cmd = exec.Command("bat", "--paging=never", "--color=always", "--plain")
+	default:
+		return input, nil
+	}
+	cmd.Stdin = strings.NewReader(input)
+	out, err := cmd.Output()
+	if err != nil {
+		return input, nil // pager failed; fall back to original
+	}
+	return string(out), nil
+}
+
+// CommitDiffFormatted returns the patch for a commit, optionally processed
+// through the user's configured diff pager.
+// Returns (content, preColored, error). preColored=true means the content
+// already contains ANSI escape sequences and should not be re-colored.
+func CommitDiffFormatted(repoPath, hash string, width int) (string, bool, error) {
+	pager := diffPager(repoPath)
+	if pager == "" {
+		content, err := CommitDiff(repoPath, hash)
+		return content, false, err
+	}
+	// Produce colored git output for the pager
+	cmd := exec.Command("git", "show", "--stat", "--patch", "--color=always", hash)
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		// Fallback to plain diff
+		content, err2 := CommitDiff(repoPath, hash)
+		return content, false, err2
+	}
+	result, _ := runThroughDelta(pager, string(out), width)
+	return result, true, nil
 }
 
 // CommitCount returns the total number of commits reachable from HEAD.

@@ -97,12 +97,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, b
 }
 
 // splashArt is the ASCII art for the splash/about screen (! key) and screensaver.
-// Generated with figlet standard font for "grove".
-var splashArt = `   __ _ _ __ _____   _____
-  / _` + "`" + ` | '__/ _ \ \ / / _ \
+var splashArt = `               {o,o}
+   ___ _ __ ___|)_)|___  ___
+  / _ \ '__/  _ \ \ / / _ \
  | (_| | | | (_) \ V /  __/
   \__, |_|  \___/ \_/ \___|
-     |_|`
+  |___/
+  one repo to rule them all`
 
 // splashArtLines are the art lines pre-split for screensaver positioning.
 var splashArtLines = strings.Split(splashArt, "\n")
@@ -137,7 +138,9 @@ func RenderScreensaver(x, y, colorIdx, width, height int) string {
 			b.WriteString(strings.Repeat(" ", pad))
 			b.WriteString(style.Render(line))
 		}
-		b.WriteString("\n")
+		if row < height-1 {
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
 }
@@ -157,7 +160,7 @@ func RenderSplash(configPath, cacheDir, logPath, version string, width int) stri
 		lines = append(lines, "  "+HeaderStyle.Render(l))
 	}
 	lines = append(lines, "")
-	lines = append(lines, "  "+DimStyle.Render("git repository monitor  ·  press ! to close"))
+	lines = append(lines, "  "+DimStyle.Render("press ! to close"))
 	lines = append(lines, "")
 	lines = append(lines, "  "+cell(DimStyle.Render("version"), 10)+version)
 	lines = append(lines, "  "+cell(DimStyle.Render("config"), 10)+configPath)
@@ -199,7 +202,7 @@ func RenderSortIndicator(field string, asc bool) string {
 // ── Help overlay ──────────────────────────────────────────────────────────
 
 // RenderHelp renders a full keybinding reference as a centred bordered box.
-func RenderHelp(width int) string {
+func RenderHelp(width int, version string) string {
 	sections := []struct {
 		title string
 		rows  [][2]string
@@ -253,6 +256,8 @@ func RenderHelp(width int) string {
 		}
 	}
 	lines = append(lines, "")
+	lines = append(lines, DimStyle.Render("  grove  v"+version))
+	lines = append(lines, "")
 
 	boxW := min(width-4, 72)
 	box := lipgloss.NewStyle().
@@ -275,8 +280,10 @@ func RenderInfoBar(parts []string) string {
 
 // ── Diff view ─────────────────────────────────────────────────────────────
 
-// RenderDiff renders a coloured git-show patch, clipped to maxLines.
-func RenderDiff(repoName, hash, content string, maxLines int) string {
+// RenderDiff renders a diff patch, clipped to maxLines.
+// When preColored is true the content is already ANSI-colored (e.g. via delta)
+// and colorDiffLine is skipped.
+func RenderDiff(repoName, hash, content string, maxLines int, preColored bool) string {
 	var b strings.Builder
 	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s  %s", repoName, hash)))
 	b.WriteString("\n")
@@ -291,7 +298,11 @@ func RenderDiff(repoName, hash, content string, maxLines int) string {
 			b.WriteString("\n")
 			break
 		}
-		b.WriteString(colorDiffLine(line))
+		if preColored {
+			b.WriteString(line)
+		} else {
+			b.WriteString(colorDiffLine(line))
+		}
 		b.WriteString("\n")
 		shown++
 	}

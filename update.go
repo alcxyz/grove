@@ -26,7 +26,7 @@ func containsAuthErr(errs []string) bool {
 
 func (m appModel) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg)}
+	cmds := []tea.Cmd{loadRepos(m.cfg), checkLatestVersion()}
 
 	// Background-refresh any cached data that is stale
 	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
@@ -124,7 +124,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							c := acts[m.cursor]
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
-							return m, loadDiff(c.RepoPath, c.Repo, c.Hash)
+							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 						}
 					}
 				case "k", "up":
@@ -135,7 +135,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							c := acts[m.cursor]
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
-							return m, loadDiff(c.RepoPath, c.Repo, c.Hash)
+							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 						}
 					}
 				}
@@ -305,7 +305,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.diffContent = ""
 					m.loading = true
 					m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
-					return m, loadDiff(c.RepoPath, c.Repo, c.Hash)
+					return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 				}
 			}
 		case "r":
@@ -422,8 +422,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scrollOffset[m.activeTab] = so
 		case tea.MouseButtonLeft:
 			if msg.Action == tea.MouseActionPress {
-				// Tab bar (row 2)
-				if msg.Y == 2 {
+				// Tab bar (rows 2–3, exact Y depends on terminal/rendering)
+				if msg.Y == 2 || msg.Y == 3 {
 					if t := tabAtX(msg.X); t >= 0 {
 						m.showDiff = false
 						m.showDetail = false
@@ -473,7 +473,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.diffContent = ""
 							m.loading = true
 							m.statusMsg = fmt.Sprintf("Loading diff %s…", c.Hash)
-							return m, loadDiff(c.RepoPath, c.Repo, c.Hash)
+							return m, loadDiff(c.RepoPath, c.Repo, c.Hash, m.width)
 						}
 					}
 				} else {
@@ -538,8 +538,12 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.diffContent = msg.content
 		m.diffRepo = msg.repo
 		m.diffHash = msg.hash
+		m.diffPreColored = msg.preColored
 		m.loading = false
 		m.statusMsg = fmt.Sprintf("%s/%s", msg.repo, msg.hash)
+
+	case versionCheckMsg:
+		m.latestVersion = msg.latest
 
 	case fetchDoneMsg:
 		m.statusMsg = msg.msg

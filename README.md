@@ -3,11 +3,13 @@
 A terminal UI for monitoring GitHub repositories. See branch status, dirty working trees, ahead/behind counts, open PRs, recent branches, and commit activity across all your repos without leaving the terminal.
 
 ```
-   __ _ _ __ _____   _____
-  / _` | '__/ _ \ \ / / _ \
+               {o,o}
+   ___ _ __ ___|)_)|___  ___
+  / _ \ '__/  _ \ \ / / _ \
  | (_| | | | (_) \ V /  __/
   \__, |_|  \___/ \_/ \___|
-     |_|
+  |___/
+  one repo to rule them all
 ```
 
 ## Features
@@ -21,9 +23,10 @@ A terminal UI for monitoring GitHub repositories. See branch status, dirty worki
 - **Sort**: ascending/descending by date, author, subject/name, or repository
 - **Block-jump navigation**: jump between repo blocks `[ ]`, subject blocks `( )`, or config groups `{ }`
 - **Detail pane**: full repo detail with local branches, open PRs, recent commits, and stats
-- **Diff viewer**: inline `git show` output with syntax colouring
+- **Diff viewer**: inline `git show` output with syntax colouring; respects your configured diff pager (`delta`, `bat`)
 - **Mouse support**: scroll wheel, click to select, tab-bar clicks, double-click to open
 - **Screensaver**: bouncing logo after a configurable idle timeout
+- **Update notifications**: footer shows when a newer release is available
 - Catppuccin Mocha colour palette
 
 ## Installation
@@ -144,7 +147,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 | Key | Action |
 |-----|--------|
 | `enter` | Open detail pane (tab 1), open diff (tab 4) |
-| `o` | Open PR in browser (tabs 2 and 4) |
+| `o` | Open PR in browser (tab 2, detail pane) |
 | `p` | `git pull` current repo (tab 1) |
 | `r` | Refresh current tab |
 | `R` | Toggle auto-refresh |

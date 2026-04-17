@@ -141,6 +141,14 @@ func main() {
 		initRuns, initRunsAt = runs, at
 	}
 
+	// Restore last active profile from persisted state.
+	initProfile := 0
+	if st, err := cache.LoadState(cacheDir); err == nil {
+		if st.ActiveProfile >= -1 && st.ActiveProfile < len(cfg.Profiles) {
+			initProfile = st.ActiveProfile
+		}
+	}
+
 	m := appModel{
 		cfg:              cfg,
 		statusMsg:        initStatus,
@@ -164,7 +172,7 @@ func main() {
 		activityLoadedAt: initActivityAt,
 		runs:             initRuns,
 		runsLoadedAt:     initRunsAt,
-		activeProfile:    0,
+		activeProfile:    initProfile,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

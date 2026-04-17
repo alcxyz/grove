@@ -320,6 +320,10 @@ func loadDetail(repo model.Repo) tea.Cmd {
 		go func() {
 			defer wg.Done()
 			commits, _ = gitpkg.RecentCommits(repo.Path, 15)
+			for i := range commits {
+				commits[i].RepoPath = repo.Path
+				commits[i].Repo = repo.Name
+			}
 		}()
 		go func() {
 			defer wg.Done()
@@ -360,6 +364,46 @@ func launchLazygit(path string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
 			return statusMsg(fmt.Sprintf("lazygit exited: %v", err))
+		}
+		return statusMsg("back in grove")
+	})
+}
+
+// launchNvim suspends grove and opens nvim at the given repo directory.
+func launchNvim(path string) tea.Cmd {
+	if path == "" {
+		return func() tea.Msg { return statusMsg("no repo selected") }
+	}
+	bin := os.Getenv("EDITOR")
+	if bin == "" {
+		bin = "nvim"
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return func() tea.Msg { return statusMsg(fmt.Sprintf("%s not found on PATH", bin)) }
+	}
+	c := exec.Command(bin, ".")
+	c.Dir = path
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return statusMsg(fmt.Sprintf("%s exited: %v", bin, err))
+		}
+		return statusMsg("back in grove")
+	})
+}
+
+// launchDiffnav suspends grove and opens diffnav for a specific commit.
+func launchDiffnav(repoPath, hash string) tea.Cmd {
+	if repoPath == "" {
+		return func() tea.Msg { return statusMsg("no repo selected") }
+	}
+	if _, err := exec.LookPath("diffnav"); err != nil {
+		return func() tea.Msg { return statusMsg("diffnav not found on PATH") }
+	}
+	// pipe git show into diffnav
+	c := exec.Command("bash", "-c", fmt.Sprintf("cd %q && git show %s | diffnav", repoPath, hash))
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return statusMsg(fmt.Sprintf("diffnav exited: %v", err))
 		}
 		return statusMsg("back in grove")
 	})

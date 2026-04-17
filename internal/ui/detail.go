@@ -10,33 +10,44 @@ import (
 
 // detailSection writes a section header and returns a helper that writes rows,
 // capped at maxRows, appending a "… N more" dim line when truncated.
-func detailSection(b *strings.Builder, title string, total, maxRows int) func(row string) {
+// lineNum tracks the current rendered line; highlightLine selects one row.
+func detailSection(b *strings.Builder, title string, total, maxRows int, lineNum *int, highlightLine int) func(row string) {
 	b.WriteString(HeaderStyle.Render(title))
 	b.WriteString("\n")
+	*lineNum++
 	written := 0
 	return func(row string) {
 		if written < maxRows {
-			b.WriteString(row)
+			if *lineNum == highlightLine {
+				b.WriteString(selRow(row))
+			} else {
+				b.WriteString(row)
+			}
 			b.WriteString("\n")
+			*lineNum++
 		} else if written == maxRows {
 			remaining := total - maxRows
 			if remaining > 0 {
 				b.WriteString(DimStyle.Render(fmt.Sprintf("  … %d more", remaining)))
 				b.WriteString("\n")
+				*lineNum++
 			}
 		}
 		written++
 	}
 }
 
-func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int) string {
+func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int, highlightLine int) string {
 	var b strings.Builder
+	lineNum := 0
 
 	// Repo header
 	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s", repo.Name)))
 	b.WriteString("\n")
+	lineNum++
 	b.WriteString(DimStyle.Render(strings.Repeat("─", min(width, 90))))
 	b.WriteString("\n\n")
+	lineNum += 2
 
 	// Status info
 	status := CleanStyle.Render("clean")
@@ -58,22 +69,29 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 	}
 
 	b.WriteString(fmt.Sprintf("  Branch:  %s\n", HeaderStyle.Render(repo.Branch)))
+	lineNum++
 	b.WriteString(fmt.Sprintf("  Status:  %s\n", status))
+	lineNum++
 	b.WriteString(fmt.Sprintf("  Sync:    %s\n", syncInfo))
+	lineNum++
 	b.WriteString(fmt.Sprintf("  Path:    %s\n", DimStyle.Render(repo.Path)))
+	lineNum++
 	if stats.CommitCount > 0 || stats.Contributors > 0 {
 		b.WriteString(fmt.Sprintf("  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount))))
 		if stats.Contributors > 0 {
 			b.WriteString(fmt.Sprintf("   Contributors: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.Contributors))))
 		}
 		b.WriteString("\n")
+		lineNum++
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Local branches ───────────────────────────────────────────────────────
-	write := detailSection(&b, fmt.Sprintf("  Local branches (%d)", len(localBranches)), len(localBranches), 12)
+	write := detailSection(&b, fmt.Sprintf("  Local branches (%d)", len(localBranches)), len(localBranches), 12, &lineNum, highlightLine)
 	if len(localBranches) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, br := range localBranches {
 			marker := "  "
@@ -84,16 +102,17 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Remote branches ──────────────────────────────────────────────────────
-	// Build PR-branch set from loaded PRs.
 	prBranches := map[string]bool{}
 	for _, pr := range prs {
 		prBranches[pr.Branch] = true
 	}
-	write = detailSection(&b, fmt.Sprintf("  Remote branches (%d)", len(remoteBranches)), len(remoteBranches), 12)
+	write = detailSection(&b, fmt.Sprintf("  Remote branches (%d)", len(remoteBranches)), len(remoteBranches), 12, &lineNum, highlightLine)
 	if len(remoteBranches) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, br := range remoteBranches {
 			marker := "  "
@@ -116,11 +135,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Open PRs ─────────────────────────────────────────────────────────────
-	write = detailSection(&b, fmt.Sprintf("  Open PRs (%d)", len(prs)), len(prs), 10)
+	write = detailSection(&b, fmt.Sprintf("  Open PRs (%d)", len(prs)), len(prs), 10, &lineNum, highlightLine)
 	if len(prs) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, pr := range prs {
 			title := truncate(pr.Title, 52)
@@ -129,11 +150,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── CI runs ──────────────────────────────────────────────────────────────
-	write = detailSection(&b, fmt.Sprintf("  CI runs (%d)", len(runs)), len(runs), 8)
+	write = detailSection(&b, fmt.Sprintf("  CI runs (%d)", len(runs)), len(runs), 8, &lineNum, highlightLine)
 	if len(runs) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, r := range runs {
 			wf := truncate(r.WorkflowName, 24)
@@ -144,11 +167,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Recent commits ───────────────────────────────────────────────────────
-	write = detailSection(&b, fmt.Sprintf("  Recent commits (%d)", len(commits)), len(commits), 10)
+	write = detailSection(&b, fmt.Sprintf("  Recent commits (%d)", len(commits)), len(commits), 10, &lineNum, highlightLine)
 	if len(commits) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, c := range commits {
 			subject := truncate(c.Subject, 50)
@@ -338,25 +363,27 @@ var helpPages = [2][]struct {
 	{
 		{"Navigation", [][2]string{
 			{"j / k", "move down / up"},
+			{"h / l", "previous / next tab"},
+			{"H / L", "previous / next profile"},
 			{"gg / G", "first / last item"},
+			{"tab / shift+tab", "page jump  (accelerates: 5 → 10 → 20 → 25)"},
 			{"{ / }", "jump between groups"},
-			{"[ / ]", "jump between repo blocks  (tab 1: dirty/behind repos)"},
-			{"( / )", "jump between CI status blocks (tab 1) · subject/branch/message blocks (tabs 2–5)"},
-			{"tab / shift+tab", "next / previous tab"},
-			{"1 / 2 / 3 / 4 / 5", "switch to tab directly"},
-			{"< / >", "switch profile  (when multiple profiles configured)"},
+			{"[ / ]", "jump between repo blocks  (tab 1: dirty/behind)"},
+			{"( / )", "jump between subject blocks  (tab 1: CI status)"},
+			{"1–5", "switch to tab directly"},
 		}},
 		{"Actions", [][2]string{
-			{"enter", "open detail pane (tabs 1–4) · open diff (tab 5)"},
-			{"o", "open on GitHub in browser  (all tabs)"},
-			{"space", "open lazygit for current repo  (all tabs)"},
-			{"p", "git pull current repo  (all tabs)"},
+			{"enter", "open detail (tabs 1–4) · open diff (tab 5)"},
+			{"o", "open on GitHub in browser"},
+			{"space", "diffnav (commits) · lazygit (repos)"},
+			{"e", "open $EDITOR / nvim at repo root"},
+			{"p", "git pull current repo"},
 			{"r", "refresh current tab"},
-			{"R", "toggle auto-refresh on / off"},
+			{"R", "toggle auto-refresh"},
 			{"ctrl+f", "git fetch all repos"},
-			{"g  (single, 400 ms)", "toggle grouped / flat view"},
-			{"!", "about / paths  (tab → screensaver)"},
-			{"?", "toggle this help"},
+			{"g (single)", "toggle grouped / flat view"},
+			{"!", "about / paths"},
+			{"?", "this help"},
 			{"q / ctrl+c", "quit"},
 		}},
 	},
@@ -452,8 +479,8 @@ func RenderHelp(width, page int, version string) string {
 	page = page % 2
 	sections := helpPages[page]
 
-	boxW := min(width-4, 72)
-	keyW := 26
+	boxW := min(width-4, 90)
+	keyW := 22
 	var lines []string
 	for _, s := range sections {
 		lines = append(lines, "")
@@ -465,7 +492,7 @@ func RenderHelp(width, page int, version string) string {
 	lines = append(lines, "")
 	lines = append(lines, DimStyle.Render(fmt.Sprintf("  grove  v%s", version))+
 		"   "+DimStyle.Render(fmt.Sprintf("page %d / 2", page+1))+
-		"   "+DimStyle.Render("tab · shift+tab  flip page"))
+		"   "+DimStyle.Render("h / l  flip page"))
 	lines = append(lines, "")
 
 	box := lipgloss.NewStyle().

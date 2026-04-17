@@ -79,6 +79,34 @@ func capSlice[T any](s []T, max int) []T {
 	return s
 }
 
+// UIState holds minimal session state persisted across restarts.
+type UIState struct {
+	ActiveProfile int `json:"active_profile"`
+}
+
+func LoadState(dir string) (UIState, error) {
+	data, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		return UIState{}, err
+	}
+	var s UIState
+	if err := json.Unmarshal(data, &s); err != nil {
+		return UIState{}, err
+	}
+	return s, nil
+}
+
+func SaveState(dir string, s UIState) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "state.json"), b, 0o644)
+}
+
 func LoadPRs(dir, configKey string) ([]model.PR, time.Time, error) {
 	return load[[]model.PR](dir, "prs", configKey)
 }

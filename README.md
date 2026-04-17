@@ -141,7 +141,7 @@ grove ~/dir1 ~/dir2
 | `/` | Open text filter |
 | `esc` | Clear active filter / close pane |
 | `d` / `D` | Cycle by author, sort by author |
-| `s` / `S` | Cycle by subject prefix, sort by name / title / branch / subject |
+| `s` / `S` | Cycle by subject prefix, sort by name / title |
 | `a` / `A` | Cycle by repository, sort by repository |
 | `f` / `F` | Cycle by date, sort by date / updated |
 | `x` / `X` | Cycle / sort by **PR count** (tab 1) / **review status** (tab 2) / **has-PR** (tab 4) |
@@ -177,7 +177,7 @@ The detail pane opens with `enter` on any tab and shows full repo info with an i
 |-----|--------|
 | `j` / `k` | Select next / previous item |
 | `{ }` | Jump between sections (branches, PRs, CI, commits) |
-| `[ ]` | Previous / next repo |
+| `[ ]` | Previous / next repo (follows source tab, skips duplicates) |
 | `gg` / `G` | First / last item |
 | `space` | Contextual: diffnav for commits, lazygit for branches/PRs |
 | `o` | Contextual: open item on GitHub (PR URL, commit, branch, CI run) |
@@ -239,7 +239,7 @@ Grove hands off to external tools via the `space` and `e` keys:
 | Detail pane (branch/PR selected) | lazygit | `$EDITOR` / nvim |
 | Diff view | diffnav | `$EDITOR` / nvim |
 
-If a tool is not found on `PATH`, a status message is shown instead of failing silently.
+If a tool is not found on `PATH` or there is no valid target (no GitHub URL, no repo selected), a status message is shown instead of failing silently.
 
 ## Mouse
 

@@ -693,6 +693,61 @@ func (m *appModel) jumpTo(starts []int, dir int) {
 	m.adjustScroll()
 }
 
+// repoForDetailNav resolves a cursor index (in the current tab's grouped order)
+// to the associated Repo for loading into the detail pane.  Used by [/] navigation
+// so the detail pane cycles through the source tab's items, not always Dashboard repos.
+func (m appModel) repoForDetailNav(idx int) (model.Repo, bool) {
+	flat := 0
+	switch m.activeTab {
+	case tabDashboard:
+		for _, g := range m.groupedRepos() {
+			for _, r := range g.Repos {
+				if flat == idx {
+					return r, true
+				}
+				flat++
+			}
+		}
+	case tabPRs:
+		for _, g := range m.groupedPRs() {
+			for _, pr := range g.PRs {
+				if flat == idx {
+					return m.repoByName(repoBaseName(pr.Repo))
+				}
+				flat++
+			}
+		}
+	case tabBranches:
+		for _, g := range m.groupedBranches() {
+			for _, br := range g.Branches {
+				if flat == idx {
+					return m.repoByName(repoBaseName(br.Repo))
+				}
+				flat++
+			}
+		}
+	case tabActivity:
+		for _, g := range m.groupedActivity() {
+			for _, c := range g.Commits {
+				if flat == idx {
+					return m.repoByName(c.Repo)
+				}
+				flat++
+			}
+		}
+	case tabCI:
+		for _, g := range m.groupedRuns() {
+			for _, r := range g.Runs {
+				if flat == idx {
+					return m.repoByName(repoBaseName(r.Repo))
+				}
+				flat++
+			}
+		}
+	}
+	return model.Repo{}, false
+}
+
 // repoPathFor returns the local filesystem path for a repo matched by base name.
 func (m appModel) repoPathFor(baseName string) string {
 	for _, r := range m.repos {
@@ -872,16 +927,15 @@ func (m appModel) detailSectionStarts() []int {
 
 	// Count remote branches and CI runs for the repo currently shown in detail.
 	var remoteCount, ciCount int
-	if repo, ok := m.repoAtCursor(); ok {
-		for _, br := range m.branches {
-			if repoBaseName(br.Repo) == repo.Name {
-				remoteCount++
-			}
+	repoName := m.detailRepo.Name
+	for _, br := range m.branches {
+		if repoBaseName(br.Repo) == repoName {
+			remoteCount++
 		}
-		for _, r := range m.runs {
-			if repoBaseName(r.Repo) == repo.Name {
-				ciCount++
-			}
+	}
+	for _, r := range m.runs {
+		if repoBaseName(r.Repo) == repoName {
+			ciCount++
 		}
 	}
 
@@ -909,13 +963,13 @@ func (m appModel) detailSectionStarts() []int {
 // detailRemoteBranches returns the remote branches for the repo currently shown
 // in the detail pane, filtered from the global branch list.
 func (m appModel) detailRemoteBranches() []model.BranchInfo {
-	repo, ok := m.repoAtCursor()
-	if !ok {
+	name := m.detailRepo.Name
+	if name == "" {
 		return nil
 	}
 	var out []model.BranchInfo
 	for _, br := range m.branches {
-		if repoBaseName(br.Repo) == repo.Name {
+		if repoBaseName(br.Repo) == name {
 			out = append(out, br)
 		}
 	}
@@ -925,13 +979,13 @@ func (m appModel) detailRemoteBranches() []model.BranchInfo {
 // detailCIRuns returns the CI runs for the repo currently shown in the detail
 // pane, filtered from the global runs list.
 func (m appModel) detailCIRuns() []model.WorkflowRun {
-	repo, ok := m.repoAtCursor()
-	if !ok {
+	name := m.detailRepo.Name
+	if name == "" {
 		return nil
 	}
 	var out []model.WorkflowRun
 	for _, r := range m.runs {
-		if repoBaseName(r.Repo) == repo.Name {
+		if repoBaseName(r.Repo) == name {
 			out = append(out, r)
 		}
 	}

@@ -267,13 +267,13 @@ func RenderOwlEyes(blinkState int) string {
 
 // RenderBottomArea renders the two-line bottom chrome: status bar then info bar.
 // It outputs exactly BottomChromeHeight (2) lines with no leading or trailing newline.
-// The owl eyes are anchored on the left of the info bar line.
+// The owl eyes are anchored on the left of the status bar line.
 func RenderBottomArea(statusMsg string, loading bool, infoParts []string, blinkState, _ int) string {
 	s := statusMsg
 	if loading {
 		s = "⏳ " + s
 	}
-	return StatusBarStyle.Render(s) + "\n" + RenderOwlEyes(blinkState) + RenderInfoBar(infoParts)
+	return RenderOwlEyes(blinkState) + " " + StatusBarStyle.Render(s) + "\n" + RenderInfoBar(infoParts)
 }
 
 // renderSplashLine renders one line of the ASCII art.
@@ -392,7 +392,7 @@ var helpPages = [2][]struct {
 		{"Filters & sort", [][2]string{
 			{"/", "open text filter  ·  esc clear"},
 			{"d / D", "cycle by author  ·  sort ↑↓ by author"},
-			{"s / S", "cycle by subject prefix  ·  sort ↑↓ by name/title/branch/subject"},
+			{"s / S", "cycle by subject  ·  sort ↑↓ by name/title"},
 			{"a / A", "cycle by repository  ·  sort ↑↓ by repository  (tabs 2–5)"},
 			{"f / F", "cycle by date  ·  sort ↑↓ by date/updated"},
 			{"x / X", "cycle · sort  PR count / review status  (tabs 1 2 4)"},

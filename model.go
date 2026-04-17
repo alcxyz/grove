@@ -82,6 +82,7 @@ type appModel struct {
 
 	// Detail pane
 	showDetail     bool
+	detailRepo     model.Repo   // the repo currently shown in detail
 	detailCommits  []model.Commit
 	detailPRs      []model.PR
 	detailBranches []string

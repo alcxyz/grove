@@ -311,6 +311,24 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								c := m.detailCommits[item.Index]
 								return m, launchDiffnav(c.RepoPath, c.Hash)
 							}
+						case detailPR:
+							if m.detailRepo.Path != "" {
+								return m, launchGhDash(m.detailRepo.Path)
+							}
+							m.statusMsg = "no repo selected"
+						case detailRemoteBranch:
+							branches := m.detailRemoteBranches()
+							if item.Index < len(branches) && m.detailRepo.Path != "" {
+								return m, launchLazygitOnBranch(m.detailRepo.Path, branches[item.Index].Name)
+							}
+							m.statusMsg = "nothing selected"
+						case detailCIRun:
+							runs := m.detailCIRuns()
+							if item.Index < len(runs) && m.detailRepo.Path != "" {
+								if wf := workflowFilePath(m.detailRepo.Path, runs[item.Index]); wf != "" {
+									return m, launchEditorAt(wf)
+								}
+							}
 						default:
 							if m.detailRepo.Path != "" {
 								return m, launchLazygit(m.detailRepo.Path)
@@ -672,8 +690,33 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cycleSortField("ci")
 			}
 		case " ":
-			// Diff/commit-centric tabs → diffnav; repo-centric tabs → lazygit.
+			// Context-aware external tool per tab.
 			switch m.activeTab {
+			case tabPRs:
+				if path := m.repoPathAtCursor(); path != "" {
+					return m, launchGhDash(path)
+				}
+				m.statusMsg = "no repo selected"
+			case tabBranches:
+				if br, ok := m.branchAtCursor(); ok {
+					if path := m.repoPathAtCursor(); path != "" {
+						return m, launchLazygitOnBranch(path, br.Name)
+					}
+				}
+				m.statusMsg = "nothing selected"
+			case tabCI:
+				if r, ok := m.runAtCursor(); ok {
+					if repoPath := m.repoPathFor(repoBaseName(r.Repo)); repoPath != "" {
+						if wf := workflowFilePath(repoPath, r); wf != "" {
+							return m, launchEditorAt(wf)
+						}
+						m.statusMsg = fmt.Sprintf("no local file for %s", r.WorkflowName)
+					} else {
+						m.statusMsg = "no repo selected"
+					}
+				} else {
+					m.statusMsg = "nothing selected"
+				}
 			case tabActivity:
 				if c, ok := m.commitAtCursor(); ok {
 					return m, launchDiffnav(c.RepoPath, c.Hash)
@@ -1010,7 +1053,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.statusMsg = string(msg)
 		m.loading = false
-		return m, loadRepos(m.cfg.Profiles)
+		// Re-enable mouse after returning from an external process (ExecProcess
+		// disables mouse reporting and Bubble Tea doesn't always restore it).
+		return m, tea.Batch(loadRepos(m.cfg.Profiles), tea.EnableMouseCellMotion)
 
 	case tickMsg:
 		if !m.autoRefresh {

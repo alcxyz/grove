@@ -160,16 +160,22 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if c, ok := m.commitAtCursor(); ok {
 						if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
 							_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+						} else {
+							m.statusMsg = "no GitHub owner configured"
 						}
+					} else {
+						m.statusMsg = "nothing selected"
 					}
 				case "e":
 					if c, ok := m.commitAtCursor(); ok {
 						return m, launchNvim(c.RepoPath)
 					}
+					m.statusMsg = "nothing selected"
 				case " ":
 					if c, ok := m.commitAtCursor(); ok {
 						return m, launchDiffnav(c.RepoPath, c.Hash)
 					}
+					m.statusMsg = "nothing selected"
 				case "j", "down":
 					m.diffScroll++
 					m.clampDiffScroll()
@@ -258,6 +264,8 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							branches := m.detailRemoteBranches()
 							if item.Index < len(branches) && repo.Owner != "" {
 								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/tree/%s", repo.Owner, repo.Name, branches[item.Index].Name))
+							} else {
+								m.statusMsg = "no GitHub URL for this branch"
 							}
 						case detailPR:
 							if item.Index < len(m.detailPRs) {
@@ -272,18 +280,21 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if item.Index < len(m.detailCommits) && repo.Owner != "" {
 								c := m.detailCommits[item.Index]
 								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", repo.Owner, repo.Name, c.Hash))
+							} else {
+								m.statusMsg = "no GitHub owner configured"
 							}
 						default:
-							// Local branches / fallback: open repo on GitHub.
-							if repo.Owner != "" {
-								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", repo.Owner, repo.Name))
-							}
+							// Local branches: no direct GitHub URL.
+							m.statusMsg = "no GitHub URL for local branches"
 						}
+					} else {
+						m.statusMsg = "nothing selected"
 					}
 				case "e":
 					if path := m.repoPathAtCursor(); path != "" {
 						return m, launchNvim(path)
 					}
+					m.statusMsg = "no repo selected"
 				case " ":
 					// Contextual external tool based on selected item.
 					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
@@ -298,7 +309,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if path := m.repoPathAtCursor(); path != "" {
 								return m, launchLazygit(path)
 							}
+							m.statusMsg = "no repo selected"
 						}
+					} else {
+						m.statusMsg = "nothing selected"
 					}
 				case "j", "down":
 					if m.detailCursor < len(m.detailItems)-1 {
@@ -655,16 +669,19 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if c, ok := m.commitAtCursor(); ok {
 					return m, launchDiffnav(c.RepoPath, c.Hash)
 				}
+				m.statusMsg = "nothing selected"
 			default:
 				if path := m.repoPathAtCursor(); path != "" {
 					return m, launchLazygit(path)
 				}
+				m.statusMsg = "no repo selected"
 			}
 		case "e":
 			// e = open editor (nvim / $EDITOR) at the repo root.
 			if path := m.repoPathAtCursor(); path != "" {
 				return m, launchNvim(path)
 			}
+			m.statusMsg = "no repo selected"
 		case "p":
 			// p = git pull the repo for the selected item (all tabs).
 			if path := m.repoPathAtCursor(); path != "" {
@@ -679,6 +696,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return statusMsg(fmt.Sprintf("Pulled %s", name))
 				}
 			}
+			m.statusMsg = "no repo selected"
 		case "o":
 			// o = open on GitHub in browser.
 			switch m.activeTab {
@@ -686,25 +704,39 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if r, ok := m.repoAtCursor(); ok {
 					if r.Owner != "" {
 						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					} else {
+						m.statusMsg = "no GitHub owner configured"
 					}
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabPRs:
 				if pr, ok := m.prAtCursor(); ok {
 					_ = ui.OpenURL(pr.URL)
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabBranches:
 				if br, ok := m.branchAtCursor(); ok {
 					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/tree/%s", br.Repo, br.Name))
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabActivity:
 				if c, ok := m.commitAtCursor(); ok {
 					if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
 						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+					} else {
+						m.statusMsg = "no GitHub owner configured"
 					}
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabCI:
 				if r, ok := m.runAtCursor(); ok {
 					_ = ui.OpenURL(r.URL)
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			}
 		case "up", "k":

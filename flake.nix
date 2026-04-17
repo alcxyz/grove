@@ -22,6 +22,7 @@
             #   nix build .# 2>&1 | grep "got:" | awk '{print $2}'
             vendorHash = "sha256-Ea94DPGLBQhW3gILQlWQXVVSZzJxGVtr0vuzYZSSUsk=";
 
+            subPackages = [ "cmd/grove" ];
             ldflags = [ "-s" "-w" "-X main.version=${version}" ];
 
             meta = with pkgs.lib; {

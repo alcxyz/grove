@@ -265,7 +265,7 @@ func (m appModel) View() string {
 		}
 	} else {
 		so := m.scrollOffset[m.activeTab]
-		ch := m.contentHeight()
+		sh := m.scrollHeight()
 		hlField, hlValue := m.highlightField, m.blockHighlightValue()
 		switch m.activeTab {
 		case tabDashboard:
@@ -285,12 +285,12 @@ func (m appModel) View() string {
 					ciStatus[name] = ui.CIStatusIcon(r.Status, r.Conclusion)
 				}
 			}
-			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, ch, prCounts, branchCounts, ciStatus, hlField, hlValue))
+			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, sh, prCounts, branchCounts, ciStatus, hlField, hlValue))
 		case tabPRs:
 			if m.authErr {
 				b.WriteString(ui.RenderAuthError())
 			} else {
-				b.WriteString(ui.RenderPRs(m.groupedPRs(), m.cursor, cw, so, ch, hlField, hlValue))
+				b.WriteString(ui.RenderPRs(m.groupedPRs(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.prs) == 0 && len(m.errLog) > 0 {
 					b.WriteString(ui.RenderErrors(m.errLog))
 				}
@@ -303,18 +303,18 @@ func (m appModel) View() string {
 				for _, pr := range m.prs {
 					prBranches[pr.Branch] = true
 				}
-				b.WriteString(ui.RenderBranches(m.groupedBranches(), m.cursor, cw, so, ch, prBranches, hlField, hlValue))
+				b.WriteString(ui.RenderBranches(m.groupedBranches(), m.cursor, cw, so, sh, prBranches, hlField, hlValue))
 				if len(m.branches) == 0 && len(m.errLog) > 0 {
 					b.WriteString(ui.RenderErrors(m.errLog))
 				}
 			}
 		case tabActivity:
-			b.WriteString(ui.RenderActivity(m.groupedActivity(), m.cursor, cw, so, ch, hlField, hlValue))
+			b.WriteString(ui.RenderActivity(m.groupedActivity(), m.cursor, cw, so, sh, hlField, hlValue))
 		case tabCI:
 			if m.authErr {
 				b.WriteString(ui.RenderAuthError())
 			} else {
-				b.WriteString(ui.RenderCI(m.groupedRuns(), m.cursor, cw, so, ch, hlField, hlValue))
+				b.WriteString(ui.RenderCI(m.groupedRuns(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.runs) == 0 && len(m.errLog) > 0 {
 					b.WriteString(ui.RenderErrors(m.errLog))
 				}

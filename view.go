@@ -237,7 +237,7 @@ func (m appModel) View() string {
 		b.WriteString(strings.Join(lines[start:end], "\n"))
 	} else if m.showDetail {
 		// Detail pane — use extracted helpers for remote branches and CI runs.
-		if repo, ok := m.repoAtCursor(); ok {
+		if repo := m.detailRepo; repo.Path != "" {
 			remoteBranches := m.detailRemoteBranches()
 			ciRuns := m.detailCIRuns()
 			hlLine := -1

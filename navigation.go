@@ -120,12 +120,23 @@ func (m appModel) contentHeight() int {
 	return h
 }
 
+// scrollHeight returns the number of lines available for scrollable list items
+// after subtracting the fixed column header that each Render* function emits.
+// Detail and diff views don't have a column header — use contentHeight() there.
+func (m appModel) scrollHeight() int {
+	h := m.contentHeight() - 1 // -1 for the column header line
+	if h < 1 {
+		return 1
+	}
+	return h
+}
+
 // adjustScroll keeps the cursor's visual line inside the visible viewport.
 func (m *appModel) adjustScroll() {
 	if m.height == 0 {
 		return
 	}
-	ch := m.contentHeight()
+	sh := m.scrollHeight()
 
 	var cvl int
 	switch m.activeTab {
@@ -145,8 +156,8 @@ func (m *appModel) adjustScroll() {
 	if cvl < so {
 		so = cvl
 	}
-	if cvl >= so+ch {
-		so = cvl - ch + 1
+	if cvl >= so+sh {
+		so = cvl - sh + 1
 	}
 	if so < 0 {
 		so = 0
@@ -200,7 +211,7 @@ func (m appModel) maxScrollOffset() int {
 			}
 		}
 	}
-	mso := totalVL - m.contentHeight()
+	mso := totalVL - m.scrollHeight()
 	if mso < 0 {
 		return 0
 	}

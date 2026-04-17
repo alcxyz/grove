@@ -634,15 +634,16 @@ func (m *appModel) jumpTo(starts []int, dir int) {
 	}
 	m.cursor = starts[next]
 	m.adjustScroll()
-	// Pull the viewport up so the group header / blank separator above the first
-	// item of the target block is visible (adjustScroll pins the cursor to the
-	// very top, which would hide the header line sitting one row above it).
+	// Try to show context (group header / blank separator) above the cursor
+	// by pulling the viewport up by 2 lines.  Re-call adjustScroll afterward
+	// so the cursor is never pushed below the visible area.
 	t := m.activeTab
 	if so := m.scrollOffset[t]; so >= 2 {
 		m.scrollOffset[t] = so - 2
 	} else {
 		m.scrollOffset[t] = 0
 	}
+	m.adjustScroll()
 }
 
 // repoPathFor returns the local filesystem path for a repo matched by base name.

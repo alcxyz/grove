@@ -50,7 +50,7 @@ release:
   draft: false
   prerelease: auto
 
-homebrew_casks:
+homebrew:
   - name: grove
     repository:
       owner: alcxyz

@@ -63,23 +63,23 @@ brews:
     install: |
       bin.install "grove"
 
-aurs:
-  - name: grove-bin
-    # Requires AUR_KEY secret — SSH private key registered on aur.archlinux.org
-    homepage: https://github.com/alcxyz/grove
-    description: Terminal UI for monitoring GitHub repositories
-    maintainers:
-      - alcxyz <alcxyz@users.noreply.github.com>
-    license: MIT
-    private_key: "{{ .Env.AUR_KEY }}"
-    git_url: ssh://aur@aur.archlinux.org/grove-bin.git
-    provides:
-      - grove
-    conflicts:
-      - grove
-    depends:
-      - glibc
-    package: |-
-      install -Dm755 "./grove" "${pkgdir}/usr/bin/grove"
-      install -Dm644 "./README.md" "${pkgdir}/usr/share/doc/grove/README.md"
-      install -Dm644 "./config.example.yaml" "${pkgdir}/usr/share/doc/grove/config.example.yaml"
+# AUR publishing disabled until AUR_KEY secret is fixed (libcrypto error).
+# aurs:
+#   - name: grove-bin
+#     homepage: https://github.com/alcxyz/grove
+#     description: Terminal UI for monitoring GitHub repositories
+#     maintainers:
+#       - alcxyz <alcxyz@users.noreply.github.com>
+#     license: MIT
+#     private_key: "{{ .Env.AUR_KEY }}"
+#     git_url: ssh://aur@aur.archlinux.org/grove-bin.git
+#     provides:
+#       - grove
+#     conflicts:
+#       - grove
+#     depends:
+#       - glibc
+#     package: |-
+#       install -Dm755 "./grove" "${pkgdir}/usr/bin/grove"
+#       install -Dm644 "./README.md" "${pkgdir}/usr/share/doc/grove/README.md"
+#       install -Dm644 "./config.example.yaml" "${pkgdir}/usr/share/doc/grove/config.example.yaml"

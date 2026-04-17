@@ -6,12 +6,17 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build & vet
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
@@ -26,3 +31,15 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      - name: Auto-tag release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          VERSION="v$(cat VERSION)"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists, skipping."
+          else
+            echo "Creating tag $VERSION"
+            git tag "$VERSION"
+            git push origin "$VERSION"
+          fi

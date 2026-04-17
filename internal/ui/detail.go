@@ -364,26 +364,26 @@ var helpPages = [2][]struct {
 		{"Navigation", [][2]string{
 			{"j / k", "move down / up"},
 			{"h / l", "previous / next tab"},
-			{"H / L", "previous / next profile  (when multiple profiles configured)"},
+			{"H / L", "previous / next profile"},
 			{"gg / G", "first / last item"},
-			{"tab / shift+tab", "jump 5 / 10 / 20 / 25 lines  (accelerates on rapid press)"},
+			{"tab / shift+tab", "page jump  (accelerates: 5 → 10 → 20 → 25)"},
 			{"{ / }", "jump between groups"},
-			{"[ / ]", "jump between repo blocks  (tab 1: dirty/behind repos)"},
-			{"( / )", "jump between CI status blocks (tab 1) · subject/branch/message blocks (tabs 2–5)"},
-			{"1 / 2 / 3 / 4 / 5", "switch to tab directly"},
+			{"[ / ]", "jump between repo blocks  (tab 1: dirty/behind)"},
+			{"( / )", "jump between subject blocks  (tab 1: CI status)"},
+			{"1–5", "switch to tab directly"},
 		}},
 		{"Actions", [][2]string{
-			{"enter", "open detail pane (tabs 1–4) · open diff (tab 5)"},
-			{"o", "open on GitHub in browser  (all tabs)"},
-			{"space", "open diffnav (activity/detail/diff) · lazygit (other tabs)"},
-			{"e", "open $EDITOR / nvim at repo root  (all tabs)"},
-			{"p", "git pull current repo  (all tabs)"},
+			{"enter", "open detail (tabs 1–4) · open diff (tab 5)"},
+			{"o", "open on GitHub in browser"},
+			{"space", "diffnav (commits) · lazygit (repos)"},
+			{"e", "open $EDITOR / nvim at repo root"},
+			{"p", "git pull current repo"},
 			{"r", "refresh current tab"},
-			{"R", "toggle auto-refresh on / off"},
+			{"R", "toggle auto-refresh"},
 			{"ctrl+f", "git fetch all repos"},
-			{"g  (single, 400 ms)", "toggle grouped / flat view"},
-			{"!", "about / paths  (tab → screensaver)"},
-			{"?", "toggle this help"},
+			{"g (single)", "toggle grouped / flat view"},
+			{"!", "about / paths"},
+			{"?", "this help"},
 			{"q / ctrl+c", "quit"},
 		}},
 	},
@@ -479,8 +479,8 @@ func RenderHelp(width, page int, version string) string {
 	page = page % 2
 	sections := helpPages[page]
 
-	boxW := min(width-4, 72)
-	keyW := 26
+	boxW := min(width-4, 90)
+	keyW := 22
 	var lines []string
 	for _, s := range sections {
 		lines = append(lines, "")
@@ -492,7 +492,7 @@ func RenderHelp(width, page int, version string) string {
 	lines = append(lines, "")
 	lines = append(lines, DimStyle.Render(fmt.Sprintf("  grove  v%s", version))+
 		"   "+DimStyle.Render(fmt.Sprintf("page %d / 2", page+1))+
-		"   "+DimStyle.Render("tab · shift+tab  flip page"))
+		"   "+DimStyle.Render("h / l  flip page"))
 	lines = append(lines, "")
 
 	box := lipgloss.NewStyle().

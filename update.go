@@ -96,13 +96,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Help overlay — tab/shift+tab cycle pages, anything else closes
+		// Help overlay — h/l cycle pages, anything else closes
 		if m.showHelp {
 			switch key {
-			case "tab":
+			case "h", "l", "tab", "shift+tab":
 				m.helpPage = (m.helpPage + 1) % 2
-			case "shift+tab":
-				m.helpPage = (m.helpPage + 1) % 2 // only 2 pages so same as +1
 			case "?", "esc", "q":
 				m.showHelp = false
 				m.helpPage = 0

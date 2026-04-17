@@ -320,6 +320,10 @@ func loadDetail(repo model.Repo) tea.Cmd {
 		go func() {
 			defer wg.Done()
 			commits, _ = gitpkg.RecentCommits(repo.Path, 15)
+			for i := range commits {
+				commits[i].RepoPath = repo.Path
+				commits[i].Repo = repo.Name
+			}
 		}()
 		go func() {
 			defer wg.Done()

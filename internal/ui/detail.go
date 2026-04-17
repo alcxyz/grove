@@ -349,7 +349,7 @@ var helpPages = [2][]struct {
 		{"Actions", [][2]string{
 			{"enter", "open detail pane (tabs 1–4) · open diff (tab 5)"},
 			{"o", "open on GitHub in browser  (all tabs)"},
-			{"space", "open lazygit for current repo  (all tabs)"},
+			{"space", "open diffnav (activity/detail/diff) · lazygit (other tabs)"},
 			{"p", "git pull current repo  (all tabs)"},
 			{"r", "refresh current tab"},
 			{"R", "toggle auto-refresh on / off"},

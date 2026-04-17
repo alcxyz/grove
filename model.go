@@ -86,7 +86,9 @@ type appModel struct {
 	detailPRs      []model.PR
 	detailBranches []string
 	detailStats    model.RepoStats
-	detailScroll   int // scroll offset within the detail content
+	detailScroll   int          // scroll offset within the detail content
+	detailCursor   int          // flat index into detailItems
+	detailItems    []detailItem // selectable items with section/line info
 
 	// Diff view (tab 4 enter)
 	showDiff       bool
@@ -116,6 +118,10 @@ type appModel struct {
 	// Mouse state
 	lastClickY  int
 	lastClickAt time.Time
+
+	// Tab streak for exponential scroll (tab / shift+tab)
+	lastTabAt time.Time
+	tabStreak int // 0-3 → jump distances [5, 10, 20, 25]
 
 	// Screensaver
 	lastActivity time.Time
@@ -167,6 +173,25 @@ type diffLoadedMsg struct {
 type runsLoadedMsg struct {
 	runs   []model.WorkflowRun
 	errors []string
+}
+
+// detailSect identifies which section of the detail pane an item belongs to.
+type detailSect int
+
+const (
+	detailLocalBranch  detailSect = iota
+	detailRemoteBranch
+	detailPR
+	detailCIRun
+	detailCommit
+)
+
+// detailItem maps a selectable item in the detail pane to its section, data
+// index within that section's slice, and rendered line number.
+type detailItem struct {
+	Section detailSect
+	Index   int // index into the relevant data slice
+	Line    int // 0-indexed rendered line number
 }
 
 type versionCheckMsg struct{ latest string }

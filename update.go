@@ -13,6 +13,11 @@ import (
 	"github.com/alcxyz/grove/internal/ui"
 )
 
+// saveState persists minimal UI state (active profile) for next launch.
+func (m appModel) saveState() {
+	_ = cache.SaveState(m.cacheDir, cache.UIState{ActiveProfile: m.activeProfile})
+}
+
 // containsAuthErr returns true if any error string matches the gh auth sentinel.
 func containsAuthErr(errs []string) bool {
 	needle := gh.ErrNotLoggedIn.Error()
@@ -59,6 +64,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// ctrl+c always quits, regardless of mode/overlay.
 		if key == "ctrl+c" {
+			m.saveState()
 			return m, tea.Quit
 		}
 
@@ -90,13 +96,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Help overlay — tab/shift+tab cycle pages, anything else closes
+		// Help overlay — h/l cycle pages, anything else closes
 		if m.showHelp {
 			switch key {
-			case "tab":
+			case "h", "l", "tab", "shift+tab":
 				m.helpPage = (m.helpPage + 1) % 2
-			case "shift+tab":
-				m.helpPage = (m.helpPage + 1) % 2 // only 2 pages so same as +1
 			case "?", "esc", "q":
 				m.showHelp = false
 				m.helpPage = 0
@@ -135,7 +139,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Diff view input
 		if m.showDiff {
-			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
+			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				// loadCommitAt fetches the diff for cursor c (grouped-order index)
 				// and resets diffScroll so the new diff starts at the top.
@@ -158,9 +162,13 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
 						}
 					}
+				case "e":
+					if c, ok := m.commitAtCursor(); ok {
+						return m, launchNvim(c.RepoPath)
+					}
 				case " ":
 					if c, ok := m.commitAtCursor(); ok {
-						return m, launchLazygit(c.RepoPath)
+						return m, launchDiffnav(c.RepoPath, c.Hash)
 					}
 				case "j", "down":
 					m.diffScroll++
@@ -217,7 +225,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Detail pane input
 		if m.showDetail {
-			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
+			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				// loadAt navigates to a different repo from within the detail pane.
 				// Walks the grouped structure so that [/] respects the current grouping.
@@ -241,28 +249,77 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "esc", "backspace", "q":
 					m.showDetail = false
 				case "o":
-					if r, ok := m.repoAtCursor(); ok && r.Owner != "" {
-						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					// Contextual open-in-browser based on selected item.
+					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
+						item := m.detailItems[m.detailCursor]
+						repo, _ := m.repoAtCursor()
+						switch item.Section {
+						case detailRemoteBranch:
+							branches := m.detailRemoteBranches()
+							if item.Index < len(branches) && repo.Owner != "" {
+								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/tree/%s", repo.Owner, repo.Name, branches[item.Index].Name))
+							}
+						case detailPR:
+							if item.Index < len(m.detailPRs) {
+								_ = ui.OpenURL(m.detailPRs[item.Index].URL)
+							}
+						case detailCIRun:
+							runs := m.detailCIRuns()
+							if item.Index < len(runs) {
+								_ = ui.OpenURL(runs[item.Index].URL)
+							}
+						case detailCommit:
+							if item.Index < len(m.detailCommits) && repo.Owner != "" {
+								c := m.detailCommits[item.Index]
+								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", repo.Owner, repo.Name, c.Hash))
+							}
+						default:
+							// Local branches / fallback: open repo on GitHub.
+							if repo.Owner != "" {
+								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", repo.Owner, repo.Name))
+							}
+						}
+					}
+				case "e":
+					if path := m.repoPathAtCursor(); path != "" {
+						return m, launchNvim(path)
 					}
 				case " ":
-					if path := m.repoPathAtCursor(); path != "" {
-						return m, launchLazygit(path)
+					// Contextual external tool based on selected item.
+					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
+						item := m.detailItems[m.detailCursor]
+						switch item.Section {
+						case detailCommit:
+							if item.Index < len(m.detailCommits) {
+								c := m.detailCommits[item.Index]
+								return m, launchDiffnav(c.RepoPath, c.Hash)
+							}
+						default:
+							if path := m.repoPathAtCursor(); path != "" {
+								return m, launchLazygit(path)
+							}
+						}
 					}
 				case "j", "down":
-					m.detailScroll++
-					m.clampDetailScroll()
+					if m.detailCursor < len(m.detailItems)-1 {
+						m.detailCursor++
+						m.adjustDetailScroll()
+					}
 				case "k", "up":
-					if m.detailScroll > 0 {
-						m.detailScroll--
+					if m.detailCursor > 0 {
+						m.detailCursor--
+						m.adjustDetailScroll()
 					}
 				case "G":
-					sects := m.detailSectionStarts()
-					total := sects[len(sects)-1]
-					m.detailScroll = max(0, total-m.contentHeight())
+					if len(m.detailItems) > 0 {
+						m.detailCursor = len(m.detailItems) - 1
+						m.adjustDetailScroll()
+					}
 				case "g":
 					if m.prevKey == "g" {
 						m.prevKey = ""
-						m.detailScroll = 0 // gg = scroll to top
+						m.detailCursor = 0
+						m.adjustDetailScroll()
 					} else {
 						m.prevKey = "g"
 						return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
@@ -280,28 +337,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return loadAt(m.cursor)
 				case "{":
-					// Jump to previous section start.
-					sects := m.detailSectionStarts()
-					sections := sects[:len(sects)-1] // exclude sentinel
-					target := 0
-					for i := len(sections) - 1; i >= 0; i-- {
-						if sections[i] < m.detailScroll {
-							target = sections[i]
-							break
-						}
-					}
-					m.detailScroll = target
+					m.detailJumpSection(-1)
 				case "}":
-					// Jump to next section start.
-					sects := m.detailSectionStarts()
-					sections := sects[:len(sects)-1] // exclude sentinel
-					for _, s := range sections {
-						if s > m.detailScroll {
-							m.detailScroll = s
-							m.clampDetailScroll()
-							break
-						}
-					}
+					m.detailJumpSection(+1)
 				}
 				return m, nil
 			}
@@ -336,6 +374,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal mode
 		switch key {
 		case "q":
+			m.saveState()
 			return m, tea.Quit
 		case "/":
 			m.filtering = true
@@ -353,20 +392,26 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.highlightField = ""
 			}
-		case "tab":
-			m.activeTab = (m.activeTab + 1) % 5
-			m.cursor = 0
-			m.filterQuery = ""
-			m.clearCycleFilter()
-			m.scrollOffset[m.activeTab] = 0
-			return m, m.loadTabIfNeeded()
-		case "shift+tab":
+		case "h":
 			m.activeTab = (m.activeTab + 4) % 5
 			m.cursor = 0
 			m.filterQuery = ""
 			m.clearCycleFilter()
 			m.scrollOffset[m.activeTab] = 0
 			return m, m.loadTabIfNeeded()
+		case "l":
+			m.activeTab = (m.activeTab + 1) % 5
+			m.cursor = 0
+			m.filterQuery = ""
+			m.clearCycleFilter()
+			m.scrollOffset[m.activeTab] = 0
+			return m, m.loadTabIfNeeded()
+		case "tab":
+			m.tabJump(+1)
+			return m, nil
+		case "shift+tab":
+			m.tabJump(-1)
+			return m, nil
 		case "1":
 			m.activeTab = tabDashboard
 			m.cursor = 0
@@ -503,7 +548,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.statusMsg = "Fetching all repos..."
 			return m, fetchAll(m.cfg.Profiles)
-		case "<":
+		case "H":
 			if len(m.cfg.Profiles) > 1 {
 				if m.activeProfile == 0 {
 					m.activeProfile = -1
@@ -518,8 +563,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for k := range m.scrollOffset {
 					m.scrollOffset[k] = 0
 				}
+				go m.saveState()
 			}
-		case ">":
+		case "L":
 			if len(m.cfg.Profiles) > 1 {
 				if m.activeProfile == len(m.cfg.Profiles)-1 {
 					m.activeProfile = -1
@@ -534,6 +580,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for k := range m.scrollOffset {
 					m.scrollOffset[k] = 0
 				}
+				go m.saveState()
 			}
 		// Cycle quick filters
 		case "d":
@@ -602,8 +649,21 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cycleSortField("ci")
 			}
 		case " ":
+			// Diff/commit-centric tabs → diffnav; repo-centric tabs → lazygit.
+			switch m.activeTab {
+			case tabActivity:
+				if c, ok := m.commitAtCursor(); ok {
+					return m, launchDiffnav(c.RepoPath, c.Hash)
+				}
+			default:
+				if path := m.repoPathAtCursor(); path != "" {
+					return m, launchLazygit(path)
+				}
+			}
+		case "e":
+			// e = open editor (nvim / $EDITOR) at the repo root.
 			if path := m.repoPathAtCursor(); path != "" {
-				return m, launchLazygit(path)
+				return m, launchNvim(path)
 			}
 		case "p":
 			// p = git pull the repo for the selected item (all tabs).
@@ -722,6 +782,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							for k := range m.scrollOffset {
 								m.scrollOffset[k] = 0
 							}
+							go m.saveState()
 							return m, nil
 						}
 					} else if msg.Y == 3 || msg.Y == 4 {
@@ -890,6 +951,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailPRs = msg.prs
 		m.detailBranches = msg.branches
 		m.detailStats = msg.stats
+		m.buildDetailItems()
+		m.detailCursor = 0
+		m.detailScroll = 0
+		m.adjustDetailScroll()
 		m.loading = false
 		m.statusMsg = "Detail loaded"
 

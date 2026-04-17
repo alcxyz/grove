@@ -58,7 +58,7 @@ inputs.grove.url = "github:alcxyz/grove";
 ### AUR (Arch Linux)
 
 ```sh
-yay -S grove-bin
+yay -S grove-tui-bin
 ```
 
 ### Build from source

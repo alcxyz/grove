@@ -63,14 +63,14 @@ brews:
       bin.install "grove"
 
 aurs:
-  - name: grove-bin
+  - name: grove-tui-bin
     homepage: https://github.com/alcxyz/grove
     description: Terminal UI for monitoring GitHub repositories
     maintainers:
       - alcxyz <alcxyz@users.noreply.github.com>
     license: MIT
     private_key: "{{ .Env.AUR_KEY }}"
-    git_url: ssh://aur@aur.archlinux.org/grove-bin.git
+    git_url: ssh://aur@aur.archlinux.org/grove-tui-bin.git
     provides:
       - grove
     conflicts:

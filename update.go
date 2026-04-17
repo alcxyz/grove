@@ -141,7 +141,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Diff view input
 		if m.showDiff {
-			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
+			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				// loadCommitAt fetches the diff for cursor c (grouped-order index)
 				// and resets diffScroll so the new diff starts at the top.
@@ -227,7 +227,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Detail pane input
 		if m.showDetail {
-			isTabNav := key == "tab" || key == "shift+tab" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
+			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
 				// loadAt navigates to a different repo from within the detail pane.
 				// Walks the grouped structure so that [/] respects the current grouping.
@@ -394,20 +394,26 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.highlightField = ""
 			}
-		case "tab":
-			m.activeTab = (m.activeTab + 1) % 5
-			m.cursor = 0
-			m.filterQuery = ""
-			m.clearCycleFilter()
-			m.scrollOffset[m.activeTab] = 0
-			return m, m.loadTabIfNeeded()
-		case "shift+tab":
+		case "h":
 			m.activeTab = (m.activeTab + 4) % 5
 			m.cursor = 0
 			m.filterQuery = ""
 			m.clearCycleFilter()
 			m.scrollOffset[m.activeTab] = 0
 			return m, m.loadTabIfNeeded()
+		case "l":
+			m.activeTab = (m.activeTab + 1) % 5
+			m.cursor = 0
+			m.filterQuery = ""
+			m.clearCycleFilter()
+			m.scrollOffset[m.activeTab] = 0
+			return m, m.loadTabIfNeeded()
+		case "tab":
+			m.tabJump(+1)
+			return m, nil
+		case "shift+tab":
+			m.tabJump(-1)
+			return m, nil
 		case "1":
 			m.activeTab = tabDashboard
 			m.cursor = 0
@@ -544,7 +550,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.statusMsg = "Fetching all repos..."
 			return m, fetchAll(m.cfg.Profiles)
-		case "<":
+		case "H":
 			if len(m.cfg.Profiles) > 1 {
 				if m.activeProfile == 0 {
 					m.activeProfile = -1
@@ -561,7 +567,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				go m.saveState()
 			}
-		case ">":
+		case "L":
 			if len(m.cfg.Profiles) > 1 {
 				if m.activeProfile == len(m.cfg.Profiles)-1 {
 					m.activeProfile = -1

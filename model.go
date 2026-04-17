@@ -119,6 +119,10 @@ type appModel struct {
 	lastClickY  int
 	lastClickAt time.Time
 
+	// Tab streak for exponential scroll (tab / shift+tab)
+	lastTabAt time.Time
+	tabStreak int // 0-3 → jump distances [5, 10, 20, 25]
+
 	// Screensaver
 	lastActivity time.Time
 	ssActive     bool

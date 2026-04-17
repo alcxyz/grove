@@ -164,6 +164,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
 						}
 					}
+				case "e":
+					if c, ok := m.commitAtCursor(); ok {
+						return m, launchNvim(c.RepoPath)
+					}
 				case " ":
 					if c, ok := m.commitAtCursor(); ok {
 						return m, launchDiffnav(c.RepoPath, c.Hash)
@@ -249,6 +253,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "o":
 					if r, ok := m.repoAtCursor(); ok && r.Owner != "" {
 						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					}
+				case "e":
+					if path := m.repoPathAtCursor(); path != "" {
+						return m, launchNvim(path)
 					}
 				case " ":
 					// Detail pane has commit data — use diffnav with latest commit.
@@ -623,6 +631,11 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if path := m.repoPathAtCursor(); path != "" {
 					return m, launchLazygit(path)
 				}
+			}
+		case "e":
+			// e = open editor (nvim / $EDITOR) at the repo root.
+			if path := m.repoPathAtCursor(); path != "" {
+				return m, launchNvim(path)
 			}
 		case "p":
 			// p = git pull the repo for the selected item (all tabs).

@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/alcxyz/grove/internal/config"
 	"github.com/alcxyz/grove/internal/model"
@@ -118,6 +119,52 @@ func (m appModel) contentHeight() int {
 		return 1
 	}
 	return h
+}
+
+// tabJumpDistances maps streak level (0-3) to jump distance.
+var tabJumpDistances = [4]int{5, 10, 20, 25}
+
+// tabJump moves the cursor by an exponential amount based on how rapidly tab
+// is pressed.  dir is +1 (tab) or -1 (shift+tab).
+func (m *appModel) tabJump(dir int) {
+	now := time.Now()
+	if now.Sub(m.lastTabAt) < 300*time.Millisecond && m.tabStreak < 3 {
+		m.tabStreak++
+	} else {
+		m.tabStreak = 0
+	}
+	m.lastTabAt = now
+
+	dist := tabJumpDistances[m.tabStreak] * dir
+
+	if m.showDiff {
+		m.diffScroll += dist
+		m.clampDiffScroll()
+		if m.diffScroll < 0 {
+			m.diffScroll = 0
+		}
+		return
+	}
+	if m.showDetail {
+		target := m.detailCursor + dist
+		if target < 0 {
+			target = 0
+		}
+		if target >= len(m.detailItems) {
+			target = len(m.detailItems) - 1
+		}
+		if target >= 0 {
+			m.detailCursor = target
+			m.adjustDetailScroll()
+		}
+		return
+	}
+	// Main list
+	m.cursor += dist
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+	m.clampCursor()
 }
 
 // scrollHeight returns the number of lines available for scrollable list items

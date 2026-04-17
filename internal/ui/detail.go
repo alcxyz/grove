@@ -363,13 +363,14 @@ var helpPages = [2][]struct {
 	{
 		{"Navigation", [][2]string{
 			{"j / k", "move down / up"},
+			{"h / l", "previous / next tab"},
+			{"H / L", "previous / next profile  (when multiple profiles configured)"},
 			{"gg / G", "first / last item"},
+			{"tab / shift+tab", "jump 5 / 10 / 20 / 25 lines  (accelerates on rapid press)"},
 			{"{ / }", "jump between groups"},
 			{"[ / ]", "jump between repo blocks  (tab 1: dirty/behind repos)"},
 			{"( / )", "jump between CI status blocks (tab 1) · subject/branch/message blocks (tabs 2–5)"},
-			{"tab / shift+tab", "next / previous tab"},
 			{"1 / 2 / 3 / 4 / 5", "switch to tab directly"},
-			{"< / >", "switch profile  (when multiple profiles configured)"},
 		}},
 		{"Actions", [][2]string{
 			{"enter", "open detail pane (tabs 1–4) · open diff (tab 5)"},

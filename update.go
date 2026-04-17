@@ -13,6 +13,11 @@ import (
 	"github.com/alcxyz/grove/internal/ui"
 )
 
+// saveState persists minimal UI state (active profile) for next launch.
+func (m appModel) saveState() {
+	_ = cache.SaveState(m.cacheDir, cache.UIState{ActiveProfile: m.activeProfile})
+}
+
 // containsAuthErr returns true if any error string matches the gh auth sentinel.
 func containsAuthErr(errs []string) bool {
 	needle := gh.ErrNotLoggedIn.Error()
@@ -59,6 +64,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// ctrl+c always quits, regardless of mode/overlay.
 		if key == "ctrl+c" {
+			m.saveState()
 			return m, tea.Quit
 		}
 
@@ -338,6 +344,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal mode
 		switch key {
 		case "q":
+			m.saveState()
 			return m, tea.Quit
 		case "/":
 			m.filtering = true
@@ -520,6 +527,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for k := range m.scrollOffset {
 					m.scrollOffset[k] = 0
 				}
+				go m.saveState()
 			}
 		case ">":
 			if len(m.cfg.Profiles) > 1 {
@@ -536,6 +544,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				for k := range m.scrollOffset {
 					m.scrollOffset[k] = 0
 				}
+				go m.saveState()
 			}
 		// Cycle quick filters
 		case "d":
@@ -732,6 +741,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							for k := range m.scrollOffset {
 								m.scrollOffset[k] = 0
 							}
+							go m.saveState()
 							return m, nil
 						}
 					} else if msg.Y == 3 || msg.Y == 4 {

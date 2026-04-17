@@ -1,4 +1,4 @@
-package main
+package clone
 
 import (
 	"encoding/json"
@@ -14,7 +14,9 @@ import (
 	"github.com/alcxyz/grove/internal/config"
 )
 
-func runClone(cfg config.Config) {
+// Run enumerates org repos for each matching profile and clones any that
+// are missing locally.
+func Run(cfg config.Config) {
 	// Optional profile names from args: grove clone [profile1 profile2 ...]
 	filter := parseProfileFilter(cfg, os.Args[2:])
 

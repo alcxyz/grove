@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"strings"
@@ -9,7 +9,7 @@ import (
 	"github.com/alcxyz/grove/internal/ui"
 )
 
-func (m appModel) listLen() int {
+func (m Model) listLen() int {
 	switch m.activeTab {
 	case tabDashboard:
 		return len(m.filteredRepos())
@@ -25,7 +25,7 @@ func (m appModel) listLen() int {
 	return 0
 }
 
-func (m *appModel) clampCursor() {
+func (m *Model) clampCursor() {
 	top := m.listLen() - 1
 	if top < 0 {
 		top = 0
@@ -38,13 +38,13 @@ func (m *appModel) clampCursor() {
 
 // showProfileBar returns true when the profile tab bar should be rendered.
 // Only shown when there are multiple profiles (single profile = no bar needed).
-func (m appModel) showProfileBar() bool {
+func (m Model) showProfileBar() bool {
 	return len(m.cfg.Profiles) > 1
 }
 
 // activeProfileObj returns the currently active profile, or the first profile
 // as a fallback. Used for single-profile grouping.
-func (m appModel) activeProfileObj() config.Profile {
+func (m Model) activeProfileObj() config.Profile {
 	if m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles) {
 		return m.cfg.Profiles[m.activeProfile]
 	}
@@ -55,7 +55,7 @@ func (m appModel) activeProfileObj() config.Profile {
 }
 
 // profileOrder returns a func(string) int for ordering groups by profile index.
-func (m appModel) profileOrder() func(string) int {
+func (m Model) profileOrder() func(string) int {
 	idx := make(map[string]int, len(m.cfg.Profiles))
 	for i, p := range m.cfg.Profiles {
 		idx[p.Name] = i
@@ -71,7 +71,7 @@ func (m appModel) profileOrder() func(string) int {
 // profileAtX returns the profile index (0..N-1 for profiles, N for "All") for a
 // mouse click at column x in the profile tab bar, or -2 if outside all tabs.
 // "All" maps to index len(cfg.Profiles) in the rendered bar, but is returned as -1.
-func (m appModel) profileAtX(x int) int {
+func (m Model) profileAtX(x int) int {
 	names := m.profileTabNames()
 	cur := 0
 	for i, name := range names {
@@ -88,7 +88,7 @@ func (m appModel) profileAtX(x int) int {
 }
 
 // profileTabNames returns the display names for the profile tab bar.
-func (m appModel) profileTabNames() []string {
+func (m Model) profileTabNames() []string {
 	names := make([]string, len(m.cfg.Profiles)+1)
 	for i, p := range m.cfg.Profiles {
 		names[i] = p.Name
@@ -99,7 +99,7 @@ func (m appModel) profileTabNames() []string {
 
 // activeProfileTabIdx returns the render index for the active profile
 // (0..N-1 for profiles, N for "All").
-func (m appModel) activeProfileTabIdx() int {
+func (m Model) activeProfileTabIdx() int {
 	if m.activeProfile == -1 {
 		return len(m.cfg.Profiles)
 	}
@@ -108,7 +108,7 @@ func (m appModel) activeProfileTabIdx() int {
 
 // contentHeight returns the number of scrollable lines available in the
 // terminal after accounting for fixed chrome (title, tabs, owl bottom area).
-func (m appModel) contentHeight() int {
+func (m Model) contentHeight() int {
 	extra := 0
 	if m.showProfileBar() {
 		extra = 1
@@ -126,7 +126,7 @@ var tabJumpDistances = [4]int{5, 10, 20, 25}
 
 // tabJump moves the cursor by an exponential amount based on how rapidly tab
 // is pressed.  dir is +1 (tab) or -1 (shift+tab).
-func (m *appModel) tabJump(dir int) {
+func (m *Model) tabJump(dir int) {
 	now := time.Now()
 	if now.Sub(m.lastTabAt) < 300*time.Millisecond && m.tabStreak < 3 {
 		m.tabStreak++
@@ -170,7 +170,7 @@ func (m *appModel) tabJump(dir int) {
 // scrollHeight returns the number of lines available for scrollable list items
 // after subtracting the fixed column header that each Render* function emits.
 // Detail and diff views don't have a column header — use contentHeight() there.
-func (m appModel) scrollHeight() int {
+func (m Model) scrollHeight() int {
 	h := m.contentHeight() - 1 // -1 for the column header line
 	if h < 1 {
 		return 1
@@ -179,7 +179,7 @@ func (m appModel) scrollHeight() int {
 }
 
 // adjustScroll keeps the cursor's visual line inside the visible viewport.
-func (m *appModel) adjustScroll() {
+func (m *Model) adjustScroll() {
 	if m.height == 0 {
 		return
 	}
@@ -214,7 +214,7 @@ func (m *appModel) adjustScroll() {
 
 // maxScrollOffset returns the maximum scroll offset for the current tab so the
 // last item is visible at the bottom of the viewport.
-func (m appModel) maxScrollOffset() int {
+func (m Model) maxScrollOffset() int {
 	var totalVL int
 	switch m.activeTab {
 	case tabDashboard:
@@ -279,7 +279,7 @@ func (m appModel) maxScrollOffset() int {
 //	5+ scrollable content
 //
 // With profile bar, rows shift down by 1 (profile bar is row 2, content tabs row 3).
-func (m appModel) termRowToCursor(termRow int) int {
+func (m Model) termRowToCursor(termRow int) int {
 	headerRows := 5
 	if m.showProfileBar() {
 		headerRows = 6
@@ -318,7 +318,7 @@ func tabAtX(x int) int {
 	return -1
 }
 
-func (m appModel) groupedRepos() []ui.RepoGroup {
+func (m Model) groupedRepos() []ui.RepoGroup {
 	repos := m.filteredRepos()
 	if !m.grouped {
 		return []ui.RepoGroup{{Name: "", Repos: repos, StartIdx: 0}}
@@ -342,7 +342,7 @@ func (m appModel) groupedRepos() []ui.RepoGroup {
 	return ui.BuildGroups(repos, p.GroupFor, p.GroupOrder)
 }
 
-func (m appModel) groupedPRs() []ui.PRGroup {
+func (m Model) groupedPRs() []ui.PRGroup {
 	prs := m.filteredPRs()
 	if !m.grouped {
 		return []ui.PRGroup{{Name: "", PRs: prs, StartIdx: 0}}
@@ -366,7 +366,7 @@ func (m appModel) groupedPRs() []ui.PRGroup {
 	return ui.BuildPRGroups(prs, p.GroupFor, p.GroupOrder)
 }
 
-func (m appModel) groupedBranches() []ui.BranchGroup {
+func (m Model) groupedBranches() []ui.BranchGroup {
 	branches := m.filteredBranches()
 	if !m.grouped {
 		return []ui.BranchGroup{{Name: "", Branches: branches, StartIdx: 0}}
@@ -390,7 +390,7 @@ func (m appModel) groupedBranches() []ui.BranchGroup {
 	return ui.BuildBranchGroups(branches, p.GroupFor, p.GroupOrder)
 }
 
-func (m appModel) groupedRuns() []ui.CIGroup {
+func (m Model) groupedRuns() []ui.CIGroup {
 	runs := m.filteredRuns()
 	if !m.grouped {
 		return []ui.CIGroup{{Name: "", Runs: runs, StartIdx: 0}}
@@ -413,7 +413,7 @@ func (m appModel) groupedRuns() []ui.CIGroup {
 	return ui.BuildCIGroups(runs, p.GroupFor, p.GroupOrder)
 }
 
-func (m appModel) groupedActivity() []ui.CommitGroup {
+func (m Model) groupedActivity() []ui.CommitGroup {
 	commits := m.filteredActivity()
 	if !m.grouped {
 		return []ui.CommitGroup{{Name: "", Commits: commits, StartIdx: 0}}
@@ -439,7 +439,7 @@ func (m appModel) groupedActivity() []ui.CommitGroup {
 
 // blockHighlightValue returns the match string for the current highlight field
 // by inspecting the item at the cursor in grouped order.
-func (m appModel) blockHighlightValue() string {
+func (m Model) blockHighlightValue() string {
 	if m.highlightField == "" {
 		return ""
 	}
@@ -529,7 +529,7 @@ func (m appModel) blockHighlightValue() string {
 // current display order.  In tab 1 it jumps between repos that need attention
 // (dirty or behind origin).
 // Uses grouped order so cursor indices match the rendered view.
-func (m *appModel) jumpRepo(dir int) {
+func (m *Model) jumpRepo(dir int) {
 	var starts []int
 	switch m.activeTab {
 	case tabDashboard:
@@ -587,7 +587,7 @@ func (m *appModel) jumpRepo(dir int) {
 // jumpSubject moves the cursor to the next/previous block of items sharing
 // the same subject prefix (commit message / PR title / branch name).
 // On the dashboard it jumps by branch name.
-func (m *appModel) jumpSubject(dir int) {
+func (m *Model) jumpSubject(dir int) {
 	var starts []int
 	switch m.activeTab {
 	case tabDashboard:
@@ -661,7 +661,7 @@ func (m *appModel) jumpSubject(dir int) {
 }
 
 // jumpTo is the shared navigation kernel for jumpRepo/jumpSubject/jumpGroup.
-func (m *appModel) jumpTo(starts []int, dir int) {
+func (m *Model) jumpTo(starts []int, dir int) {
 	if len(starts) == 0 {
 		return
 	}
@@ -696,7 +696,7 @@ func (m *appModel) jumpTo(starts []int, dir int) {
 // repoForDetailNav resolves a cursor index (in the current tab's grouped order)
 // to the associated Repo for loading into the detail pane.  Used by [/] navigation
 // so the detail pane cycles through the source tab's items, not always Dashboard repos.
-func (m appModel) repoForDetailNav(idx int) (model.Repo, bool) {
+func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 	flat := 0
 	switch m.activeTab {
 	case tabDashboard:
@@ -749,7 +749,7 @@ func (m appModel) repoForDetailNav(idx int) (model.Repo, bool) {
 }
 
 // repoPathFor returns the local filesystem path for a repo matched by base name.
-func (m appModel) repoPathFor(baseName string) string {
+func (m Model) repoPathFor(baseName string) string {
 	for _, r := range m.repos {
 		if r.Name == baseName {
 			return r.Path
@@ -759,7 +759,7 @@ func (m appModel) repoPathFor(baseName string) string {
 }
 
 // repoByName returns the full Repo struct matched by base name.
-func (m appModel) repoByName(baseName string) (model.Repo, bool) {
+func (m Model) repoByName(baseName string) (model.Repo, bool) {
 	for _, r := range m.repos {
 		if r.Name == baseName {
 			return r, true
@@ -772,7 +772,7 @@ func (m appModel) repoByName(baseName string) (model.Repo, bool) {
 // walking the grouped structure. This is necessary because BuildGroups sorts
 // groups and reassigns StartIdx in group order, so m.cursor is an index into
 // the grouped flat sequence — not the original filteredRepos() order.
-func (m appModel) repoPathAtCursor() string {
+func (m Model) repoPathAtCursor() string {
 	flat := 0
 	switch m.activeTab {
 	case tabDashboard:
@@ -826,7 +826,7 @@ func (m appModel) repoPathAtCursor() string {
 
 // repoAtCursor returns the repo at the cursor by walking grouped order.
 // Returns (repo, true) or (zero, false) if cursor is out of range.
-func (m appModel) repoAtCursor() (model.Repo, bool) {
+func (m Model) repoAtCursor() (model.Repo, bool) {
 	flat := 0
 	for _, g := range m.groupedRepos() {
 		for _, r := range g.Repos {
@@ -840,7 +840,7 @@ func (m appModel) repoAtCursor() (model.Repo, bool) {
 }
 
 // prAtCursor returns the PR at the cursor by walking grouped order.
-func (m appModel) prAtCursor() (model.PR, bool) {
+func (m Model) prAtCursor() (model.PR, bool) {
 	flat := 0
 	for _, g := range m.groupedPRs() {
 		for _, pr := range g.PRs {
@@ -854,7 +854,7 @@ func (m appModel) prAtCursor() (model.PR, bool) {
 }
 
 // branchAtCursor returns the branch at the cursor by walking grouped order.
-func (m appModel) branchAtCursor() (model.BranchInfo, bool) {
+func (m Model) branchAtCursor() (model.BranchInfo, bool) {
 	flat := 0
 	for _, g := range m.groupedBranches() {
 		for _, br := range g.Branches {
@@ -868,7 +868,7 @@ func (m appModel) branchAtCursor() (model.BranchInfo, bool) {
 }
 
 // commitAtCursor returns the Activity commit at the cursor by walking grouped order.
-func (m appModel) commitAtCursor() (model.Commit, bool) {
+func (m Model) commitAtCursor() (model.Commit, bool) {
 	flat := 0
 	for _, g := range m.groupedActivity() {
 		for _, c := range g.Commits {
@@ -882,7 +882,7 @@ func (m appModel) commitAtCursor() (model.Commit, bool) {
 }
 
 // runAtCursor returns the CI run at the cursor by walking grouped order.
-func (m appModel) runAtCursor() (model.WorkflowRun, bool) {
+func (m Model) runAtCursor() (model.WorkflowRun, bool) {
 	flat := 0
 	for _, g := range m.groupedRuns() {
 		for _, r := range g.Runs {
@@ -899,7 +899,7 @@ func (m appModel) runAtCursor() (model.WorkflowRun, bool) {
 // starts, plus a sentinel total-line-count as the last element.
 // Indices: [0]header, [1]local branches, [2]remote branches,
 //          [3]open PRs, [4]CI runs, [5]recent commits, [6]sentinel.
-func (m appModel) detailSectionStarts() []int {
+func (m Model) detailSectionStarts() []int {
 	// itemLines is the number of data rows a section with n items renders.
 	itemLines := func(n, cap int) int {
 		if n == 0 {
@@ -962,7 +962,7 @@ func (m appModel) detailSectionStarts() []int {
 
 // detailRemoteBranches returns the remote branches for the repo currently shown
 // in the detail pane, filtered from the global branch list.
-func (m appModel) detailRemoteBranches() []model.BranchInfo {
+func (m Model) detailRemoteBranches() []model.BranchInfo {
 	name := m.detailRepo.Name
 	if name == "" {
 		return nil
@@ -978,7 +978,7 @@ func (m appModel) detailRemoteBranches() []model.BranchInfo {
 
 // detailCIRuns returns the CI runs for the repo currently shown in the detail
 // pane, filtered from the global runs list.
-func (m appModel) detailCIRuns() []model.WorkflowRun {
+func (m Model) detailCIRuns() []model.WorkflowRun {
 	name := m.detailRepo.Name
 	if name == "" {
 		return nil
@@ -995,7 +995,7 @@ func (m appModel) detailCIRuns() []model.WorkflowRun {
 // buildDetailItems constructs the flat list of selectable items in the detail
 // pane, recording each item's section type, data index, and rendered line.
 // The line counting must exactly match RenderRepoDetail's output.
-func (m *appModel) buildDetailItems() {
+func (m *Model) buildDetailItems() {
 	m.detailItems = m.detailItems[:0]
 
 	// Header block: name, divider, blank, branch, status, sync, path = 7 lines
@@ -1050,14 +1050,14 @@ func (m *appModel) buildDetailItems() {
 
 // diffTotalLines returns the total number of rendered lines in the diff pane,
 // matching what RenderDiff emits (2 header lines + content lines + trailing blank).
-func (m appModel) diffTotalLines() int {
+func (m Model) diffTotalLines() int {
 	content := ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.diffPreColored)
 	return len(strings.Split(content, "\n"))
 }
 
 // diffFileStarts returns the rendered-line indices where each file change begins
 // ("diff --git ..." lines), offset by the 2-line RenderDiff header.
-func (m appModel) diffFileStarts() []int {
+func (m Model) diffFileStarts() []int {
 	var starts []int
 	for i, line := range strings.Split(m.diffContent, "\n") {
 		if strings.HasPrefix(line, "diff --git") {
@@ -1068,7 +1068,7 @@ func (m appModel) diffFileStarts() []int {
 }
 
 // detailCursorLine returns the rendered line number of the current detail cursor.
-func (m appModel) detailCursorLine() int {
+func (m Model) detailCursorLine() int {
 	if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
 		return m.detailItems[m.detailCursor].Line
 	}
@@ -1076,7 +1076,7 @@ func (m appModel) detailCursorLine() int {
 }
 
 // adjustDetailScroll keeps the detail cursor's line inside the visible viewport.
-func (m *appModel) adjustDetailScroll() {
+func (m *Model) adjustDetailScroll() {
 	if m.height == 0 || len(m.detailItems) == 0 {
 		return
 	}
@@ -1095,7 +1095,7 @@ func (m *appModel) adjustDetailScroll() {
 
 // detailJumpSection moves the detail cursor to the first item of the
 // next (+1) or previous (-1) section.
-func (m *appModel) detailJumpSection(dir int) {
+func (m *Model) detailJumpSection(dir int) {
 	if len(m.detailItems) == 0 {
 		return
 	}
@@ -1135,7 +1135,7 @@ func (m *appModel) detailJumpSection(dir int) {
 }
 
 // clampDiffScroll clamps m.diffScroll to [0, totalLines-contentHeight].
-func (m *appModel) clampDiffScroll() {
+func (m *Model) clampDiffScroll() {
 	maxScroll := max(0, m.diffTotalLines()-m.contentHeight())
 	if m.diffScroll > maxScroll {
 		m.diffScroll = maxScroll
@@ -1146,7 +1146,7 @@ func (m *appModel) clampDiffScroll() {
 }
 
 // clampDetailScroll clamps m.detailScroll to [0, totalLines-contentHeight].
-func (m *appModel) clampDetailScroll() {
+func (m *Model) clampDetailScroll() {
 	sects := m.detailSectionStarts()
 	total := sects[len(sects)-1]
 	maxScroll := max(0, total-m.contentHeight())
@@ -1159,7 +1159,7 @@ func (m *appModel) clampDetailScroll() {
 }
 
 // jumpGroup moves the cursor to the start of the next (+1) or previous (-1) group.
-func (m *appModel) jumpGroup(dir int) {
+func (m *Model) jumpGroup(dir int) {
 	var starts []int
 	switch m.activeTab {
 	case tabDashboard:

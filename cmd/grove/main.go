@@ -10,10 +10,16 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/alcxyz/grove/internal/app"
 	"github.com/alcxyz/grove/internal/cache"
+	"github.com/alcxyz/grove/internal/clone"
 	"github.com/alcxyz/grove/internal/config"
 	"github.com/alcxyz/grove/internal/model"
 )
+
+// version is injected at build time via -ldflags "-X main.version=<tag>".
+// Falls back to "dev" for local builds.
+var version = "dev"
 
 //go:embed config.example.yaml
 var exampleConfig []byte
@@ -59,7 +65,7 @@ func main() {
 
 	// clone subcommand: enumerate org repos and clone any that are missing.
 	if len(os.Args) > 1 && os.Args[1] == "clone" {
-		runClone(cfg)
+		clone.Run(cfg)
 		return
 	}
 
@@ -115,6 +121,7 @@ func main() {
 	}
 
 	cacheDir := config.CacheDir()
+	cacheKey := cfg.CacheKey()
 
 	// Pre-load cached data so the app opens instantly with last-known state.
 	var initPRs []model.PR
@@ -125,8 +132,6 @@ func main() {
 	var initActivityAt time.Time
 	var initRuns []model.WorkflowRun
 	var initRunsAt time.Time
-
-	cacheKey := cfg.CacheKey()
 
 	if prs, at, err := cache.LoadPRs(cacheDir, cacheKey); err == nil {
 		initPRs, initPRsAt = prs, at
@@ -149,31 +154,23 @@ func main() {
 		}
 	}
 
-	m := appModel{
-		cfg:              cfg,
-		statusMsg:        initStatus,
-		loading:          true,
-		scrollOffset:     map[tab]int{},
-		tabSort:          map[tab]tabSortState{},
-		cycleIdx:         -1,
-		logPath:          logPath,
-		grouped:          true,
-		autoRefresh:      true,
-		lastActivity:     time.Now(),
-		ssDX:             1,
-		ssDY:             1,
-		cacheDir:         cacheDir,
-		cacheKey:         cacheKey,
-		prs:              initPRs,
-		prsLoadedAt:      initPRsAt,
-		branches:         initBranches,
-		branchesLoadedAt: initBranchesAt,
-		activity:         initActivity,
-		activityLoadedAt: initActivityAt,
-		runs:             initRuns,
-		runsLoadedAt:     initRunsAt,
-		activeProfile:    initProfile,
-	}
+	m := app.New(app.Options{
+		Cfg:              cfg,
+		Version:          version,
+		StatusMsg:        initStatus,
+		LogPath:          logPath,
+		CacheDir:         cacheDir,
+		CacheKey:         cacheKey,
+		PRs:              initPRs,
+		PRsLoadedAt:      initPRsAt,
+		Branches:         initBranches,
+		BranchesLoadedAt: initBranchesAt,
+		Activity:         initActivity,
+		ActivityLoadedAt: initActivityAt,
+		Runs:             initRuns,
+		RunsLoadedAt:     initRunsAt,
+		ActiveProfile:    initProfile,
+	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {

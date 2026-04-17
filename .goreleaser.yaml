@@ -7,7 +7,8 @@ before:
     - go mod tidy
 
 builds:
-  - env:
+  - main: ./cmd/grove
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -26,7 +27,8 @@ archives:
     files:
       - README.md
       - LICENSE
-      - config.example.yaml
+      - src: cmd/grove/config.example.yaml
+        dst: .
 
 checksum:
   name_template: "grove_{{ .Version }}_checksums.txt"

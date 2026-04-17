@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"time"
@@ -6,10 +6,6 @@ import (
 	"github.com/alcxyz/grove/internal/config"
 	"github.com/alcxyz/grove/internal/model"
 )
-
-// version is injected at build time via -ldflags "-X main.version=<tag>".
-// Falls back to "dev" for local builds.
-var version = "dev"
 
 type tab int
 
@@ -38,8 +34,58 @@ type tabSortState struct {
 	Order sortOrder // sortAsc | sortDesc (sortDefault == no sort, Field should also be "")
 }
 
-type appModel struct {
+// Options holds the parameters needed to create a new Model.
+type Options struct {
+	Cfg              config.Config
+	Version          string
+	StatusMsg        string
+	LogPath          string
+	CacheDir         string
+	CacheKey         string
+	PRs              []model.PR
+	PRsLoadedAt      time.Time
+	Branches         []model.BranchInfo
+	BranchesLoadedAt time.Time
+	Activity         []model.Commit
+	ActivityLoadedAt time.Time
+	Runs             []model.WorkflowRun
+	RunsLoadedAt     time.Time
+	ActiveProfile    int
+}
+
+// New creates a Model ready to be passed to tea.NewProgram.
+func New(o Options) Model {
+	return Model{
+		cfg:              o.Cfg,
+		version:          o.Version,
+		statusMsg:        o.StatusMsg,
+		loading:          true,
+		scrollOffset:     map[tab]int{},
+		tabSort:          map[tab]tabSortState{},
+		cycleIdx:         -1,
+		logPath:          o.LogPath,
+		grouped:          true,
+		autoRefresh:      true,
+		lastActivity:     time.Now(),
+		ssDX:             1,
+		ssDY:             1,
+		cacheDir:         o.CacheDir,
+		cacheKey:         o.CacheKey,
+		prs:              o.PRs,
+		prsLoadedAt:      o.PRsLoadedAt,
+		branches:         o.Branches,
+		branchesLoadedAt: o.BranchesLoadedAt,
+		activity:         o.Activity,
+		activityLoadedAt: o.ActivityLoadedAt,
+		runs:             o.Runs,
+		runsLoadedAt:     o.RunsLoadedAt,
+		activeProfile:    o.ActiveProfile,
+	}
+}
+
+type Model struct {
 	cfg      config.Config
+	version  string
 	repos    []model.Repo
 	prs      []model.PR
 	branches []model.BranchInfo

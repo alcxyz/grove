@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/alcxyz/grove/internal/config"
-	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
 )
 
@@ -25,7 +24,7 @@ func (m appModel) infoBarParts() []string {
 		}
 	}
 	if m.showDetail {
-		return []string{"j/k scroll", "[/] next/prev repo", "{/} sections", "o open on GitHub", "esc back"}
+		return []string{"j/k select", "[/] next/prev repo", "{/} sections", "space/o/e act", "esc back"}
 	}
 	if m.filtering {
 		return []string{"type to filter", "enter confirm", "esc clear"}
@@ -237,21 +236,15 @@ func (m appModel) View() string {
 		}
 		b.WriteString(strings.Join(lines[start:end], "\n"))
 	} else if m.showDetail {
-		// Detail pane — filter remote branches and CI runs for the current repo.
+		// Detail pane — use extracted helpers for remote branches and CI runs.
 		if repo, ok := m.repoAtCursor(); ok {
-			var remoteBranches []model.BranchInfo
-			for _, br := range m.branches {
-				if repoBaseName(br.Repo) == repo.Name {
-					remoteBranches = append(remoteBranches, br)
-				}
+			remoteBranches := m.detailRemoteBranches()
+			ciRuns := m.detailCIRuns()
+			hlLine := -1
+			if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
+				hlLine = m.detailItems[m.detailCursor].Line
 			}
-			var ciRuns []model.WorkflowRun
-			for _, r := range m.runs {
-				if repoBaseName(r.Repo) == repo.Name {
-					ciRuns = append(ciRuns, r)
-				}
-			}
-			content := ui.RenderRepoDetail(repo, m.detailCommits, m.detailPRs, m.detailBranches, remoteBranches, ciRuns, m.detailStats, cw)
+			content := ui.RenderRepoDetail(repo, m.detailCommits, m.detailPRs, m.detailBranches, remoteBranches, ciRuns, m.detailStats, cw, hlLine)
 			lines := strings.Split(content, "\n")
 			start := m.detailScroll
 			if start > len(lines) {

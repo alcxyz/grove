@@ -859,6 +859,94 @@ func (m appModel) detailSectionStarts() []int {
 	return starts
 }
 
+// detailRemoteBranches returns the remote branches for the repo currently shown
+// in the detail pane, filtered from the global branch list.
+func (m appModel) detailRemoteBranches() []model.BranchInfo {
+	repo, ok := m.repoAtCursor()
+	if !ok {
+		return nil
+	}
+	var out []model.BranchInfo
+	for _, br := range m.branches {
+		if repoBaseName(br.Repo) == repo.Name {
+			out = append(out, br)
+		}
+	}
+	return out
+}
+
+// detailCIRuns returns the CI runs for the repo currently shown in the detail
+// pane, filtered from the global runs list.
+func (m appModel) detailCIRuns() []model.WorkflowRun {
+	repo, ok := m.repoAtCursor()
+	if !ok {
+		return nil
+	}
+	var out []model.WorkflowRun
+	for _, r := range m.runs {
+		if repoBaseName(r.Repo) == repo.Name {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// buildDetailItems constructs the flat list of selectable items in the detail
+// pane, recording each item's section type, data index, and rendered line.
+// The line counting must exactly match RenderRepoDetail's output.
+func (m *appModel) buildDetailItems() {
+	m.detailItems = m.detailItems[:0]
+
+	// Header block: name, divider, blank, branch, status, sync, path = 7 lines
+	line := 7
+	if m.detailStats.CommitCount > 0 || m.detailStats.Contributors > 0 {
+		line++ // stats line
+	}
+	line++ // trailing blank after header
+
+	// Helper: process one section. Returns next line after the section.
+	// For each rendered item (up to cap), appends a detailItem.
+	type sectionDef struct {
+		sect  detailSect
+		count int
+		cap   int
+	}
+	sections := []sectionDef{
+		{detailLocalBranch, len(m.detailBranches), 12},
+		{detailRemoteBranch, len(m.detailRemoteBranches()), 12},
+		{detailPR, len(m.detailPRs), 10},
+		{detailCIRun, len(m.detailCIRuns()), 8},
+		{detailCommit, len(m.detailCommits), 10},
+	}
+
+	for si, s := range sections {
+		line++ // section header line
+		if s.count == 0 {
+			line++ // "(none)" line
+		} else {
+			rendered := s.count
+			if rendered > s.cap {
+				rendered = s.cap
+			}
+			for i := 0; i < rendered; i++ {
+				m.detailItems = append(m.detailItems, detailItem{
+					Section: s.sect,
+					Index:   i,
+					Line:    line,
+				})
+				line++
+			}
+			if s.count > s.cap {
+				line++ // "… N more" line
+			}
+		}
+		// Trailing blank after every section except the last
+		if si < len(sections)-1 {
+			line++
+		}
+	}
+}
+
 // diffTotalLines returns the total number of rendered lines in the diff pane,
 // matching what RenderDiff emits (2 header lines + content lines + trailing blank).
 func (m appModel) diffTotalLines() int {
@@ -876,6 +964,73 @@ func (m appModel) diffFileStarts() []int {
 		}
 	}
 	return starts
+}
+
+// detailCursorLine returns the rendered line number of the current detail cursor.
+func (m appModel) detailCursorLine() int {
+	if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
+		return m.detailItems[m.detailCursor].Line
+	}
+	return 0
+}
+
+// adjustDetailScroll keeps the detail cursor's line inside the visible viewport.
+func (m *appModel) adjustDetailScroll() {
+	if m.height == 0 || len(m.detailItems) == 0 {
+		return
+	}
+	ch := m.contentHeight()
+	line := m.detailCursorLine()
+	if line < m.detailScroll {
+		m.detailScroll = line
+	}
+	if line >= m.detailScroll+ch {
+		m.detailScroll = line - ch + 1
+	}
+	if m.detailScroll < 0 {
+		m.detailScroll = 0
+	}
+}
+
+// detailJumpSection moves the detail cursor to the first item of the
+// next (+1) or previous (-1) section.
+func (m *appModel) detailJumpSection(dir int) {
+	if len(m.detailItems) == 0 {
+		return
+	}
+	cur := m.detailItems[m.detailCursor].Section
+	if dir > 0 {
+		for i := m.detailCursor + 1; i < len(m.detailItems); i++ {
+			if m.detailItems[i].Section != cur {
+				m.detailCursor = i
+				m.adjustDetailScroll()
+				return
+			}
+		}
+		// Already in last section — go to last item.
+		m.detailCursor = len(m.detailItems) - 1
+		m.adjustDetailScroll()
+	} else {
+		// Find start of current section, then go to start of previous.
+		secStart := m.detailCursor
+		for secStart > 0 && m.detailItems[secStart-1].Section == cur {
+			secStart--
+		}
+		if secStart == 0 {
+			// Already at first section — stay at first item.
+			m.detailCursor = 0
+			m.adjustDetailScroll()
+			return
+		}
+		// secStart-1 is last item of previous section; find its start.
+		prev := m.detailItems[secStart-1].Section
+		target := secStart - 1
+		for target > 0 && m.detailItems[target-1].Section == prev {
+			target--
+		}
+		m.detailCursor = target
+		m.adjustDetailScroll()
+	}
 }
 
 // clampDiffScroll clamps m.diffScroll to [0, totalLines-contentHeight].

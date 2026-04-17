@@ -185,11 +185,27 @@ func ListWorkflowRuns(repoFullName string) ([]model.WorkflowRun, error) {
 		return nil, fmt.Errorf("gh run list %s: parse: %w", repoFullName, err)
 	}
 
+	// Fetch workflow name→path mapping (one call per repo, no extra semaphore needed).
+	wfPaths := map[string]string{}
+	wfCmd := exec.Command("gh", "workflow", "list", "--repo", repoFullName, "--json", "name,path", "--limit", "50")
+	if wfOut, err := wfCmd.Output(); err == nil {
+		var wfs []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}
+		if json.Unmarshal(wfOut, &wfs) == nil {
+			for _, wf := range wfs {
+				wfPaths[wf.Name] = wf.Path
+			}
+		}
+	}
+
 	runs := make([]model.WorkflowRun, len(raw))
 	for i, r := range raw {
 		runs[i] = model.WorkflowRun{
 			Repo:         repoFullName,
 			WorkflowName: r.WorkflowName,
+			WorkflowFile: wfPaths[r.WorkflowName],
 			Branch:       r.HeadBranch,
 			Event:        r.Event,
 			Status:       r.Status,

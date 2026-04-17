@@ -202,6 +202,17 @@ func MergedRemoteBranches(path, defaultBranch string) (map[string]bool, error) {
 	return merged, nil
 }
 
+// CurrentBranch returns the current branch name (or "HEAD" if detached).
+func CurrentBranch(path string) (string, error) {
+	return run(path, "rev-parse", "--abbrev-ref", "HEAD")
+}
+
+// Checkout switches to the named branch.
+func Checkout(path, branch string) error {
+	_, err := run(path, "checkout", branch)
+	return err
+}
+
 func Fetch(path string) error {
 	_, err := run(path, "fetch", "--quiet")
 	return err

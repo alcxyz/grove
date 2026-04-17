@@ -375,7 +375,7 @@ var helpPages = [2][]struct {
 		{"Actions", [][2]string{
 			{"enter", "open detail (tabs 1–4) · open diff (tab 5)"},
 			{"o", "open on GitHub in browser"},
-			{"space", "diffnav (commits) · lazygit (repos)"},
+			{"space", "diffnav · gh-dash · lazygit · workflow (per tab)"},
 			{"e", "open $EDITOR / nvim at repo root"},
 			{"p", "git pull current repo"},
 			{"r", "refresh current tab"},

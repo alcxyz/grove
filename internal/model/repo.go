@@ -59,6 +59,7 @@ type RepoStats struct {
 type WorkflowRun struct {
 	Repo         string // "owner/name"
 	WorkflowName string
+	WorkflowFile string // relative path, e.g. ".github/workflows/ci.yml"
 	Branch       string
 	Event        string // "push", "pull_request", "schedule", "workflow_dispatch", etc.
 	Status       string // "queued", "in_progress", "completed"

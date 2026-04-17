@@ -10,33 +10,44 @@ import (
 
 // detailSection writes a section header and returns a helper that writes rows,
 // capped at maxRows, appending a "… N more" dim line when truncated.
-func detailSection(b *strings.Builder, title string, total, maxRows int) func(row string) {
+// lineNum tracks the current rendered line; highlightLine selects one row.
+func detailSection(b *strings.Builder, title string, total, maxRows int, lineNum *int, highlightLine int) func(row string) {
 	b.WriteString(HeaderStyle.Render(title))
 	b.WriteString("\n")
+	*lineNum++
 	written := 0
 	return func(row string) {
 		if written < maxRows {
-			b.WriteString(row)
+			if *lineNum == highlightLine {
+				b.WriteString(selRow(row))
+			} else {
+				b.WriteString(row)
+			}
 			b.WriteString("\n")
+			*lineNum++
 		} else if written == maxRows {
 			remaining := total - maxRows
 			if remaining > 0 {
 				b.WriteString(DimStyle.Render(fmt.Sprintf("  … %d more", remaining)))
 				b.WriteString("\n")
+				*lineNum++
 			}
 		}
 		written++
 	}
 }
 
-func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int) string {
+func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int, highlightLine int) string {
 	var b strings.Builder
+	lineNum := 0
 
 	// Repo header
 	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s", repo.Name)))
 	b.WriteString("\n")
+	lineNum++
 	b.WriteString(DimStyle.Render(strings.Repeat("─", min(width, 90))))
 	b.WriteString("\n\n")
+	lineNum += 2
 
 	// Status info
 	status := CleanStyle.Render("clean")
@@ -58,22 +69,29 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 	}
 
 	b.WriteString(fmt.Sprintf("  Branch:  %s\n", HeaderStyle.Render(repo.Branch)))
+	lineNum++
 	b.WriteString(fmt.Sprintf("  Status:  %s\n", status))
+	lineNum++
 	b.WriteString(fmt.Sprintf("  Sync:    %s\n", syncInfo))
+	lineNum++
 	b.WriteString(fmt.Sprintf("  Path:    %s\n", DimStyle.Render(repo.Path)))
+	lineNum++
 	if stats.CommitCount > 0 || stats.Contributors > 0 {
 		b.WriteString(fmt.Sprintf("  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount))))
 		if stats.Contributors > 0 {
 			b.WriteString(fmt.Sprintf("   Contributors: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.Contributors))))
 		}
 		b.WriteString("\n")
+		lineNum++
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Local branches ───────────────────────────────────────────────────────
-	write := detailSection(&b, fmt.Sprintf("  Local branches (%d)", len(localBranches)), len(localBranches), 12)
+	write := detailSection(&b, fmt.Sprintf("  Local branches (%d)", len(localBranches)), len(localBranches), 12, &lineNum, highlightLine)
 	if len(localBranches) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, br := range localBranches {
 			marker := "  "
@@ -84,16 +102,17 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Remote branches ──────────────────────────────────────────────────────
-	// Build PR-branch set from loaded PRs.
 	prBranches := map[string]bool{}
 	for _, pr := range prs {
 		prBranches[pr.Branch] = true
 	}
-	write = detailSection(&b, fmt.Sprintf("  Remote branches (%d)", len(remoteBranches)), len(remoteBranches), 12)
+	write = detailSection(&b, fmt.Sprintf("  Remote branches (%d)", len(remoteBranches)), len(remoteBranches), 12, &lineNum, highlightLine)
 	if len(remoteBranches) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, br := range remoteBranches {
 			marker := "  "
@@ -116,11 +135,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Open PRs ─────────────────────────────────────────────────────────────
-	write = detailSection(&b, fmt.Sprintf("  Open PRs (%d)", len(prs)), len(prs), 10)
+	write = detailSection(&b, fmt.Sprintf("  Open PRs (%d)", len(prs)), len(prs), 10, &lineNum, highlightLine)
 	if len(prs) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, pr := range prs {
 			title := truncate(pr.Title, 52)
@@ -129,11 +150,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── CI runs ──────────────────────────────────────────────────────────────
-	write = detailSection(&b, fmt.Sprintf("  CI runs (%d)", len(runs)), len(runs), 8)
+	write = detailSection(&b, fmt.Sprintf("  CI runs (%d)", len(runs)), len(runs), 8, &lineNum, highlightLine)
 	if len(runs) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, r := range runs {
 			wf := truncate(r.WorkflowName, 24)
@@ -144,11 +167,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 		}
 	}
 	b.WriteString("\n")
+	lineNum++
 
 	// ── Recent commits ───────────────────────────────────────────────────────
-	write = detailSection(&b, fmt.Sprintf("  Recent commits (%d)", len(commits)), len(commits), 10)
+	write = detailSection(&b, fmt.Sprintf("  Recent commits (%d)", len(commits)), len(commits), 10, &lineNum, highlightLine)
 	if len(commits) == 0 {
 		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
 	} else {
 		for _, c := range commits {
 			subject := truncate(c.Subject, 50)

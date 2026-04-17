@@ -251,34 +251,77 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "esc", "backspace", "q":
 					m.showDetail = false
 				case "o":
-					if r, ok := m.repoAtCursor(); ok && r.Owner != "" {
-						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					// Contextual open-in-browser based on selected item.
+					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
+						item := m.detailItems[m.detailCursor]
+						repo, _ := m.repoAtCursor()
+						switch item.Section {
+						case detailRemoteBranch:
+							branches := m.detailRemoteBranches()
+							if item.Index < len(branches) && repo.Owner != "" {
+								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/tree/%s", repo.Owner, repo.Name, branches[item.Index].Name))
+							}
+						case detailPR:
+							if item.Index < len(m.detailPRs) {
+								_ = ui.OpenURL(m.detailPRs[item.Index].URL)
+							}
+						case detailCIRun:
+							runs := m.detailCIRuns()
+							if item.Index < len(runs) {
+								_ = ui.OpenURL(runs[item.Index].URL)
+							}
+						case detailCommit:
+							if item.Index < len(m.detailCommits) && repo.Owner != "" {
+								c := m.detailCommits[item.Index]
+								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", repo.Owner, repo.Name, c.Hash))
+							}
+						default:
+							// Local branches / fallback: open repo on GitHub.
+							if repo.Owner != "" {
+								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", repo.Owner, repo.Name))
+							}
+						}
 					}
 				case "e":
 					if path := m.repoPathAtCursor(); path != "" {
 						return m, launchNvim(path)
 					}
 				case " ":
-					// Detail pane has commit data — use diffnav with latest commit.
-					if len(m.detailCommits) > 0 {
-						c := m.detailCommits[0]
-						return m, launchDiffnav(c.RepoPath, c.Hash)
+					// Contextual external tool based on selected item.
+					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
+						item := m.detailItems[m.detailCursor]
+						switch item.Section {
+						case detailCommit:
+							if item.Index < len(m.detailCommits) {
+								c := m.detailCommits[item.Index]
+								return m, launchDiffnav(c.RepoPath, c.Hash)
+							}
+						default:
+							if path := m.repoPathAtCursor(); path != "" {
+								return m, launchLazygit(path)
+							}
+						}
 					}
 				case "j", "down":
-					m.detailScroll++
-					m.clampDetailScroll()
+					if m.detailCursor < len(m.detailItems)-1 {
+						m.detailCursor++
+						m.adjustDetailScroll()
+					}
 				case "k", "up":
-					if m.detailScroll > 0 {
-						m.detailScroll--
+					if m.detailCursor > 0 {
+						m.detailCursor--
+						m.adjustDetailScroll()
 					}
 				case "G":
-					sects := m.detailSectionStarts()
-					total := sects[len(sects)-1]
-					m.detailScroll = max(0, total-m.contentHeight())
+					if len(m.detailItems) > 0 {
+						m.detailCursor = len(m.detailItems) - 1
+						m.adjustDetailScroll()
+					}
 				case "g":
 					if m.prevKey == "g" {
 						m.prevKey = ""
-						m.detailScroll = 0 // gg = scroll to top
+						m.detailCursor = 0
+						m.adjustDetailScroll()
 					} else {
 						m.prevKey = "g"
 						return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
@@ -296,28 +339,9 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return loadAt(m.cursor)
 				case "{":
-					// Jump to previous section start.
-					sects := m.detailSectionStarts()
-					sections := sects[:len(sects)-1] // exclude sentinel
-					target := 0
-					for i := len(sections) - 1; i >= 0; i-- {
-						if sections[i] < m.detailScroll {
-							target = sections[i]
-							break
-						}
-					}
-					m.detailScroll = target
+					m.detailJumpSection(-1)
 				case "}":
-					// Jump to next section start.
-					sects := m.detailSectionStarts()
-					sections := sects[:len(sects)-1] // exclude sentinel
-					for _, s := range sections {
-						if s > m.detailScroll {
-							m.detailScroll = s
-							m.clampDetailScroll()
-							break
-						}
-					}
+					m.detailJumpSection(+1)
 				}
 				return m, nil
 			}
@@ -923,6 +947,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailPRs = msg.prs
 		m.detailBranches = msg.branches
 		m.detailStats = msg.stats
+		m.buildDetailItems()
+		m.detailCursor = 0
+		m.detailScroll = 0
+		m.adjustDetailScroll()
 		m.loading = false
 		m.statusMsg = "Detail loaded"
 

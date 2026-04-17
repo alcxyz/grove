@@ -160,7 +160,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				case " ":
 					if c, ok := m.commitAtCursor(); ok {
-						return m, launchLazygit(c.RepoPath)
+						return m, launchDiffnav(c.RepoPath, c.Hash)
 					}
 				case "j", "down":
 					m.diffScroll++
@@ -245,8 +245,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
 					}
 				case " ":
-					if path := m.repoPathAtCursor(); path != "" {
-						return m, launchLazygit(path)
+					// Detail pane has commit data — use diffnav with latest commit.
+					if len(m.detailCommits) > 0 {
+						c := m.detailCommits[0]
+						return m, launchDiffnav(c.RepoPath, c.Hash)
 					}
 				case "j", "down":
 					m.detailScroll++
@@ -602,8 +604,16 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cycleSortField("ci")
 			}
 		case " ":
-			if path := m.repoPathAtCursor(); path != "" {
-				return m, launchLazygit(path)
+			// Diff/commit-centric tabs → diffnav; repo-centric tabs → lazygit.
+			switch m.activeTab {
+			case tabActivity:
+				if c, ok := m.commitAtCursor(); ok {
+					return m, launchDiffnav(c.RepoPath, c.Hash)
+				}
+			default:
+				if path := m.repoPathAtCursor(); path != "" {
+					return m, launchLazygit(path)
+				}
 			}
 		case "p":
 			// p = git pull the repo for the selected item (all tabs).

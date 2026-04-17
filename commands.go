@@ -365,6 +365,24 @@ func launchLazygit(path string) tea.Cmd {
 	})
 }
 
+// launchDiffnav suspends grove and opens diffnav for a specific commit.
+func launchDiffnav(repoPath, hash string) tea.Cmd {
+	if repoPath == "" {
+		return func() tea.Msg { return statusMsg("no repo selected") }
+	}
+	if _, err := exec.LookPath("diffnav"); err != nil {
+		return func() tea.Msg { return statusMsg("diffnav not found on PATH") }
+	}
+	// pipe git show into diffnav
+	c := exec.Command("bash", "-c", fmt.Sprintf("cd %q && git show %s | diffnav", repoPath, hash))
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return statusMsg(fmt.Sprintf("diffnav exited: %v", err))
+		}
+		return statusMsg("back in grove")
+	})
+}
+
 func loadDiff(repoPath, repoName, hash string, width int) tea.Cmd {
 	return func() tea.Msg {
 		content, preColored, err := gitpkg.CommitDiffFormatted(repoPath, hash, width)

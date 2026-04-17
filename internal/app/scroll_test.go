@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"testing"
@@ -24,7 +24,7 @@ func TestJumpGroupKeepsCursorVisible(t *testing.T) {
 		}
 	}
 
-	m := appModel{
+	m := Model{
 		activeTab:     tabPRs,
 		prs:           prs,
 		grouped:       true,

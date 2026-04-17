@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 )
 
 // saveState persists minimal UI state (active profile) for next launch.
-func (m appModel) saveState() {
+func (m Model) saveState() {
 	_ = cache.SaveState(m.cacheDir, cache.UIState{ActiveProfile: m.activeProfile})
 }
 
@@ -30,9 +30,9 @@ func containsAuthErr(errs []string) bool {
 	return false
 }
 
-func (m appModel) Init() tea.Cmd {
+func (m Model) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion(), splashBlinkCmd(0)}
+	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion(m.version), splashBlinkCmd(0)}
 
 	// Background-refresh any cached data that is stale
 	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
@@ -57,7 +57,7 @@ func (m appModel) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case tea.KeyMsg:
@@ -148,7 +148,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				// loadCommitAt fetches the diff for cursor c (grouped-order index)
 				// and resets diffScroll so the new diff starts at the top.
-				loadCommitAt := func(c int) (appModel, tea.Cmd) {
+				loadCommitAt := func(c int) (Model, tea.Cmd) {
 					m.cursor = c
 					if cm, ok := m.commitAtCursor(); ok {
 						m.diffScroll = 0
@@ -246,7 +246,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// loadAt navigates to a different repo from within the detail pane.
 				// Uses the source tab's grouped order so [/] cycles through the
 				// items of the tab that opened the detail, not always Dashboard repos.
-				loadAt := func(c int) (appModel, tea.Cmd) {
+				loadAt := func(c int) (Model, tea.Cmd) {
 					if repo, ok := m.repoForDetailNav(c); ok {
 						m.cursor = c
 						m.detailRepo = repo
@@ -513,7 +513,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
-			openDetail := func(repo model.Repo) (appModel, tea.Cmd) {
+			openDetail := func(repo model.Repo) (Model, tea.Cmd) {
 				m.showDetail = true
 				m.detailRepo = repo
 				m.detailScroll = 0
@@ -918,7 +918,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.Y == m.lastClickY && now.Sub(m.lastClickAt) < 500*time.Millisecond {
 					m.lastClickAt = time.Time{}
 					// synthesise enter — same semantics as the keyboard handler
-					dblOpenDetail := func(repo model.Repo) (appModel, tea.Cmd) {
+					dblOpenDetail := func(repo model.Repo) (Model, tea.Cmd) {
 						m.showDetail = true
 						m.detailRepo = repo
 						m.detailScroll = 0

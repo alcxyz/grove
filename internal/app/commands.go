@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -591,7 +591,7 @@ func isSemver(v string) bool {
 // checkLatestVersion fetches the latest GitHub release tag in the background
 // and returns a versionCheckMsg if a newer version is available.
 // Silently no-ops for dev builds, hash builds, or when the network is unavailable.
-func checkLatestVersion() tea.Cmd {
+func checkLatestVersion(version string) tea.Cmd {
 	return func() tea.Msg {
 		if !isSemver(version) {
 			return versionCheckMsg{}
@@ -661,7 +661,7 @@ func splashBlinkCmd(current int) tea.Cmd {
 
 // loadTabIfNeeded returns a load command when the active tab's data is stale
 // or missing.  Returns nil if no fetch is required.
-func (m *appModel) loadTabIfNeeded() tea.Cmd {
+func (m *Model) loadTabIfNeeded() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
 	switch m.activeTab {
 	case tabPRs:

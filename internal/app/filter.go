@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"sort"
@@ -48,7 +48,7 @@ func normalizeCI(status, conclusion string) string {
 }
 
 // repoPRCounts returns a map of repo base-name → open PR count derived from m.prs.
-func (m appModel) repoPRCounts() map[string]int {
+func (m Model) repoPRCounts() map[string]int {
 	counts := map[string]int{}
 	for _, pr := range m.prs {
 		counts[repoBaseName(pr.Repo)]++
@@ -57,7 +57,7 @@ func (m appModel) repoPRCounts() map[string]int {
 }
 
 // repoBranchCounts returns a map of repo base-name → remote branch count derived from m.branches.
-func (m appModel) repoBranchCounts() map[string]int {
+func (m Model) repoBranchCounts() map[string]int {
 	counts := map[string]int{}
 	for _, br := range m.branches {
 		counts[repoBaseName(br.Repo)]++
@@ -67,7 +67,7 @@ func (m appModel) repoBranchCounts() map[string]int {
 
 // repoLatestCI returns a map of repo base-name → normalised CI conclusion
 // (runs are assumed newest-first so the first entry per repo wins).
-func (m appModel) repoLatestCI() map[string]string {
+func (m Model) repoLatestCI() map[string]string {
 	ci := map[string]string{}
 	for _, r := range m.runs {
 		name := repoBaseName(r.Repo)
@@ -79,7 +79,7 @@ func (m appModel) repoLatestCI() map[string]string {
 }
 
 // prBranchSet returns the set of branch names that have an open PR.
-func (m appModel) prBranchSet() map[string]bool {
+func (m Model) prBranchSet() map[string]bool {
 	set := map[string]bool{}
 	for _, pr := range m.prs {
 		set[pr.Branch] = true
@@ -285,7 +285,7 @@ func applyCommitSort(out []model.Commit, ts tabSortState) {
 	}
 }
 
-func (m appModel) filteredRepos() []model.Repo {
+func (m Model) filteredRepos() []model.Repo {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabDashboard]
 	hasCycle := m.cycleField == "author" || m.cycleField == "date" ||
@@ -388,7 +388,7 @@ func (m appModel) filteredRepos() []model.Repo {
 	return out
 }
 
-func (m appModel) filteredPRs() []model.PR {
+func (m Model) filteredPRs() []model.PR {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabPRs]
 	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" ||
@@ -438,7 +438,7 @@ func (m appModel) filteredPRs() []model.PR {
 	return out
 }
 
-func (m appModel) filteredBranches() []model.BranchInfo {
+func (m Model) filteredBranches() []model.BranchInfo {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabBranches]
 	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "author" ||
@@ -514,7 +514,7 @@ func (m appModel) filteredBranches() []model.BranchInfo {
 	return out
 }
 
-func (m appModel) filteredRuns() []model.WorkflowRun {
+func (m Model) filteredRuns() []model.WorkflowRun {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabCI]
 	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date" ||
@@ -561,7 +561,7 @@ func (m appModel) filteredRuns() []model.WorkflowRun {
 	return out
 }
 
-func (m appModel) filteredActivity() []model.Commit {
+func (m Model) filteredActivity() []model.Commit {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabActivity]
 	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
@@ -651,7 +651,7 @@ func dateInBucket(t time.Time, label string) bool {
 
 // cycleMatch returns true if item passes the active cycle filter for the given field value.
 // For "subject" the match is by prefix (first word/path segment) rather than exact value.
-func (m appModel) cycleMatch(field, value string) bool {
+func (m Model) cycleMatch(field, value string) bool {
 	if m.cycleField != field || m.cycleIdx < 0 || m.cycleIdx >= len(m.cycleValues) {
 		return true
 	}
@@ -664,7 +664,7 @@ func (m appModel) cycleMatch(field, value string) bool {
 
 // cycleMatchDate returns true if t falls in the active date bucket (when
 // cycleField == "date"), or true if date cycling is not active.
-func (m appModel) cycleMatchDate(t time.Time) bool {
+func (m Model) cycleMatchDate(t time.Time) bool {
 	if m.cycleField != "date" || m.cycleIdx < 0 || m.cycleIdx >= len(m.cycleValues) {
 		return true
 	}
@@ -674,7 +674,7 @@ func (m appModel) cycleMatchDate(t time.Time) bool {
 // collectCycleValues gathers unique sorted values for a field from the raw
 // (text-filtered only) data of the active tab.  Called when a cycle key is
 // first pressed or the field changes.
-func (m appModel) collectCycleValues(field string) []string {
+func (m Model) collectCycleValues(field string) []string {
 	if field == "date" {
 		return timeBuckets
 	}
@@ -873,7 +873,7 @@ func (m appModel) collectCycleValues(field string) []string {
 // doCycleFilter advances (or starts) a cycle filter for field.
 // Pressing the same key again advances to the next value; wrapping past the
 // end clears the filter.
-func (m *appModel) doCycleFilter(field string) {
+func (m *Model) doCycleFilter(field string) {
 	newVals := m.collectCycleValues(field)
 	if len(newVals) == 0 {
 		return
@@ -915,7 +915,7 @@ func (m *appModel) doCycleFilter(field string) {
 // cycleSortField advances the sort for a field:
 //   - if a different field is active, switch to this field at sortAsc
 //   - sortAsc → sortDesc → clear (Field="")
-func (m *appModel) cycleSortField(field string) {
+func (m *Model) cycleSortField(field string) {
 	cur := m.tabSort[m.activeTab]
 	if cur.Field != field {
 		m.tabSort[m.activeTab] = tabSortState{Field: field, Order: sortAsc}
@@ -932,7 +932,7 @@ func (m *appModel) cycleSortField(field string) {
 }
 
 // clearCycleFilter resets any active cycle filter and block highlight.
-func (m *appModel) clearCycleFilter() {
+func (m *Model) clearCycleFilter() {
 	m.cycleField = ""
 	m.cycleValues = nil
 	m.cycleIdx = -1

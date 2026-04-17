@@ -158,7 +158,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 |-----|--------|
 | `enter` | Open detail pane (tabs 1-4) / open diff (tab 5) |
 | `o` | Open on GitHub in browser (all tabs and views) |
-| `space` | Open diffnav (activity / detail commits / diff view) / lazygit (other contexts) |
+| `space` | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
 | `e` | Open `$EDITOR` / nvim at repo root (all tabs and views) |
 | `p` | `git pull` current repo (all tabs) |
 | `r` | Refresh current tab |
@@ -179,7 +179,7 @@ The detail pane opens with `enter` on any tab and shows full repo info with an i
 | `{ }` | Jump between sections (branches, PRs, CI, commits) |
 | `[ ]` | Previous / next repo (follows source tab, skips duplicates) |
 | `gg` / `G` | First / last item |
-| `space` | Contextual: diffnav for commits, lazygit for branches/PRs |
+| `space` | Contextual: diffnav (commits), gh-dash (PRs), checkout + lazygit (branches), workflow editor (CI) |
 | `o` | Contextual: open item on GitHub (PR URL, commit, branch, CI run) |
 | `e` | Open editor at repo root |
 | `esc` | Close detail pane |
@@ -233,10 +233,16 @@ Grove hands off to external tools via the `space` and `e` keys:
 
 | Context | `space` opens | `e` opens |
 |---------|---------------|-----------|
-| Dashboard / PRs / Branches / CI | lazygit | `$EDITOR` / nvim |
-| Activity tab (commits) | diffnav | `$EDITOR` / nvim |
-| Detail pane (commit selected) | diffnav | `$EDITOR` / nvim |
-| Detail pane (branch/PR selected) | lazygit | `$EDITOR` / nvim |
+| Dashboard | lazygit | `$EDITOR` / nvim |
+| PRs tab | gh-dash (from repo dir) | `$EDITOR` / nvim |
+| Branches tab | checkout branch + lazygit (restores branch on exit) | `$EDITOR` / nvim |
+| CI tab | workflow `.yml` in editor | `$EDITOR` / nvim |
+| Activity tab | diffnav | `$EDITOR` / nvim |
+| Detail pane (commit) | diffnav | `$EDITOR` / nvim |
+| Detail pane (PR) | gh-dash | `$EDITOR` / nvim |
+| Detail pane (branch) | checkout + lazygit | `$EDITOR` / nvim |
+| Detail pane (CI run) | workflow `.yml` in editor | `$EDITOR` / nvim |
+| Detail pane (local branch) | lazygit | `$EDITOR` / nvim |
 | Diff view | diffnav | `$EDITOR` / nvim |
 
 If a tool is not found on `PATH` or there is no valid target (no GitHub URL, no repo selected), a status message is shown instead of failing silently.

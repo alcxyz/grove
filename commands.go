@@ -391,6 +391,116 @@ func launchNvim(path string) tea.Cmd {
 	})
 }
 
+// launchGhDash suspends grove and opens gh-dash in the given repo directory.
+func launchGhDash(path string) tea.Cmd {
+	if path == "" {
+		return func() tea.Msg { return statusMsg("no repo selected") }
+	}
+	if _, err := exec.LookPath("gh-dash"); err != nil {
+		return func() tea.Msg { return statusMsg("gh-dash not found on PATH") }
+	}
+	c := exec.Command("gh-dash")
+	c.Dir = path
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return statusMsg(fmt.Sprintf("gh-dash exited: %v", err))
+		}
+		return statusMsg("back in grove")
+	})
+}
+
+// launchLazygitOnBranch checks out the target branch, opens lazygit, and
+// restores the original branch when lazygit exits.
+func launchLazygitOnBranch(repoPath, targetBranch string) tea.Cmd {
+	if repoPath == "" {
+		return func() tea.Msg { return statusMsg("no repo selected") }
+	}
+	if _, err := exec.LookPath("lazygit"); err != nil {
+		return func() tea.Msg { return statusMsg("lazygit not found on PATH") }
+	}
+	origBranch, err := gitpkg.CurrentBranch(repoPath)
+	if err != nil {
+		return func() tea.Msg { return statusMsg(fmt.Sprintf("could not get current branch: %v", err)) }
+	}
+	if err := gitpkg.Checkout(repoPath, targetBranch); err != nil {
+		return func() tea.Msg { return statusMsg(fmt.Sprintf("checkout %s failed: %v", targetBranch, err)) }
+	}
+	c := exec.Command("lazygit", "-p", repoPath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		// Always restore the original branch, even if lazygit errored.
+		_ = gitpkg.Checkout(repoPath, origBranch)
+		if err != nil {
+			return statusMsg(fmt.Sprintf("lazygit exited: %v", err))
+		}
+		return statusMsg(fmt.Sprintf("back in grove (restored %s)", origBranch))
+	})
+}
+
+// launchEditorAt opens $EDITOR/nvim at a specific file path.
+func launchEditorAt(filePath string) tea.Cmd {
+	if filePath == "" {
+		return func() tea.Msg { return statusMsg("no file to open") }
+	}
+	bin := os.Getenv("EDITOR")
+	if bin == "" {
+		bin = "nvim"
+	}
+	if _, err := exec.LookPath(bin); err != nil {
+		return func() tea.Msg { return statusMsg(fmt.Sprintf("%s not found on PATH", bin)) }
+	}
+	c := exec.Command(bin, filePath)
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		if err != nil {
+			return statusMsg(fmt.Sprintf("%s exited: %v", bin, err))
+		}
+		return statusMsg("back in grove")
+	})
+}
+
+// workflowFilePath returns the absolute path to the workflow file for a CI run.
+// Prefers the API-provided WorkflowFile path; falls back to scanning the local
+// .github/workflows/ directory for a matching name: field or filename.
+func workflowFilePath(repoPath string, run model.WorkflowRun) string {
+	if run.WorkflowFile != "" {
+		full := filepath.Join(repoPath, run.WorkflowFile)
+		if _, err := os.Stat(full); err == nil {
+			return full
+		}
+	}
+	// Fallback: scan local workflow files.
+	dir := filepath.Join(repoPath, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		full := filepath.Join(dir, name)
+		data, err := os.ReadFile(full)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "name:") {
+				val := strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+				val = strings.Trim(val, "\"'")
+				if strings.EqualFold(val, run.WorkflowName) {
+					return full
+				}
+				break
+			}
+		}
+	}
+	return ""
+}
+
 // launchDiffnav suspends grove and opens diffnav for a specific commit.
 func launchDiffnav(repoPath, hash string) tea.Cmd {
 	if repoPath == "" {

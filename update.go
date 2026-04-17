@@ -10,6 +10,7 @@ import (
 	"github.com/alcxyz/grove/internal/cache"
 	"github.com/alcxyz/grove/internal/gh"
 	gitpkg "github.com/alcxyz/grove/internal/git"
+	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
 )
 
@@ -141,6 +142,10 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDiff {
 			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
+				if m.loading && key != "esc" && key != "backspace" && key != "q" {
+					m.statusMsg = "loading, please wait…"
+					return m, nil
+				}
 				// loadCommitAt fetches the diff for cursor c (grouped-order index)
 				// and resets diffScroll so the new diff starts at the top.
 				loadCommitAt := func(c int) (appModel, tea.Cmd) {
@@ -160,16 +165,22 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if c, ok := m.commitAtCursor(); ok {
 						if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
 							_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+						} else {
+							m.statusMsg = "no GitHub owner configured"
 						}
+					} else {
+						m.statusMsg = "nothing selected"
 					}
 				case "e":
 					if c, ok := m.commitAtCursor(); ok {
 						return m, launchNvim(c.RepoPath)
 					}
+					m.statusMsg = "nothing selected"
 				case " ":
 					if c, ok := m.commitAtCursor(); ok {
 						return m, launchDiffnav(c.RepoPath, c.Hash)
 					}
+					m.statusMsg = "nothing selected"
 				case "j", "down":
 					m.diffScroll++
 					m.clampDiffScroll()
@@ -227,21 +238,22 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showDetail {
 			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
 			if !isTabNav {
+				// While data is loading, acknowledge input but don't act on it.
+				if m.loading && key != "esc" && key != "backspace" && key != "q" {
+					m.statusMsg = "loading, please wait…"
+					return m, nil
+				}
 				// loadAt navigates to a different repo from within the detail pane.
-				// Walks the grouped structure so that [/] respects the current grouping.
+				// Uses the source tab's grouped order so [/] cycles through the
+				// items of the tab that opened the detail, not always Dashboard repos.
 				loadAt := func(c int) (appModel, tea.Cmd) {
-					flat := 0
-					for _, g := range m.groupedRepos() {
-						for _, r := range g.Repos {
-							if flat == c {
-								m.cursor = c
-								m.detailScroll = 0
-								m.loading = true
-								m.statusMsg = fmt.Sprintf("Loading %s…", r.Name)
-								return m, loadDetail(r)
-							}
-							flat++
-						}
+					if repo, ok := m.repoForDetailNav(c); ok {
+						m.cursor = c
+						m.detailRepo = repo
+						m.detailScroll = 0
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading %s…", repo.Name)
+						return m, loadDetail(repo)
 					}
 					return m, nil
 				}
@@ -252,12 +264,14 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Contextual open-in-browser based on selected item.
 					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
 						item := m.detailItems[m.detailCursor]
-						repo, _ := m.repoAtCursor()
+						repo := m.detailRepo
 						switch item.Section {
 						case detailRemoteBranch:
 							branches := m.detailRemoteBranches()
 							if item.Index < len(branches) && repo.Owner != "" {
 								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/tree/%s", repo.Owner, repo.Name, branches[item.Index].Name))
+							} else {
+								m.statusMsg = "no GitHub URL for this branch"
 							}
 						case detailPR:
 							if item.Index < len(m.detailPRs) {
@@ -272,18 +286,21 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							if item.Index < len(m.detailCommits) && repo.Owner != "" {
 								c := m.detailCommits[item.Index]
 								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", repo.Owner, repo.Name, c.Hash))
+							} else {
+								m.statusMsg = "no GitHub owner configured"
 							}
 						default:
-							// Local branches / fallback: open repo on GitHub.
-							if repo.Owner != "" {
-								_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", repo.Owner, repo.Name))
-							}
+							// Local branches: no direct GitHub URL.
+							m.statusMsg = "no GitHub URL for local branches"
 						}
+					} else {
+						m.statusMsg = "nothing selected"
 					}
 				case "e":
-					if path := m.repoPathAtCursor(); path != "" {
-						return m, launchNvim(path)
+					if m.detailRepo.Path != "" {
+						return m, launchNvim(m.detailRepo.Path)
 					}
+					m.statusMsg = "no repo selected"
 				case " ":
 					// Contextual external tool based on selected item.
 					if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
@@ -295,10 +312,13 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return m, launchDiffnav(c.RepoPath, c.Hash)
 							}
 						default:
-							if path := m.repoPathAtCursor(); path != "" {
-								return m, launchLazygit(path)
+							if m.detailRepo.Path != "" {
+								return m, launchLazygit(m.detailRepo.Path)
 							}
+							m.statusMsg = "no repo selected"
 						}
+					} else {
+						m.statusMsg = "nothing selected"
 					}
 				case "j", "down":
 					if m.detailCursor < len(m.detailItems)-1 {
@@ -327,13 +347,24 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						})
 					}
 				case "[":
-					if m.cursor > 0 {
+					// Skip to prev item with a different repo.
+					cur := m.detailRepo.Name
+					for m.cursor > 0 {
 						m.cursor--
+						if r, ok := m.repoForDetailNav(m.cursor); ok && r.Name != cur {
+							return loadAt(m.cursor)
+						}
 					}
 					return loadAt(m.cursor)
 				case "]":
-					if m.cursor < m.listLen()-1 {
+					// Skip to next item with a different repo.
+					cur := m.detailRepo.Name
+					ll := m.listLen() - 1
+					for m.cursor < ll {
 						m.cursor++
+						if r, ok := m.repoForDetailNav(m.cursor); ok && r.Name != cur {
+							return loadAt(m.cursor)
+						}
 					}
 					return loadAt(m.cursor)
 				case "{":
@@ -464,33 +495,29 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
+			openDetail := func(repo model.Repo) (appModel, tea.Cmd) {
+				m.showDetail = true
+				m.detailRepo = repo
+				m.detailScroll = 0
+				m.loading = true
+				m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+				return m, loadDetail(repo)
+			}
 			switch m.activeTab {
 			case tabDashboard:
 				if r, ok := m.repoAtCursor(); ok {
-					m.showDetail = true
-					m.detailScroll = 0
-					m.loading = true
-					m.statusMsg = fmt.Sprintf("Loading %s details…", r.Name)
-					return m, loadDetail(r)
+					return openDetail(r)
 				}
 			case tabPRs:
 				if pr, ok := m.prAtCursor(); ok {
 					if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
-						m.showDetail = true
-						m.detailScroll = 0
-						m.loading = true
-						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-						return m, loadDetail(repo)
+						return openDetail(repo)
 					}
 				}
 			case tabBranches:
 				if br, ok := m.branchAtCursor(); ok {
 					if repo, ok := m.repoByName(repoBaseName(br.Repo)); ok {
-						m.showDetail = true
-						m.detailScroll = 0
-						m.loading = true
-						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-						return m, loadDetail(repo)
+						return openDetail(repo)
 					}
 				}
 			case tabActivity:
@@ -505,11 +532,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tabCI:
 				if r, ok := m.runAtCursor(); ok {
 					if repo, ok := m.repoByName(repoBaseName(r.Repo)); ok {
-						m.showDetail = true
-						m.detailScroll = 0
-						m.loading = true
-						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-						return m, loadDetail(repo)
+						return openDetail(repo)
 					}
 				}
 			}
@@ -655,16 +678,19 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if c, ok := m.commitAtCursor(); ok {
 					return m, launchDiffnav(c.RepoPath, c.Hash)
 				}
+				m.statusMsg = "nothing selected"
 			default:
 				if path := m.repoPathAtCursor(); path != "" {
 					return m, launchLazygit(path)
 				}
+				m.statusMsg = "no repo selected"
 			}
 		case "e":
 			// e = open editor (nvim / $EDITOR) at the repo root.
 			if path := m.repoPathAtCursor(); path != "" {
 				return m, launchNvim(path)
 			}
+			m.statusMsg = "no repo selected"
 		case "p":
 			// p = git pull the repo for the selected item (all tabs).
 			if path := m.repoPathAtCursor(); path != "" {
@@ -679,6 +705,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return statusMsg(fmt.Sprintf("Pulled %s", name))
 				}
 			}
+			m.statusMsg = "no repo selected"
 		case "o":
 			// o = open on GitHub in browser.
 			switch m.activeTab {
@@ -686,25 +713,39 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if r, ok := m.repoAtCursor(); ok {
 					if r.Owner != "" {
 						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					} else {
+						m.statusMsg = "no GitHub owner configured"
 					}
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabPRs:
 				if pr, ok := m.prAtCursor(); ok {
 					_ = ui.OpenURL(pr.URL)
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabBranches:
 				if br, ok := m.branchAtCursor(); ok {
 					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/tree/%s", br.Repo, br.Name))
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabActivity:
 				if c, ok := m.commitAtCursor(); ok {
 					if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
 						_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+					} else {
+						m.statusMsg = "no GitHub owner configured"
 					}
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			case tabCI:
 				if r, ok := m.runAtCursor(); ok {
 					_ = ui.OpenURL(r.URL)
+				} else {
+					m.statusMsg = "nothing selected"
 				}
 			}
 		case "up", "k":
@@ -834,33 +875,29 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if msg.Y == m.lastClickY && now.Sub(m.lastClickAt) < 500*time.Millisecond {
 					m.lastClickAt = time.Time{}
 					// synthesise enter — same semantics as the keyboard handler
+					dblOpenDetail := func(repo model.Repo) (appModel, tea.Cmd) {
+						m.showDetail = true
+						m.detailRepo = repo
+						m.detailScroll = 0
+						m.loading = true
+						m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
+						return m, loadDetail(repo)
+					}
 					switch m.activeTab {
 					case tabDashboard:
 						if r, ok := m.repoAtCursor(); ok {
-							m.showDetail = true
-							m.detailScroll = 0
-							m.loading = true
-							m.statusMsg = fmt.Sprintf("Loading %s details…", r.Name)
-							return m, loadDetail(r)
+							return dblOpenDetail(r)
 						}
 					case tabPRs:
 						if pr, ok := m.prAtCursor(); ok {
 							if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
-								m.showDetail = true
-								m.detailScroll = 0
-								m.loading = true
-								m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-								return m, loadDetail(repo)
+								return dblOpenDetail(repo)
 							}
 						}
 					case tabBranches:
 						if br, ok := m.branchAtCursor(); ok {
 							if repo, ok := m.repoByName(repoBaseName(br.Repo)); ok {
-								m.showDetail = true
-								m.detailScroll = 0
-								m.loading = true
-								m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-								return m, loadDetail(repo)
+								return dblOpenDetail(repo)
 							}
 						}
 					case tabActivity:
@@ -875,11 +912,7 @@ func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case tabCI:
 						if r, ok := m.runAtCursor(); ok {
 							if repo, ok := m.repoByName(repoBaseName(r.Repo)); ok {
-								m.showDetail = true
-								m.detailScroll = 0
-								m.loading = true
-								m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-								return m, loadDetail(repo)
+								return dblOpenDetail(repo)
 							}
 						}
 					}

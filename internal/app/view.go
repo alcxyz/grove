@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 // infoBarParts returns the context-aware pieces for the bottom info bar.
-func (m appModel) infoBarParts() []string {
+func (m Model) infoBarParts() []string {
 	if m.showHelp {
 		return []string{"? close help"}
 	}
@@ -124,14 +124,14 @@ func (m appModel) infoBarParts() []string {
 		parts = append(parts, ui.DimStyle.Render("auto-refresh off"))
 	}
 	parts = append(parts, ui.DimStyle.Render("? help"))
-	parts = append(parts, ui.DimStyle.Render("v"+version))
+	parts = append(parts, ui.DimStyle.Render("v"+m.version))
 	if m.latestVersion != "" {
 		parts = append(parts, ui.PendingStyle.Render("↑ "+m.latestVersion+" available"))
 	}
 	return parts
 }
 
-func (m appModel) View() string {
+func (m Model) View() string {
 	// Screensaver takes over the full frame
 	if m.ssActive {
 		return ui.RenderScreensaver(m.ssX, m.ssY, m.ssColor, m.width, m.height)
@@ -219,9 +219,9 @@ func (m appModel) View() string {
 
 	// Splash overlay replaces main content
 	if m.showSplash {
-		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, version, width, m.splashBlink))
+		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, m.version, width, m.splashBlink))
 	} else if m.showHelp {
-		b.WriteString(ui.RenderHelp(width, m.helpPage, version))
+		b.WriteString(ui.RenderHelp(width, m.helpPage, m.version))
 	} else if m.showDiff {
 		// Diff pane — render full content, slice to viewport using diffScroll.
 		content := ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.diffPreColored)

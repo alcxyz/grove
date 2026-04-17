@@ -68,7 +68,7 @@ Requires Go 1.22+ and the [gh](https://cli.github.com/) CLI authenticated (`gh a
 ```sh
 git clone git@github.com:alcxyz/grove.git
 cd grove
-go build -o grove .
+go build -o grove ./cmd/grove
 mv grove ~/.local/bin/
 ```
 

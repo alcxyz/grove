@@ -26,7 +26,7 @@ func TestGroupFor_ExplicitGroups(t *testing.T) {
 		{"unrelated", "other"},
 	}
 	for _, c := range cases {
-		if got := p.GroupFor(c.repo); got != c.want {
+		if got := p.GroupFor(c.repo, ""); got != c.want {
 			t.Errorf("GroupFor(%q) = %q, want %q", c.repo, got, c.want)
 		}
 	}
@@ -37,13 +37,13 @@ func TestGroupFor_DerivedFromPrefixes(t *testing.T) {
 		Prefixes: []string{"service-", "platform-"},
 	}
 	// Derived groups use the prefix minus trailing "-" as the name.
-	if got := p.GroupFor("service-api"); got != "service" {
+	if got := p.GroupFor("service-api", ""); got != "service" {
 		t.Errorf("GroupFor(service-api) = %q, want service", got)
 	}
-	if got := p.GroupFor("platform-core"); got != "platform" {
+	if got := p.GroupFor("platform-core", ""); got != "platform" {
 		t.Errorf("GroupFor(platform-core) = %q, want platform", got)
 	}
-	if got := p.GroupFor("unknown"); got != "other" {
+	if got := p.GroupFor("unknown", ""); got != "other" {
 		t.Errorf("GroupFor(unknown) = %q, want other", got)
 	}
 }
@@ -51,8 +51,55 @@ func TestGroupFor_DerivedFromPrefixes(t *testing.T) {
 func TestGroupFor_EmptyPrefixes(t *testing.T) {
 	p := Profile{Prefixes: []string{}}
 	// Empty prefixes + no groups → everything is "other"
-	if got := p.GroupFor("anything"); got != "other" {
+	if got := p.GroupFor("anything", ""); got != "other" {
 		t.Errorf("GroupFor(anything) = %q, want other", got)
+	}
+}
+
+func TestGroupFor_MatchPath(t *testing.T) {
+	p := Profile{
+		Groups: []Group{
+			{Name: "nix", MatchPath: "/home/user/nix"},
+			{Name: "gitops", MatchPath: "/home/user/gitops"},
+			{Name: "pages", Match: "github.io"},
+		},
+	}
+	cases := []struct {
+		repo string
+		path string
+		want string
+	}{
+		{"nix-config", "/home/user/nix/nix-config", "nix"},
+		{"nix-secrets", "/home/user/nix/nix-secrets", "nix"},
+		{"leantime-tidy", "/home/user/gitops/leantime-tidy", "gitops"},
+		{"alcxyz.github.io", "/home/user/dev/alcxyz.github.io", "pages"},
+		{"grove", "/home/user/dev/grove", "other"},
+	}
+	for _, c := range cases {
+		if got := p.GroupFor(c.repo, c.path); got != c.want {
+			t.Errorf("GroupFor(%q, %q) = %q, want %q", c.repo, c.path, got, c.want)
+		}
+	}
+}
+
+func TestGroupFor_MatchPathAndMatchMixed(t *testing.T) {
+	// A group with both match and match_path — either one can trigger.
+	p := Profile{
+		Groups: []Group{
+			{Name: "infra", Match: "infra-", MatchPath: "/home/user/infra"},
+		},
+	}
+	// Matches via path
+	if got := p.GroupFor("terraform", "/home/user/infra/terraform"); got != "infra" {
+		t.Errorf("expected infra via path, got %q", got)
+	}
+	// Matches via name
+	if got := p.GroupFor("infra-vpc", "/home/user/other/infra-vpc"); got != "infra" {
+		t.Errorf("expected infra via name, got %q", got)
+	}
+	// No match
+	if got := p.GroupFor("app", "/home/user/other/app"); got != "other" {
+		t.Errorf("expected other, got %q", got)
 	}
 }
 

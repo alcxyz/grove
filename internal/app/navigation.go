@@ -318,6 +318,24 @@ func tabAtX(x int) int {
 	return -1
 }
 
+// repoPathLookup builds a name→path map from the model's repo list.
+func (m Model) repoPathLookup() map[string]string {
+	lk := make(map[string]string, len(m.repos))
+	for _, r := range m.repos {
+		lk[r.Name] = r.Path
+	}
+	return lk
+}
+
+// groupForFunc returns a func(string) string closure that wraps p.GroupFor
+// with path lookup from the model's repo list.
+func (m Model) groupForFunc(p config.Profile) func(string) string {
+	paths := m.repoPathLookup()
+	return func(name string) string {
+		return p.GroupFor(name, paths[name])
+	}
+}
+
 func (m Model) groupedRepos() []ui.RepoGroup {
 	repos := m.filteredRepos()
 	if !m.grouped {
@@ -339,7 +357,7 @@ func (m Model) groupedRepos() []ui.RepoGroup {
 			}, po)
 	}
 	p := m.activeProfileObj()
-	return ui.BuildGroups(repos, p.GroupFor, p.GroupOrder)
+	return ui.BuildGroups(repos, m.groupForFunc(p), p.GroupOrder)
 }
 
 func (m Model) groupedPRs() []ui.PRGroup {
@@ -363,7 +381,7 @@ func (m Model) groupedPRs() []ui.PRGroup {
 			}, po)
 	}
 	p := m.activeProfileObj()
-	return ui.BuildPRGroups(prs, p.GroupFor, p.GroupOrder)
+	return ui.BuildPRGroups(prs, m.groupForFunc(p), p.GroupOrder)
 }
 
 func (m Model) groupedBranches() []ui.BranchGroup {
@@ -387,7 +405,7 @@ func (m Model) groupedBranches() []ui.BranchGroup {
 			}, po)
 	}
 	p := m.activeProfileObj()
-	return ui.BuildBranchGroups(branches, p.GroupFor, p.GroupOrder)
+	return ui.BuildBranchGroups(branches, m.groupForFunc(p), p.GroupOrder)
 }
 
 func (m Model) groupedRuns() []ui.CIGroup {
@@ -410,7 +428,7 @@ func (m Model) groupedRuns() []ui.CIGroup {
 			}, po)
 	}
 	p := m.activeProfileObj()
-	return ui.BuildCIGroups(runs, p.GroupFor, p.GroupOrder)
+	return ui.BuildCIGroups(runs, m.groupForFunc(p), p.GroupOrder)
 }
 
 func (m Model) groupedActivity() []ui.CommitGroup {
@@ -434,7 +452,7 @@ func (m Model) groupedActivity() []ui.CommitGroup {
 			}, po)
 	}
 	p := m.activeProfileObj()
-	return ui.BuildCommitGroups(commits, p.GroupFor, p.GroupOrder)
+	return ui.BuildCommitGroups(commits, m.groupForFunc(p), p.GroupOrder)
 }
 
 // blockHighlightValue returns the match string for the current highlight field

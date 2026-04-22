@@ -11,9 +11,10 @@ import (
 )
 
 type Group struct {
-	Name     string `yaml:"name"`
-	Match    string `yaml:"match"`     // prefix/substring match on repo name
-	BasePath string `yaml:"base_path"` // optional: clone destination for this group
+	Name      string `yaml:"name"`
+	Match     string `yaml:"match"`      // prefix/substring match on repo name
+	MatchPath string `yaml:"match_path"` // path prefix match on repo location
+	BasePath  string `yaml:"base_path"`  // optional: clone destination for this group
 }
 
 // Profile holds per-profile configuration.
@@ -189,6 +190,9 @@ func normaliseProfiles(cfg *Config, fillPrefixDefaults bool) {
 			if len(g.BasePath) > 0 && g.BasePath[0] == '~' {
 				p.Groups[j].BasePath = filepath.Join(home, g.BasePath[1:])
 			}
+			if len(g.MatchPath) > 0 && g.MatchPath[0] == '~' {
+				p.Groups[j].MatchPath = filepath.Join(home, g.MatchPath[1:])
+			}
 		}
 		if fillPrefixDefaults && len(p.Prefixes) == 0 {
 			if len(cfg.Prefixes) > 0 {
@@ -219,11 +223,11 @@ func (c Config) ResolveGroups() []Group {
 	return groups
 }
 
-// GroupFor returns the group name for a given repo name.
+// GroupFor returns the group name for a given repo name and path.
 // Delegates to the first profile when profiles are defined.
-func (c Config) GroupFor(repoName string) string {
+func (c Config) GroupFor(repoName, repoPath string) string {
 	if len(c.Profiles) > 0 {
-		return c.Profiles[0].GroupFor(repoName)
+		return c.Profiles[0].GroupFor(repoName, repoPath)
 	}
 	return "other"
 }
@@ -267,11 +271,16 @@ func (p Profile) ResolveGroups() []Group {
 	return groups
 }
 
-// GroupFor returns the group name for a given repo name.
+// GroupFor returns the group name for a given repo name and filesystem path.
+// A group matches if its match_path is a prefix of the repo path, or its
+// match is a prefix/substring of the repo name. First match wins.
 // Returns "other" if no group matches.
-func (p Profile) GroupFor(repoName string) string {
+func (p Profile) GroupFor(repoName, repoPath string) string {
 	for _, g := range p.ResolveGroups() {
-		if strings.HasPrefix(repoName, g.Match) || strings.Contains(repoName, g.Match) {
+		if g.MatchPath != "" && strings.HasPrefix(repoPath, g.MatchPath) {
+			return g.Name
+		}
+		if g.Match != "" && (strings.HasPrefix(repoName, g.Match) || strings.Contains(repoName, g.Match)) {
 			return g.Name
 		}
 	}

@@ -8,16 +8,25 @@
 profiles:
   # Personal profile: owner = your GitHub username enables PR/branch tracking.
   # prefixes: [] matches ALL repos found under base_paths.
+  # Groups can use match_path to group repos by their directory location.
   - name: Personal
     owner: my-github-username
     base_paths:
       - ~/dev/git/personal
       - ~/projects
+      - ~/nix
     prefixes: []   # empty = no filtering, all local repos are shown
+    groups:
+      - name: nix
+        match_path: ~/nix              # all repos under ~/nix
+      - name: pages
+        match: github.io              # repos with "github.io" in the name
 
   # Work profile: scoped to an org with prefix filtering and group routing.
   # Groups control both the dashboard grouping AND the clone destination
   # (base_path on a group overrides the profile base_paths for "grove clone").
+  # match: matches repo names (prefix/substring).
+  # match_path: matches repo filesystem path (prefix). Either can trigger a match.
   - name: Work
     owner: my-org
     base_paths:

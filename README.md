@@ -87,7 +87,7 @@ profiles:
       - platform-
     groups:
       - name: Services
-        match: service-
+        match: service-          # matches repo names starting with "service-"
       - name: Platform
         match: platform-
 
@@ -95,11 +95,19 @@ profiles:
     owner: my-github-username
     base_paths:
       - ~/dev/git/personal
-    # prefixes omitted → all git repos in base_paths are scanned
+      - ~/nix
+    prefixes: []               # all git repos in base_paths are scanned
+    groups:
+      - name: nix
+        match_path: ~/nix      # matches repos under this directory
+      - name: pages
+        match: github.io       # matches repo names containing "github.io"
 
 refresh_secs: 300
 screensaver_secs: 300
 ```
+
+Groups support two matching strategies: `match` matches against the repo name (prefix or substring), and `match_path` matches against the repo's filesystem path (prefix). Both can be used on the same group — either matching puts the repo in that group. First matching group wins; unmatched repos go to "other".
 
 The legacy single-profile format (`base_path`, `org`, `prefixes` at the top level) is still supported and auto-migrates to a single profile.
 

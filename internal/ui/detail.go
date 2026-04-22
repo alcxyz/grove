@@ -1,6 +1,7 @@
 package ui
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 
@@ -187,13 +188,10 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 }
 
 // splashArt is the ASCII art for the splash/about screen (! key) and screensaver.
-var splashArt = `               {o,o}
-   ___ _ __ ___|)_)|___  ___
-  / _ \ '__/  _ \ \ / / _ \
- | (_| | | | (_) \ V /  __/
-  \__, |_|  \___/ \_/ \___|
-  |___/
-  one repo to rule them all`
+// Source of truth: internal/ui/logo.txt
+//
+//go:embed logo.txt
+var splashArt string
 
 // splashArtLines are the art lines pre-split for screensaver positioning.
 var splashArtLines = strings.Split(splashArt, "\n")

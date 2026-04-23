@@ -2,11 +2,9 @@
 
 A terminal UI for monitoring GitHub repositories. See branch status, dirty working trees, ahead/behind counts, open PRs, recent branches, and commit activity across all your repos without leaving the terminal.
 
-<!-- Logo source of truth: internal/ui/logo.txt -->
-
 ```
                {o,o}
-   ___ _ __ ___|)_)|___ __
+   ___ _ __ ___|)_)|___  ___
   / _ \ '__/  _ \ \ / / _ \
  | (_| | | | (_) \ V /  __/
   \__, |_|  \___/ \_/ \___|
@@ -81,7 +79,7 @@ On first run grove writes an example config to `$XDG_CONFIG_HOME/grove/config.ya
 ```yaml
 profiles:
   - name: Work
-    owner: my-org # GitHub org or your username — drives PR/branch tabs
+    owner: my-org          # GitHub org or your username — drives PR/branch tabs
     base_paths:
       - ~/dev/git/my-org
     prefixes:
@@ -89,7 +87,7 @@ profiles:
       - platform-
     groups:
       - name: Services
-        match: service- # matches repo names starting with "service-"
+        match: service-          # matches repo names starting with "service-"
       - name: Platform
         match: platform-
 
@@ -98,12 +96,12 @@ profiles:
     base_paths:
       - ~/dev/git/personal
       - ~/nix
-    prefixes: [] # all git repos in base_paths are scanned
+    prefixes: []               # all git repos in base_paths are scanned
     groups:
       - name: nix
-        match_path: ~/nix # matches repos under this directory
+        match_path: ~/nix      # matches repos under this directory
       - name: pages
-        match: github.io # matches repo names containing "github.io"
+        match: github.io       # matches repo names containing "github.io"
 
 refresh_secs: 300
 screensaver_secs: 300
@@ -122,41 +120,41 @@ grove ~/dir1 ~/dir2
 
 ### Files
 
-| Path                                 | Purpose                                                      |
-| ------------------------------------ | ------------------------------------------------------------ |
+| Path | Purpose |
+|------|---------|
 | `$XDG_CONFIG_HOME/grove/config.yaml` | Config (falls back to `~/.grove.yaml`); profile-based format |
-| `$XDG_CACHE_HOME/grove/`             | Cached PR / branch / activity / CI run data + UI state       |
-| `$XDG_STATE_HOME/grove/grove.log`    | Runtime log                                                  |
+| `$XDG_CACHE_HOME/grove/` | Cached PR / branch / activity / CI run data + UI state |
+| `$XDG_STATE_HOME/grove/grove.log` | Runtime log |
 
 ## Key bindings
 
 ### Navigation
 
-| Key                 | Action                                                                    |
-| ------------------- | ------------------------------------------------------------------------- |
-| `j` / `k`           | Move down / up                                                            |
-| `h` / `l`           | Previous / next tab                                                       |
-| `H` / `L`           | Previous / next profile (cycles through All)                              |
-| `gg` / `G`          | First / last item                                                         |
-| `tab` / `shift+tab` | Jump 5 / 10 / 20 / 25 lines (accelerates on rapid press)                  |
-| `{ }`               | Jump between config groups                                                |
-| `[ ]`               | Jump between repo blocks                                                  |
-| `( )`               | Jump between CI status blocks (tab 1) / subject / branch / message blocks |
-| `1` `2` `3` `4` `5` | Switch to tab directly                                                    |
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move down / up |
+| `h` / `l` | Previous / next tab |
+| `H` / `L` | Previous / next profile (cycles through All) |
+| `gg` / `G` | First / last item |
+| `tab` / `shift+tab` | Jump 5 / 10 / 20 / 25 lines (accelerates on rapid press) |
+| `{ }` | Jump between config groups |
+| `[ ]` | Jump between repo blocks |
+| `( )` | Jump between CI status blocks (tab 1) / subject / branch / message blocks |
+| `1` `2` `3` `4` `5` | Switch to tab directly |
 
 ### Filters and sort
 
-| Key       | Action                                                                                    |
-| --------- | ----------------------------------------------------------------------------------------- |
-| `/`       | Open text filter                                                                          |
-| `esc`     | Clear active filter / close pane                                                          |
-| `d` / `D` | Cycle by author, sort by author                                                           |
-| `s` / `S` | Cycle by subject prefix, sort by name / title                                             |
-| `a` / `A` | Cycle by repository, sort by repository                                                   |
-| `f` / `F` | Cycle by date, sort by date / updated                                                     |
-| `x` / `X` | Cycle / sort by **PR count** (tab 1) / **review status** (tab 2) / **has-PR** (tab 4)     |
+| Key | Action |
+|-----|--------|
+| `/` | Open text filter |
+| `esc` | Clear active filter / close pane |
+| `d` / `D` | Cycle by author, sort by author |
+| `s` / `S` | Cycle by subject prefix, sort by name / title |
+| `a` / `A` | Cycle by repository, sort by repository |
+| `f` / `F` | Cycle by date, sort by date / updated |
+| `x` / `X` | Cycle / sort by **PR count** (tab 1) / **review status** (tab 2) / **has-PR** (tab 4) |
 | `c` / `C` | Cycle / sort by **branch count** (tab 1) / **merged** (tab 4) / **branch prefix** (tab 3) |
-| `v` / `V` | Cycle / sort by **CI status** (tabs 1, 3) / **checks result** (tab 2)                     |
+| `v` / `V` | Cycle / sort by **CI status** (tabs 1, 3) / **checks result** (tab 2) |
 
 The `x` / `c` / `v` keys follow the spatial layout of the columns they target (PR / Br / CI on the dashboard).
 
@@ -164,63 +162,63 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 
 ### Actions
 
-| Key                 | Action                                                                                                                       |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `enter`             | Open detail pane (tabs 1-4) / open diff (tab 5)                                                                              |
-| `o`                 | Open on GitHub in browser (all tabs and views)                                                                               |
-| `space`             | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
-| `e`                 | Open `$EDITOR` / nvim at repo root (all tabs and views)                                                                      |
-| `p`                 | `git pull` current repo (all tabs)                                                                                           |
-| `r`                 | Refresh current tab                                                                                                          |
-| `R`                 | Toggle auto-refresh                                                                                                          |
-| `ctrl+f`            | `git fetch` all repos                                                                                                        |
-| `g` (single, 400ms) | Toggle grouped / flat view                                                                                                   |
-| `?`                 | Toggle help overlay                                                                                                          |
-| `!`                 | About: version, config path, cache and log locations                                                                         |
-| `q` / `ctrl+c`      | Quit                                                                                                                         |
+| Key | Action |
+|-----|--------|
+| `enter` | Open detail pane (tabs 1-4) / open diff (tab 5) |
+| `o` | Open on GitHub in browser (all tabs and views) |
+| `space` | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
+| `e` | Open `$EDITOR` / nvim at repo root (all tabs and views) |
+| `p` | `git pull` current repo (all tabs) |
+| `r` | Refresh current tab |
+| `R` | Toggle auto-refresh |
+| `ctrl+f` | `git fetch` all repos |
+| `g` (single, 400ms) | Toggle grouped / flat view |
+| `?` | Toggle help overlay |
+| `!` | About: version, config path, cache and log locations |
+| `q` / `ctrl+c` | Quit |
 
 ### Detail pane
 
 The detail pane opens with `enter` on any tab and shows full repo info with an item-level cursor:
 
-| Key        | Action                                                                                            |
-| ---------- | ------------------------------------------------------------------------------------------------- |
-| `j` / `k`  | Select next / previous item                                                                       |
-| `{ }`      | Jump between sections (branches, PRs, CI, commits)                                                |
-| `[ ]`      | Previous / next repo (follows source tab, skips duplicates)                                       |
-| `gg` / `G` | First / last item                                                                                 |
-| `space`    | Contextual: diffnav (commits), gh-dash (PRs), checkout + lazygit (branches), workflow editor (CI) |
-| `o`        | Contextual: open item on GitHub (PR URL, commit, branch, CI run)                                  |
-| `e`        | Open editor at repo root                                                                          |
-| `esc`      | Close detail pane                                                                                 |
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Select next / previous item |
+| `{ }` | Jump between sections (branches, PRs, CI, commits) |
+| `[ ]` | Previous / next repo (follows source tab, skips duplicates) |
+| `gg` / `G` | First / last item |
+| `space` | Contextual: diffnav (commits), gh-dash (PRs), checkout + lazygit (branches), workflow editor (CI) |
+| `o` | Contextual: open item on GitHub (PR URL, commit, branch, CI run) |
+| `e` | Open editor at repo root |
+| `esc` | Close detail pane |
 
 ### Diff view
 
 The diff view opens with `enter` on the Activity tab:
 
-| Key        | Action                         |
-| ---------- | ------------------------------ |
-| `j` / `k`  | Scroll up / down               |
-| `{ }`      | Jump between files in the diff |
-| `[ ]`      | Previous / next commit         |
-| `gg` / `G` | Top / bottom                   |
-| `space`    | Open in diffnav                |
-| `o`        | Open commit on GitHub          |
-| `e`        | Open editor at repo root       |
-| `esc`      | Close diff view                |
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Scroll up / down |
+| `{ }` | Jump between files in the diff |
+| `[ ]` | Previous / next commit |
+| `gg` / `G` | Top / bottom |
+| `space` | Open in diffnav |
+| `o` | Open commit on GitHub |
+| `e` | Open editor at repo root |
+| `esc` | Close diff view |
 
 ## CI / GitHub Actions
 
 Tab 3 shows recent GitHub Actions workflow runs across all repos:
 
-| Column     | Meaning                                                     |
-| ---------- | ----------------------------------------------------------- |
-| Repository | Short repo name                                             |
-| Workflow   | Workflow file display name                                  |
-| Branch     | Branch the run was triggered on                             |
-| Status     | `✓ success` / `✗ failure` / `● in_progress` / `⊘ cancelled` |
-| Event      | Trigger event (`push`, `pull_request`, `schedule`, etc.)    |
-| When       | Time since last update                                      |
+| Column | Meaning |
+|--------|---------|
+| Repository | Short repo name |
+| Workflow | Workflow file display name |
+| Branch | Branch the run was triggered on |
+| Status | `✓ success` / `✗ failure` / `● in_progress` / `⊘ cancelled` |
+| Event | Trigger event (`push`, `pull_request`, `schedule`, etc.) |
+| When | Time since last update |
 
 `o` opens the run on GitHub. `enter` opens the repo's detail pane. `r` refreshes. Filtering and sorting (`s`/`S` workflow, `a`/`A` repo, `f`/`F` date) all work as on other tabs.
 
@@ -228,44 +226,44 @@ The **Dashboard** tab (tab 1) also shows a compact CI status icon (`✓` / `✗`
 
 ### Dashboard indicators
 
-| Column           | Meaning                                                              |
-| ---------------- | -------------------------------------------------------------------- |
-| `PR`             | Open PR count, colour scales blue to yellow to red                   |
-| `Br`             | Branch count, colour scales blue to yellow to red                    |
-| `CI`             | Latest CI run: `✓` success / `✗` failure / `●` running / `—` no data |
-| `●` (tab 4)      | Branch has an open PR                                                |
-| `∈` (tab 4)      | Branch is merged into the default branch                             |
+| Column | Meaning |
+|--------|---------|
+| `PR` | Open PR count, colour scales blue to yellow to red |
+| `Br` | Branch count, colour scales blue to yellow to red |
+| `CI` | Latest CI run: `✓` success / `✗` failure / `●` running / `—` no data |
+| `●` (tab 4) | Branch has an open PR |
+| `∈` (tab 4) | Branch is merged into the default branch |
 | `Checks` (tab 2) | PR status check rollup: `✓ pass` / `✗ fail` / `● pending` / `—` none |
 
 ## External tools
 
 Grove hands off to external tools via the `space` and `e` keys:
 
-| Context                    | `space` opens                                       | `e` opens        |
-| -------------------------- | --------------------------------------------------- | ---------------- |
-| Dashboard                  | lazygit                                             | `$EDITOR` / nvim |
-| PRs tab                    | gh-dash (from repo dir)                             | `$EDITOR` / nvim |
-| Branches tab               | checkout branch + lazygit (restores branch on exit) | `$EDITOR` / nvim |
-| CI tab                     | workflow `.yml` in editor                           | `$EDITOR` / nvim |
-| Activity tab               | diffnav                                             | `$EDITOR` / nvim |
-| Detail pane (commit)       | diffnav                                             | `$EDITOR` / nvim |
-| Detail pane (PR)           | gh-dash                                             | `$EDITOR` / nvim |
-| Detail pane (branch)       | checkout + lazygit                                  | `$EDITOR` / nvim |
-| Detail pane (CI run)       | workflow `.yml` in editor                           | `$EDITOR` / nvim |
-| Detail pane (local branch) | lazygit                                             | `$EDITOR` / nvim |
-| Diff view                  | diffnav                                             | `$EDITOR` / nvim |
+| Context | `space` opens | `e` opens |
+|---------|---------------|-----------|
+| Dashboard | lazygit | `$EDITOR` / nvim |
+| PRs tab | gh-dash (from repo dir) | `$EDITOR` / nvim |
+| Branches tab | checkout branch + lazygit (restores branch on exit) | `$EDITOR` / nvim |
+| CI tab | workflow `.yml` in editor | `$EDITOR` / nvim |
+| Activity tab | diffnav | `$EDITOR` / nvim |
+| Detail pane (commit) | diffnav | `$EDITOR` / nvim |
+| Detail pane (PR) | gh-dash | `$EDITOR` / nvim |
+| Detail pane (branch) | checkout + lazygit | `$EDITOR` / nvim |
+| Detail pane (CI run) | workflow `.yml` in editor | `$EDITOR` / nvim |
+| Detail pane (local branch) | lazygit | `$EDITOR` / nvim |
+| Diff view | diffnav | `$EDITOR` / nvim |
 
 If a tool is not found on `PATH` or there is no valid target (no GitHub URL, no repo selected), a status message is shown instead of failing silently.
 
 ## Mouse
 
-| Action            | Effect                                                       |
-| ----------------- | ------------------------------------------------------------ |
-| Scroll wheel      | Scroll 3 lines per tick (works in detail and diff views too) |
-| Click tab bar     | Switch tab                                                   |
-| Click profile bar | Switch profile                                               |
-| Click row         | Select item                                                  |
-| Double-click row  | Open (same as `enter`)                                       |
+| Action | Effect |
+|--------|--------|
+| Scroll wheel | Scroll 3 lines per tick (works in detail and diff views too) |
+| Click tab bar | Switch tab |
+| Click profile bar | Switch profile |
+| Click row | Select item |
+| Double-click row | Open (same as `enter`) |
 
 ## Caching
 
@@ -273,13 +271,13 @@ Grove caches GitHub API responses to disk so the UI opens instantly and remains 
 
 **What is cached**
 
-| File            | Content                   | Cap         |
-| --------------- | ------------------------- | ----------- |
-| `prs.json`      | Open pull requests        | 500 items   |
-| `branches.json` | Remote branches           | 2 000 items |
-| `activity.json` | Recent commits            | 100 items   |
-| `runs.json`     | CI workflow runs          | 500 items   |
-| `state.json`    | UI state (active profile) | —           |
+| File | Content | Cap |
+|------|---------|-----|
+| `prs.json` | Open pull requests | 500 items |
+| `branches.json` | Remote branches | 2 000 items |
+| `activity.json` | Recent commits | 100 items |
+| `runs.json` | CI workflow runs | 500 items |
+| `state.json` | UI state (active profile) | — |
 
 Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string>, "data": [...] }`.
 
@@ -313,7 +311,7 @@ Repos are cloned into the profile's `base_paths[0]` by default. If a group has i
 groups:
   - name: Services
     match: service-
-    base_path: ~/dev/git/my-org/services # cloned here
+    base_path: ~/dev/git/my-org/services  # cloned here
   - name: Platform
     match: platform-
     # no base_path → falls back to profile base_paths[0]
@@ -333,3 +331,10 @@ CI runs tests, creates a git tag from `VERSION`, and triggers goreleaser which b
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+<details>
+<summary>Support</summary>
+
+- **BTC:** `bc1pzdt3rjhnme90ev577n0cnxvlwvclf4ys84t2kfeu9rd3rqpaaafsgmxrfa`
+- **ETH / ERC-20:** `0x2122c7817381B74762318b506c19600fF8B8372c`
+</details>

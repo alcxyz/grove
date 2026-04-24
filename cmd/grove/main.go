@@ -85,25 +85,35 @@ func main() {
 	}
 
 	// Resolve all profile paths to absolute and validate.
+	// Invalid paths are warned about and skipped rather than being fatal,
+	// so that a config used across machines (with different path layouts)
+	// doesn't prevent the app from starting.
 	for pi := range cfg.Profiles {
 		p := &cfg.Profiles[pi]
 		if len(p.BasePaths) == 0 {
 			abs, _ := filepath.Abs(".")
 			p.BasePaths = []string{abs}
 		}
-		for i, path := range p.BasePaths {
+		valid := p.BasePaths[:0]
+		for _, path := range p.BasePaths {
 			abs, err := filepath.Abs(path)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error resolving path %q: %v\n", path, err)
-				os.Exit(1)
+				fmt.Fprintf(os.Stderr, "Warning: skipping path %q: %v\n", path, err)
+				continue
 			}
 			info, err := os.Stat(abs)
 			if err != nil || !info.IsDir() {
-				fmt.Fprintf(os.Stderr, "Error: %q is not a valid directory\n", abs)
-				os.Exit(1)
+				fmt.Fprintf(os.Stderr, "Warning: skipping %q (not a valid directory)\n", abs)
+				continue
 			}
-			p.BasePaths[i] = abs
+			valid = append(valid, abs)
 		}
+		if len(valid) == 0 {
+			abs, _ := filepath.Abs(".")
+			fmt.Fprintf(os.Stderr, "Warning: profile %q has no valid paths, falling back to %s\n", p.Name, abs)
+			valid = []string{abs}
+		}
+		p.BasePaths = valid
 	}
 
 	var initStatus string

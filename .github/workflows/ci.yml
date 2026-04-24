@@ -37,7 +37,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           VERSION="v$(cat VERSION)"
-          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+          if git ls-remote --tags origin "$VERSION" | grep -q .; then
             echo "Tag $VERSION already exists, skipping."
             echo "created=false" >> "$GITHUB_OUTPUT"
           else

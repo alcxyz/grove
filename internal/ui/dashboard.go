@@ -170,8 +170,9 @@ func heatCount(n, cool, warm, hot int) string {
 	}
 }
 
-func prHeat(n int) string    { return heatCount(n, 1, 3, 6) }
+func prHeat(n int) string     { return heatCount(n, 1, 3, 6) }
 func branchHeat(n int) string { return heatCount(n, 3, 8, 16) }
+func issueHeat(n int) string  { return heatCount(n, 1, 5, 10) }
 
 // ── Repo row ──────────────────────────────────────────────────────────────
 
@@ -192,8 +193,8 @@ func CIStatusIcon(status, conclusion string) string {
 	}
 }
 
-// col widths: indent(2) name(30) branch(14) status(8) sync(10) pr(4) br(4) ci(4) author(14) ago(rest)
-func renderRepoRow(r model.Repo, selected bool, prCount, branchCount int, ciIcon, hlField, hlValue string) string {
+// col widths: indent(2) name(30) branch(14) status(8) sync(10) pr(4) br(4) is(4) ci(4) author(14) ago(rest)
+func renderRepoRow(r model.Repo, selected bool, prCount, branchCount, issueCount int, ciIcon, hlField, hlValue string) string {
 	name := truncate(r.Name, 28)
 	branch := truncate(r.Branch, 12)
 	ago := timeAgo(r.LastCommit)
@@ -226,20 +227,20 @@ func renderRepoRow(r model.Repo, selected bool, prCount, branchCount int, ciIcon
 	row := "  " +
 		cell(nameStyled, 30) + cell(branch, 14) + cell(statusStyled, 8) +
 		cell(syncStyled, 10) + cell(prHeat(prCount), 4) + cell(branchHeat(branchCount), 4) +
-		cell(ciIcon, 4) + cell(DimStyle.Render(author), 14) + DimStyle.Render(ago)
+		cell(issueHeat(issueCount), 4) + cell(ciIcon, 4) + cell(DimStyle.Render(author), 14) + DimStyle.Render(ago)
 	if selected {
 		return selRow(row)
 	}
 	return row
 }
 
-func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts map[string]int, ciStatus map[string]string, hlField, hlValue string) string {
+func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts, issueCounts map[string]int, ciStatus map[string]string, hlField, hlValue string) string {
 	var b strings.Builder
 
 	// Column header — always visible, outside the scroll window
 	header := "  " +
 		cell("Repository", 30) + cell("Branch", 14) + cell("Status", 8) +
-		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("CI", 4) + cell("Author", 14) + "Last Commit"
+		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("Is", 4) + cell("CI", 4) + cell("Author", 14) + "Last Commit"
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -253,7 +254,7 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, r := range g.Repos {
-			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], ciStatus[r.Name], hlField, hlValue))
+			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], issueCounts[r.Name], ciStatus[r.Name], hlField, hlValue))
 			flatIdx++
 		}
 	}
@@ -568,6 +569,69 @@ func RenderAuthError() string {
 		HeaderStyle.Render("    gh auth login") + "\n\n" +
 		DimStyle.Render("  If your org uses SAML SSO, also run:") + "\n" +
 		DimStyle.Render("    gh auth refresh -h github.com --scopes read:org") + "\n"
+}
+
+// ── Issue row ────────────────────────────────────────────────────────────
+
+func renderIssueRow(iss model.Issue, selected bool, hlField, hlValue string) string {
+	repo := truncate(repoShortName(iss.Repo), 26)
+	title := truncate(iss.Title, 30)
+	author := truncate(iss.Author, 14)
+	labels := truncate(strings.Join(iss.Labels, ", "), 20)
+	assignees := truncate(strings.Join(iss.Assignees, ", "), 14)
+	milestone := truncate(iss.Milestone, 12)
+	ago := timeAgo(iss.UpdatedAt)
+
+	repoStyled := hlText(repo, "repo", hlField, hlValue)
+	titleStyled := hlText(title, "subject", hlField, hlValue)
+	row := "  " +
+		cell(repoStyled, 28) +
+		cell(fmt.Sprintf("#%-4d", iss.Number), 7) +
+		cell(titleStyled, 32) +
+		cell(DimStyle.Render(author), 16) +
+		cell(DimStyle.Render(labels), 22) +
+		cell(DimStyle.Render(assignees), 16) +
+		cell(DimStyle.Render(milestone), 14) +
+		DimStyle.Render(ago)
+	if selected {
+		return selRow(row)
+	}
+	return row
+}
+
+func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int, hlField, hlValue string) string {
+	total := 0
+	for _, g := range groups {
+		total += len(g.Issues)
+	}
+	if total == 0 {
+		return DimStyle.Render("\n  No open issues found.\n")
+	}
+
+	var b strings.Builder
+	header := "  " +
+		cell("Repository", 28) + cell("#", 7) + cell("Title", 32) +
+		cell("Author", 16) + cell("Labels", 22) + cell("Assignee", 16) +
+		cell("Milestone", 14) + "Updated"
+	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString("\n")
+
+	sw := newScrollWriter(scrollOffset, maxLines)
+	flatIdx := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			sw.writeLine("")
+		}
+		if g.Name != "" {
+			sw.writeLine(groupHeader(g.Name, width))
+		}
+		for _, iss := range g.Issues {
+			sw.writeLine(renderIssueRow(iss, flatIdx == cursor, hlField, hlValue))
+			flatIdx++
+		}
+	}
+	b.WriteString(sw.string())
+	return b.String()
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────

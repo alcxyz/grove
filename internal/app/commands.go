@@ -308,15 +308,57 @@ func loadRuns(profiles []config.Profile) tea.Cmd {
 	}
 }
 
+func loadIssues(profiles []config.Profile) tea.Cmd {
+	return func() tea.Msg {
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		var allIssues []model.Issue
+		var errs []string
+
+		for _, p := range profiles {
+			if p.Owner == "" {
+				continue
+			}
+			paths := discoverRepoPaths(p)
+			for _, path := range paths {
+				wg.Add(1)
+				go func(path string, profile config.Profile) {
+					defer wg.Done()
+					name := filepath.Base(path)
+					repoFull := profile.Owner + "/" + name
+					issues, err := gh.ListIssues(repoFull)
+					mu.Lock()
+					if err != nil {
+						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+					} else {
+						for i := range issues {
+							issues[i].Profile = profile.Name
+						}
+						allIssues = append(allIssues, issues...)
+					}
+					mu.Unlock()
+				}(path, p)
+			}
+		}
+		wg.Wait()
+
+		sort.Slice(allIssues, func(i, j int) bool {
+			return allIssues[i].UpdatedAt.After(allIssues[j].UpdatedAt)
+		})
+		return issuesLoadedMsg{issues: allIssues, errors: errs}
+	}
+}
+
 func loadDetail(repo model.Repo) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var commits []model.Commit
 		var prs []model.PR
+		var issues []model.Issue
 		var branches []string
 		var stats model.RepoStats
 
-		wg.Add(5)
+		wg.Add(6)
 		go func() {
 			defer wg.Done()
 			commits, _ = gitpkg.RecentCommits(repo.Path, 15)
@@ -333,6 +375,12 @@ func loadDetail(repo model.Repo) tea.Cmd {
 		}()
 		go func() {
 			defer wg.Done()
+			if repo.Owner != "" {
+				issues, _ = gh.ListIssues(repo.Owner + "/" + repo.Name)
+			}
+		}()
+		go func() {
+			defer wg.Done()
 			branches, _ = gitpkg.LocalBranches(repo.Path)
 		}()
 		go func() {
@@ -345,7 +393,7 @@ func loadDetail(repo model.Repo) tea.Cmd {
 		}()
 		wg.Wait()
 
-		return detailLoadedMsg{commits: commits, prs: prs, branches: branches, stats: stats}
+		return detailLoadedMsg{commits: commits, prs: prs, issues: issues, branches: branches, stats: stats}
 	}
 }
 
@@ -687,6 +735,12 @@ func (m *Model) loadTabIfNeeded() tea.Cmd {
 			m.loading = true
 			m.statusMsg = "Loading CI runs..."
 			return loadRuns(m.cfg.Profiles)
+		}
+	case tabIssues:
+		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
+			m.loading = true
+			m.statusMsg = "Loading issues..."
+			return loadIssues(m.cfg.Profiles)
 		}
 	}
 	return nil

@@ -142,6 +142,8 @@ func main() {
 	var initActivityAt time.Time
 	var initRuns []model.WorkflowRun
 	var initRunsAt time.Time
+	var initIssues []model.Issue
+	var initIssuesAt time.Time
 
 	if prs, at, err := cache.LoadPRs(cacheDir, cacheKey); err == nil {
 		initPRs, initPRsAt = prs, at
@@ -154,6 +156,9 @@ func main() {
 	}
 	if runs, at, err := cache.LoadRuns(cacheDir, cacheKey); err == nil {
 		initRuns, initRunsAt = runs, at
+	}
+	if issues, at, err := cache.LoadIssues(cacheDir, cacheKey); err == nil {
+		initIssues, initIssuesAt = issues, at
 	}
 
 	// Restore last active profile from persisted state.
@@ -179,6 +184,8 @@ func main() {
 		ActivityLoadedAt: initActivityAt,
 		Runs:             initRuns,
 		RunsLoadedAt:     initRunsAt,
+		Issues:           initIssues,
+		IssuesLoadedAt:   initIssuesAt,
 		ActiveProfile:    initProfile,
 	})
 

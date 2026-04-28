@@ -47,6 +47,9 @@ func (m Model) Init() tea.Cmd {
 	if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
 		cmds = append(cmds, loadRuns(m.cfg.Profiles))
 	}
+	if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
+		cmds = append(cmds, loadIssues(m.cfg.Profiles))
+	}
 
 	if m.autoRefresh {
 		cmds = append(cmds, tickCmd(ttl))
@@ -140,7 +143,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Diff view input
 		if m.showDiff {
-			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
+			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5" || key == "6"
 			if !isTabNav {
 				if m.loading && key != "esc" && key != "backspace" && key != "q" {
 					m.statusMsg = "loading, please wait…"
@@ -236,7 +239,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Detail pane input
 		if m.showDetail {
-			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5"
+			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5" || key == "6"
 			if !isTabNav {
 				// While data is loading, acknowledge input but don't act on it.
 				if m.loading && key != "esc" && key != "backspace" && key != "q" {
@@ -276,6 +279,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						case detailPR:
 							if item.Index < len(m.detailPRs) {
 								_ = ui.OpenURL(m.detailPRs[item.Index].URL)
+							}
+						case detailIssue:
+							if item.Index < len(m.detailIssues) {
+								_ = ui.OpenURL(m.detailIssues[item.Index].URL)
 							}
 						case detailCIRun:
 							runs := m.detailCIRuns()
@@ -442,14 +449,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.highlightField = ""
 			}
 		case "h":
-			m.activeTab = (m.activeTab + 4) % 5
+			m.activeTab = (m.activeTab + 5) % 6
 			m.cursor = 0
 			m.filterQuery = ""
 			m.clearCycleFilter()
 			m.scrollOffset[m.activeTab] = 0
 			return m, m.loadTabIfNeeded()
 		case "l":
-			m.activeTab = (m.activeTab + 1) % 5
+			m.activeTab = (m.activeTab + 1) % 6
 			m.cursor = 0
 			m.filterQuery = ""
 			m.clearCycleFilter()
@@ -511,6 +518,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = "Loading activity..."
 				return m, loadActivity(m.cfg.Profiles)
 			}
+		case "6":
+			m.activeTab = tabIssues
+			m.cursor = 0
+			m.filterQuery = ""
+			m.clearCycleFilter()
+			ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
+			if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
+				m.loading = true
+				m.statusMsg = "Loading issues..."
+				return m, loadIssues(m.cfg.Profiles)
+			}
 		case "enter":
 			// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
 			openDetail := func(repo model.Repo) (Model, tea.Cmd) {
@@ -553,6 +571,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return openDetail(repo)
 					}
 				}
+			case tabIssues:
+				if iss, ok := m.issueAtCursor(); ok {
+					if repo, ok := m.repoByName(repoBaseName(iss.Repo)); ok {
+						return openDetail(repo)
+					}
+				}
 			}
 		case "r":
 			m.loading = true
@@ -568,6 +592,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, loadActivity(m.cfg.Profiles)
 			case tabCI:
 				return m, loadRuns(m.cfg.Profiles)
+			case tabIssues:
+				return m, loadIssues(m.cfg.Profiles)
 			}
 		case "R":
 			m.autoRefresh = !m.autoRefresh
@@ -722,6 +748,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, launchDiffnav(c.RepoPath, c.Hash)
 				}
 				m.statusMsg = "nothing selected"
+			case tabIssues:
+				if path := m.repoPathAtCursor(); path != "" {
+					return m, launchGhDash(path)
+				}
+				m.statusMsg = "no repo selected"
 			default:
 				if path := m.repoPathAtCursor(); path != "" {
 					return m, launchLazygit(path)
@@ -787,6 +818,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tabCI:
 				if r, ok := m.runAtCursor(); ok {
 					_ = ui.OpenURL(r.URL)
+				} else {
+					m.statusMsg = "nothing selected"
+				}
+			case tabIssues:
+				if iss, ok := m.issueAtCursor(); ok {
+					_ = ui.OpenURL(iss.URL)
 				} else {
 					m.statusMsg = "nothing selected"
 				}
@@ -958,6 +995,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return dblOpenDetail(repo)
 							}
 						}
+					case tabIssues:
+						if iss, ok := m.issueAtCursor(); ok {
+							if repo, ok := m.repoByName(repoBaseName(iss.Repo)); ok {
+								return dblOpenDetail(repo)
+							}
+						}
 					}
 				} else {
 					m.lastClickY = msg.Y
@@ -1022,9 +1065,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		go cache.SaveRuns(m.cacheDir, m.cacheKey, msg.runs) //nolint:errcheck
 
+	case issuesLoadedMsg:
+		m.issues = msg.issues
+		m.errLog = msg.errors
+		m.authErr = containsAuthErr(msg.errors)
+		m.issuesLoadedAt = time.Now()
+		m.loading = false
+		if len(msg.errors) > 0 {
+			m.statusMsg = fmt.Sprintf("%d open issues (%d repos failed)", len(msg.issues), len(msg.errors))
+		} else {
+			m.statusMsg = fmt.Sprintf("%d open issues", len(msg.issues))
+		}
+		go cache.SaveIssues(m.cacheDir, m.cacheKey, msg.issues) //nolint:errcheck
+
 	case detailLoadedMsg:
 		m.detailCommits = msg.commits
 		m.detailPRs = msg.prs
+		m.detailIssues = msg.issues
 		m.detailBranches = msg.branches
 		m.detailStats = msg.stats
 		m.buildDetailItems()

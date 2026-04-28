@@ -21,6 +21,8 @@ func (m Model) listLen() int {
 		return len(m.filteredActivity())
 	case tabCI:
 		return len(m.filteredRuns())
+	case tabIssues:
+		return len(m.filteredIssues())
 	}
 	return 0
 }
@@ -197,6 +199,8 @@ func (m *Model) adjustScroll() {
 		cvl = ui.CommitCursorLine(m.groupedActivity(), m.cursor)
 	case tabCI:
 		cvl = ui.CICursorLine(m.groupedRuns(), m.cursor)
+	case tabIssues:
+		cvl = ui.IssueCursorLine(m.groupedIssues(), m.cursor)
 	}
 
 	so := m.scrollOffset[m.activeTab]
@@ -257,6 +261,14 @@ func (m Model) maxScrollOffset() int {
 				totalVL = ui.CICursorLine(groups, g.StartIdx+len(g.Runs)-1) + 1
 			}
 		}
+	case tabIssues:
+		groups := m.groupedIssues()
+		if len(groups) > 0 {
+			g := groups[len(groups)-1]
+			if len(g.Issues) > 0 {
+				totalVL = ui.IssueCursorLine(groups, g.StartIdx+len(g.Issues)-1) + 1
+			}
+		}
 	}
 	mso := totalVL - m.scrollHeight()
 	if mso < 0 {
@@ -299,6 +311,8 @@ func (m Model) termRowToCursor(termRow int) int {
 		return ui.CommitIndexAtVL(m.groupedActivity(), vl)
 	case tabCI:
 		return ui.CIIndexAtVL(m.groupedRuns(), vl)
+	case tabIssues:
+		return ui.IssueIndexAtVL(m.groupedIssues(), vl)
 	}
 	return -1
 }
@@ -431,6 +445,29 @@ func (m Model) groupedRuns() []ui.CIGroup {
 	return ui.BuildCIGroups(runs, m.groupForFunc(p), p.GroupOrder)
 }
 
+func (m Model) groupedIssues() []ui.IssueGroup {
+	issues := m.filteredIssues()
+	if !m.grouped {
+		return []ui.IssueGroup{{Name: "", Issues: issues, StartIdx: 0}}
+	}
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		lookup := make(map[string]string, len(m.issues))
+		for _, iss := range m.issues {
+			lookup[repoBaseName(iss.Repo)] = iss.Profile
+		}
+		po := m.profileOrder()
+		return ui.BuildIssueGroups(issues,
+			func(name string) string {
+				if p, ok := lookup[repoBaseName(name)]; ok {
+					return p
+				}
+				return "other"
+			}, po)
+	}
+	p := m.activeProfileObj()
+	return ui.BuildIssueGroups(issues, m.groupForFunc(p), p.GroupOrder)
+}
+
 func (m Model) groupedActivity() []ui.CommitGroup {
 	commits := m.filteredActivity()
 	if !m.grouped {
@@ -538,6 +575,18 @@ func (m Model) blockHighlightValue() string {
 				flat++
 			}
 		}
+	case tabIssues:
+		for _, g := range m.groupedIssues() {
+			for _, iss := range g.Issues {
+				if flat == m.cursor {
+					if m.highlightField == "repo" {
+						return repoBaseName(iss.Repo)
+					}
+					return cyclePrefix(iss.Title)
+				}
+				flat++
+			}
+		}
 	}
 	return ""
 }
@@ -593,6 +642,16 @@ func (m *Model) jumpRepo(dir int) {
 		for _, g := range m.groupedRuns() {
 			for j, r := range g.Runs {
 				if name := repoBaseName(r.Repo); name != last {
+					starts = append(starts, g.StartIdx+j)
+					last = name
+				}
+			}
+		}
+	case tabIssues:
+		last := ""
+		for _, g := range m.groupedIssues() {
+			for j, iss := range g.Issues {
+				if name := repoBaseName(iss.Repo); name != last {
 					starts = append(starts, g.StartIdx+j)
 					last = name
 				}
@@ -669,6 +728,16 @@ func (m *Model) jumpSubject(dir int) {
 		for _, g := range m.groupedRuns() {
 			for j, r := range g.Runs {
 				if p := cyclePrefix(r.WorkflowName); p != last {
+					starts = append(starts, g.StartIdx+j)
+					last = p
+				}
+			}
+		}
+	case tabIssues:
+		last := ""
+		for _, g := range m.groupedIssues() {
+			for j, iss := range g.Issues {
+				if p := cyclePrefix(iss.Title); p != last {
 					starts = append(starts, g.StartIdx+j)
 					last = p
 				}
@@ -762,6 +831,15 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 				flat++
 			}
 		}
+	case tabIssues:
+		for _, g := range m.groupedIssues() {
+			for _, iss := range g.Issues {
+				if flat == idx {
+					return m.repoByName(repoBaseName(iss.Repo))
+				}
+				flat++
+			}
+		}
 	}
 	return model.Repo{}, false
 }
@@ -834,6 +912,15 @@ func (m Model) repoPathAtCursor() string {
 			for _, r := range g.Runs {
 				if flat == m.cursor {
 					return m.repoPathFor(repoBaseName(r.Repo))
+				}
+				flat++
+			}
+		}
+	case tabIssues:
+		for _, g := range m.groupedIssues() {
+			for _, iss := range g.Issues {
+				if flat == m.cursor {
+					return m.repoPathFor(repoBaseName(iss.Repo))
 				}
 				flat++
 			}
@@ -913,6 +1000,19 @@ func (m Model) runAtCursor() (model.WorkflowRun, bool) {
 	return model.WorkflowRun{}, false
 }
 
+func (m Model) issueAtCursor() (model.Issue, bool) {
+	flat := 0
+	for _, g := range m.groupedIssues() {
+		for _, iss := range g.Issues {
+			if flat == m.cursor {
+				return iss, true
+			}
+			flat++
+		}
+	}
+	return model.Issue{}, false
+}
+
 // detailSectionStarts returns the line indices where each section of the detail pane
 // starts, plus a sentinel total-line-count as the last element.
 // Indices: [0]header, [1]local branches, [2]remote branches,
@@ -967,6 +1067,9 @@ func (m Model) detailSectionStarts() []int {
 	starts = append(starts, pos) // prs
 
 	pos += sh(len(m.detailPRs), 10, true)
+	starts = append(starts, pos) // issues
+
+	pos += sh(len(m.detailIssues), 10, true)
 	starts = append(starts, pos) // ci_runs
 
 	pos += sh(ciCount, 8, true)
@@ -1034,6 +1137,7 @@ func (m *Model) buildDetailItems() {
 		{detailLocalBranch, len(m.detailBranches), 12},
 		{detailRemoteBranch, len(m.detailRemoteBranches()), 12},
 		{detailPR, len(m.detailPRs), 10},
+		{detailIssue, len(m.detailIssues), 10},
 		{detailCIRun, len(m.detailCIRuns()), 8},
 		{detailCommit, len(m.detailCommits), 10},
 	}
@@ -1192,6 +1296,8 @@ func (m *Model) jumpGroup(dir int) {
 		starts = ui.CommitGroupStarts(m.groupedActivity())
 	case tabCI:
 		starts = ui.CIGroupStarts(m.groupedRuns())
+	case tabIssues:
+		starts = ui.IssueGroupStarts(m.groupedIssues())
 	}
 	m.jumpTo(starts, dir)
 }

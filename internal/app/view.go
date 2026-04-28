@@ -116,6 +116,16 @@ func (m Model) infoBarParts() []string {
 		if failed > 0 {
 			parts = append(parts, ui.FailStyle.Render(fmt.Sprintf("%d failed", failed)))
 		}
+	case tabIssues:
+		issues := m.filteredIssues()
+		repos := map[string]struct{}{}
+		for _, iss := range issues {
+			repos[repoBaseName(iss.Repo)] = struct{}{}
+		}
+		parts = append(parts,
+			fmt.Sprintf("%d issues", len(issues)),
+			fmt.Sprintf("%d repos", len(repos)),
+		)
 	}
 	if !m.grouped {
 		parts = append(parts, ui.CycleStyle.Render("flat"))
@@ -173,6 +183,7 @@ func (m Model) View() string {
 				tabBranches:  "date",
 				tabActivity:  "date",
 				tabCI:        "updated",
+				tabIssues:    "updated",
 			}[m.activeTab]
 		} else if ts.Field == "subject" {
 			label = map[tab]string{
@@ -181,6 +192,7 @@ func (m Model) View() string {
 				tabBranches:  "branch",
 				tabActivity:  "subject",
 				tabCI:        "workflow",
+				tabIssues:    "title",
 			}[m.activeTab]
 		} else if ts.Field == "repo" {
 			label = "repo"
@@ -244,7 +256,7 @@ func (m Model) View() string {
 			if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
 				hlLine = m.detailItems[m.detailCursor].Line
 			}
-			content := ui.RenderRepoDetail(repo, m.detailCommits, m.detailPRs, m.detailBranches, remoteBranches, ciRuns, m.detailStats, cw, hlLine)
+			content := ui.RenderRepoDetail(repo, m.detailCommits, m.detailPRs, m.detailIssues, m.detailBranches, remoteBranches, ciRuns, m.detailStats, cw, hlLine)
 			lines := strings.Split(content, "\n")
 			start := m.detailScroll
 			if start > len(lines) {
@@ -270,6 +282,10 @@ func (m Model) View() string {
 			for _, br := range m.branches {
 				branchCounts[repoBaseName(br.Repo)]++
 			}
+			issueCounts := map[string]int{}
+			for _, iss := range m.issues {
+				issueCounts[repoBaseName(iss.Repo)]++
+			}
 			// Latest CI run per repo (runs are sorted newest-first)
 			ciStatus := map[string]string{}
 			for _, r := range m.runs {
@@ -278,7 +294,7 @@ func (m Model) View() string {
 					ciStatus[name] = ui.CIStatusIcon(r.Status, r.Conclusion)
 				}
 			}
-			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, sh, prCounts, branchCounts, ciStatus, hlField, hlValue))
+			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, sh, prCounts, branchCounts, issueCounts, ciStatus, hlField, hlValue))
 		case tabPRs:
 			if m.authErr {
 				b.WriteString(ui.RenderAuthError())
@@ -309,6 +325,15 @@ func (m Model) View() string {
 			} else {
 				b.WriteString(ui.RenderCI(m.groupedRuns(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.runs) == 0 && len(m.errLog) > 0 {
+					b.WriteString(ui.RenderErrors(m.errLog))
+				}
+			}
+		case tabIssues:
+			if m.authErr {
+				b.WriteString(ui.RenderAuthError())
+			} else {
+				b.WriteString(ui.RenderIssues(m.groupedIssues(), m.cursor, cw, so, sh, hlField, hlValue))
+				if len(m.issues) == 0 && len(m.errLog) > 0 {
 					b.WriteString(ui.RenderErrors(m.errLog))
 				}
 			}

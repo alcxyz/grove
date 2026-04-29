@@ -34,7 +34,7 @@ go vet ./...
 - `internal/gh/` -- GitHub API via `gh` CLI
 - `internal/git/` -- git operations
 - `internal/model/` -- repository model
-- `internal/ui/` -- dashboard, detail pane, groups, styles
+- `internal/ui/` -- dashboard, detail pane, groups, tabs, styles
 
 ## Making changes
 

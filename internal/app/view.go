@@ -160,7 +160,7 @@ func (m Model) View() string {
 	}
 
 	// Tabs
-	b.WriteString(ui.RenderTabs(tabNames, int(m.activeTab)))
+	b.WriteString(ui.RenderTabs(tabNames, int(m.activeTab), m.width))
 
 	// Indicator line: text filter + cycle filter + sort
 	if m.filtering {

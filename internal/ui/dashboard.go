@@ -733,9 +733,7 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
-func RenderTabs(tabs []string, active int) string {
-	const perRow = 3
-
+func RenderTabs(tabs []string, active, width int) string {
 	// Find the longest tab label to set a uniform column width.
 	colW := 0
 	for _, t := range tabs {
@@ -744,12 +742,25 @@ func RenderTabs(tabs []string, active int) string {
 		}
 	}
 
+	// Measure the rendered width of a single tab cell (label + padding).
+	cellW := lipgloss.Width(TabStyle.Render(fmt.Sprintf("%-*s", colW, "")))
+
+	// Determine how many tabs fit per row; fall back to all-on-one-row
+	// when width is unknown (zero) or large enough.
+	perRow := len(tabs)
+	if width > 0 && cellW > 0 {
+		perRow = width / cellW
+		if perRow < 1 {
+			perRow = 1
+		}
+		if perRow > len(tabs) {
+			perRow = len(tabs)
+		}
+	}
+
 	var rows []string
 	for start := 0; start < len(tabs); start += perRow {
-		end := start + perRow
-		if end > len(tabs) {
-			end = len(tabs)
-		}
+		end := min(start+perRow, len(tabs))
 		var row []string
 		for i := start; i < end; i++ {
 			label := fmt.Sprintf("%-*s", colW, tabs[i])

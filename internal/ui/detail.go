@@ -69,18 +69,18 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 		syncInfo = CleanStyle.Render("up to date")
 	}
 
-	b.WriteString(fmt.Sprintf("  Branch:  %s\n", HeaderStyle.Render(repo.Branch)))
+	fmt.Fprintf(&b, "  Branch:  %s\n", HeaderStyle.Render(repo.Branch))
 	lineNum++
-	b.WriteString(fmt.Sprintf("  Status:  %s\n", status))
+	fmt.Fprintf(&b, "  Status:  %s\n", status)
 	lineNum++
-	b.WriteString(fmt.Sprintf("  Sync:    %s\n", syncInfo))
+	fmt.Fprintf(&b, "  Sync:    %s\n", syncInfo)
 	lineNum++
-	b.WriteString(fmt.Sprintf("  Path:    %s\n", DimStyle.Render(repo.Path)))
+	fmt.Fprintf(&b, "  Path:    %s\n", DimStyle.Render(repo.Path))
 	lineNum++
 	if stats.CommitCount > 0 || stats.Contributors > 0 {
-		b.WriteString(fmt.Sprintf("  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount))))
+		fmt.Fprintf(&b, "  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount)))
 		if stats.Contributors > 0 {
-			b.WriteString(fmt.Sprintf("   Contributors: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.Contributors))))
+			fmt.Fprintf(&b, "   Contributors: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.Contributors)))
 		}
 		b.WriteString("\n")
 		lineNum++

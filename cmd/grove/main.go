@@ -35,7 +35,7 @@ func setupLog() (string, func()) {
 	}
 	log.SetOutput(f)
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	return logPath, func() { f.Close() }
+	return logPath, func() { _ = f.Close() }
 }
 
 func main() {

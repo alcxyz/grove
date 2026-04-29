@@ -317,19 +317,10 @@ func (m Model) termRowToCursor(termRow int) int {
 	return -1
 }
 
-// tabAtX returns the tab index (0-3) for a click at column x in the tab bar,
-// or -1 if x falls outside all tabs.  Both TabStyle and ActiveTabStyle use
-// Padding(0, 2), so each tab occupies len(name)+4 columns.
-func tabAtX(x int) int {
-	cur := 0
-	for i, name := range tabNames {
-		w := len(name) + 4 // 2-char padding on each side
-		if x >= cur && x < cur+w {
-			return i
-		}
-		cur += w
-	}
-	return -1
+// tabAtXY returns the tab index for a click at column x on the given tab row
+// (0-based relative to the first tab row), or -1 if outside all tabs.
+func tabAtXY(x, row, width int) int {
+	return ui.TabHitTest(tabNames, x, row, width)
 }
 
 // repoPathLookup builds a name→path map from the model's repo list.

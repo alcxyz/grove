@@ -226,7 +226,7 @@ func CIStatusIcon(status, conclusion string) string {
 	}
 }
 
-func renderRepoRow(r model.Repo, selected bool, prCount, branchCount, issueCount int, ciIcon, hlField, hlValue string, nameW, branchW, authorW int) string {
+func renderRepoRow(r model.Repo, selected bool, prCount, branchCount, issueCount int, ciIcon, hlField, hlValue string, nameW, branchW, authorW, agoW int) string {
 	name := truncate(r.Name, nameW-2)
 	branch := truncate(r.Branch, branchW-2)
 	ago := timeAgo(r.LastCommit)
@@ -259,7 +259,8 @@ func renderRepoRow(r model.Repo, selected bool, prCount, branchCount, issueCount
 	row := "  " +
 		cell(nameStyled, nameW) + cell(branch, branchW) + cell(statusStyled, 8) +
 		cell(syncStyled, 10) + cell(prHeat(prCount), 4) + cell(branchHeat(branchCount), 4) +
-		cell(issueHeat(issueCount), 4) + cell(ciIcon, 4) + cell(DimStyle.Render(author), authorW) + DimStyle.Render(ago)
+		cell(issueHeat(issueCount), 4) + cell(ciIcon, 4) + cell(DimStyle.Render(author), authorW) +
+		cell(DimStyle.Render(ago), agoW)
 	if selected {
 		return selRow(row)
 	}
@@ -267,18 +268,21 @@ func renderRepoRow(r model.Repo, selected bool, prCount, branchCount, issueCount
 }
 
 func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts, issueCounts map[string]int, ciStatus map[string]string, hlField, hlValue string) string {
-	// fixed: indent(2) + status(8) + sync(10) + pr(4) + br(4) + is(4) + ci(4) = 36
-	cols := flexCols(width-36, []colSpec{
-		{Min: 20, Weight: 3}, // name
-		{Min: 10, Weight: 1}, // branch
-		{Min: 10, Weight: 1}, // author
+	// indent(2) + status(8) + sync(10) + pr(4) + br(4) + is(4) + ci(4) = 36 fixed
+	fixedW := 2 + 8 + 10 + 4 + 4 + 4 + 4
+	cols := flexCols(width-fixedW, []colSpec{
+		{Min: 16, Weight: 3}, // name
+		{Min: 8, Weight: 1},  // branch
+		{Min: 8, Weight: 1},  // author
+		{Min: 7, Weight: 1},  // ago
 	})
-	nameW, branchW, authorW := cols[0], cols[1], cols[2]
+	nameW, branchW, authorW, agoW := cols[0], cols[1], cols[2], cols[3]
 
 	var b strings.Builder
 	header := "  " +
 		cell("Repository", nameW) + cell("Branch", branchW) + cell("Status", 8) +
-		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("Is", 4) + cell("CI", 4) + cell("Author", authorW) + "Last Commit"
+		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("Is", 4) + cell("CI", 4) +
+		cell("Author", authorW) + cell("Last Commit", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -292,7 +296,7 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, r := range g.Repos {
-			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], issueCounts[r.Name], ciStatus[r.Name], hlField, hlValue, nameW, branchW, authorW))
+			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], issueCounts[r.Name], ciStatus[r.Name], hlField, hlValue, nameW, branchW, authorW, agoW))
 			flatIdx++
 		}
 	}
@@ -327,7 +331,7 @@ func formatCIStatus(status, conclusion string) string {
 	}
 }
 
-func renderCIRow(r model.WorkflowRun, selected bool, hlField, hlValue string, repoW, wfW, branchW int) string {
+func renderCIRow(r model.WorkflowRun, selected bool, hlField, hlValue string, repoW, wfW, branchW, agoW int) string {
 	repo := truncate(repoShortName(r.Repo), repoW-2)
 	wf := truncate(r.WorkflowName, wfW-2)
 	branch := truncate(r.Branch, branchW-2)
@@ -344,7 +348,7 @@ func renderCIRow(r model.WorkflowRun, selected bool, hlField, hlValue string, re
 		cell(DimStyle.Render(branch), branchW) +
 		cell(statusStyled, 18) +
 		cell(DimStyle.Render(event), 12) +
-		DimStyle.Render(ago)
+		cell(DimStyle.Render(ago), agoW)
 	if selected {
 		return selRow(row)
 	}
@@ -360,18 +364,20 @@ func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlFie
 		return DimStyle.Render("\n  No CI run data found.\n")
 	}
 
-	// fixed: indent(2) + status(18) + event(12) = 32
-	cols := flexCols(width-32, []colSpec{
-		{Min: 20, Weight: 2}, // repo
-		{Min: 16, Weight: 2}, // workflow
-		{Min: 10, Weight: 1}, // branch
+	// indent(2) + status(18) + event(12) = 32 fixed
+	fixedW := 2 + 18 + 12
+	cols := flexCols(width-fixedW, []colSpec{
+		{Min: 16, Weight: 2}, // repo
+		{Min: 12, Weight: 2}, // workflow
+		{Min: 8, Weight: 1},  // branch
+		{Min: 7, Weight: 1},  // ago
 	})
-	repoW, wfW, branchW := cols[0], cols[1], cols[2]
+	repoW, wfW, branchW, agoW := cols[0], cols[1], cols[2], cols[3]
 
 	var b strings.Builder
 	header := "  " +
 		cell("Repository", repoW) + cell("Workflow", wfW) + cell("Branch", branchW) +
-		cell("Status", 18) + cell("Event", 12) + "When"
+		cell("Status", 18) + cell("Event", 12) + cell("When", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -385,7 +391,7 @@ func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlFie
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, r := range g.Runs {
-			sw.writeLine(renderCIRow(r, flatIdx == cursor, hlField, hlValue, repoW, wfW, branchW))
+			sw.writeLine(renderCIRow(r, flatIdx == cursor, hlField, hlValue, repoW, wfW, branchW, agoW))
 			flatIdx++
 		}
 	}
@@ -395,7 +401,7 @@ func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlFie
 
 // ── PR row ────────────────────────────────────────────────────────────────
 
-func renderPRRow(pr model.PR, selected bool, hlField, hlValue string, repoW, titleW, authorW int) string {
+func renderPRRow(pr model.PR, selected bool, hlField, hlValue string, repoW, titleW, authorW, agoW int) string {
 	repo := truncate(repoShortName(pr.Repo), repoW-2)
 	title := truncate(pr.Title, titleW-2)
 	author := truncate(pr.Author, authorW-2)
@@ -410,7 +416,7 @@ func renderPRRow(pr model.PR, selected bool, hlField, hlValue string, repoW, tit
 		cell(DimStyle.Render(author), authorW) +
 		cell(formatReview(pr.ReviewDecision), 14) +
 		cell(formatChecks(pr.Checks), 12) +
-		DimStyle.Render(ago)
+		cell(DimStyle.Render(ago), agoW)
 	if selected {
 		return selRow(row)
 	}
@@ -452,18 +458,20 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 		return DimStyle.Render("\n  No open pull requests found.\n")
 	}
 
-	// fixed: indent(2) + PR#(7) + review(14) + checks(12) = 35
-	cols := flexCols(width-35, []colSpec{
-		{Min: 20, Weight: 2}, // repo
-		{Min: 20, Weight: 3}, // title
-		{Min: 12, Weight: 1}, // author
+	// indent(2) + PR#(7) + review(14) + checks(12) = 35 fixed
+	fixedW := 2 + 7 + 14 + 12
+	cols := flexCols(width-fixedW, []colSpec{
+		{Min: 16, Weight: 2}, // repo
+		{Min: 16, Weight: 3}, // title
+		{Min: 8, Weight: 1},  // author
+		{Min: 7, Weight: 1},  // ago
 	})
-	repoW, titleW, authorW := cols[0], cols[1], cols[2]
+	repoW, titleW, authorW, agoW := cols[0], cols[1], cols[2], cols[3]
 
 	var b strings.Builder
 	header := "  " +
 		cell("Repository", repoW) + cell("PR#", 7) + cell("Title", titleW) +
-		cell("Author", authorW) + cell("Review", 14) + cell("Checks", 12) + "Updated"
+		cell("Author", authorW) + cell("Review", 14) + cell("Checks", 12) + cell("Updated", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -477,7 +485,7 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, pr := range g.PRs {
-			sw.writeLine(renderPRRow(pr, flatIdx == cursor, hlField, hlValue, repoW, titleW, authorW))
+			sw.writeLine(renderPRRow(pr, flatIdx == cursor, hlField, hlValue, repoW, titleW, authorW, agoW))
 			flatIdx++
 		}
 	}
@@ -496,11 +504,12 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 		return DimStyle.Render("\n  No branches found.\n")
 	}
 
-	// fixed: indent(2) + when(10) + PR(3) + merged(2) = 17
-	cols := flexCols(width-17, []colSpec{
-		{Min: 20, Weight: 2}, // repo
-		{Min: 20, Weight: 2}, // branch
-		{Min: 12, Weight: 1}, // author
+	// indent(2) + when(10) + PR(3) + merged(2) = 17 fixed
+	fixedW := 2 + 10 + 3 + 2
+	cols := flexCols(width-fixedW, []colSpec{
+		{Min: 16, Weight: 2}, // repo
+		{Min: 16, Weight: 2}, // branch
+		{Min: 10, Weight: 1}, // author
 	})
 	repoW, branchW, authorW := cols[0], cols[1], cols[2]
 
@@ -572,18 +581,20 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 		return DimStyle.Render("\n  No recent activity.\n")
 	}
 
-	// fixed: indent(2) + hash(9) = 11
-	cols := flexCols(width-11, []colSpec{
-		{Min: 16, Weight: 2}, // repo
-		{Min: 30, Weight: 5}, // message
-		{Min: 12, Weight: 1}, // author
+	// indent(2) + hash(9) = 11 fixed
+	fixedW := 2 + 9
+	cols := flexCols(width-fixedW, []colSpec{
+		{Min: 14, Weight: 2}, // repo
+		{Min: 20, Weight: 5}, // message
+		{Min: 10, Weight: 1}, // author
+		{Min: 7, Weight: 1},  // ago
 	})
-	repoW, msgW, authorW := cols[0], cols[1], cols[2]
+	repoW, msgW, authorW, agoW := cols[0], cols[1], cols[2], cols[3]
 
 	var b strings.Builder
 	header := "  " +
 		cell("Repository", repoW) + cell("Hash", 9) +
-		cell("Message", msgW) + cell("Author", authorW) + "When"
+		cell("Message", msgW) + cell("Author", authorW) + cell("When", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -606,7 +617,7 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 			row := "  " +
 				cell(repoStyled, repoW) + cell(DimStyle.Render(c.Hash), 9) +
 				cell(subjectStyled, msgW) + cell(DimStyle.Render(author), authorW) +
-				DimStyle.Render(ago)
+				cell(DimStyle.Render(ago), agoW)
 			if flatIdx == cursor {
 				sw.writeLine(selRow(row))
 			} else {
@@ -643,7 +654,7 @@ func RenderAuthError() string {
 
 // ── Issue row ────────────────────────────────────────────────────────────
 
-func renderIssueRow(iss model.Issue, selected bool, hlField, hlValue string, repoW, titleW, authorW, labelsW, assigneesW, milestoneW int) string {
+func renderIssueRow(iss model.Issue, selected bool, hlField, hlValue string, repoW, titleW, authorW, labelsW, assigneesW, milestoneW, agoW int) string {
 	repo := truncate(repoShortName(iss.Repo), repoW-2)
 	title := truncate(iss.Title, titleW-2)
 	author := truncate(iss.Author, authorW-2)
@@ -662,7 +673,7 @@ func renderIssueRow(iss model.Issue, selected bool, hlField, hlValue string, rep
 		cell(DimStyle.Render(labels), labelsW) +
 		cell(DimStyle.Render(assignees), assigneesW) +
 		cell(DimStyle.Render(milestone), milestoneW) +
-		DimStyle.Render(ago)
+		cell(DimStyle.Render(ago), agoW)
 	if selected {
 		return selRow(row)
 	}
@@ -678,23 +689,25 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 		return DimStyle.Render("\n  No open issues found.\n")
 	}
 
-	// fixed: indent(2) + #(7) = 9
-	cols := flexCols(width-9, []colSpec{
-		{Min: 20, Weight: 2}, // repo
-		{Min: 22, Weight: 3}, // title
-		{Min: 12, Weight: 1}, // author
-		{Min: 14, Weight: 2}, // labels
-		{Min: 12, Weight: 1}, // assignees
-		{Min: 10, Weight: 1}, // milestone
+	// indent(2) + #(7) = 9 fixed
+	fixedW := 2 + 7
+	cols := flexCols(width-fixedW, []colSpec{
+		{Min: 14, Weight: 2}, // repo
+		{Min: 16, Weight: 3}, // title
+		{Min: 8, Weight: 1},  // author
+		{Min: 10, Weight: 2}, // labels
+		{Min: 8, Weight: 1},  // assignees
+		{Min: 8, Weight: 1},  // milestone
+		{Min: 7, Weight: 1},  // ago
 	})
 	repoW, titleW, authorW := cols[0], cols[1], cols[2]
-	labelsW, assigneesW, milestoneW := cols[3], cols[4], cols[5]
+	labelsW, assigneesW, milestoneW, agoW := cols[3], cols[4], cols[5], cols[6]
 
 	var b strings.Builder
 	header := "  " +
 		cell("Repository", repoW) + cell("#", 7) + cell("Title", titleW) +
 		cell("Author", authorW) + cell("Labels", labelsW) + cell("Assignee", assigneesW) +
-		cell("Milestone", milestoneW) + "Updated"
+		cell("Milestone", milestoneW) + cell("Updated", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -708,7 +721,7 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, iss := range g.Issues {
-			sw.writeLine(renderIssueRow(iss, flatIdx == cursor, hlField, hlValue, repoW, titleW, authorW, labelsW, assigneesW, milestoneW))
+			sw.writeLine(renderIssueRow(iss, flatIdx == cursor, hlField, hlValue, repoW, titleW, authorW, labelsW, assigneesW, milestoneW, agoW))
 			flatIdx++
 		}
 	}

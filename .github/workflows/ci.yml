@@ -23,6 +23,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check go.mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "FAIL: go.mod/go.sum not tidy — run 'go mod tidy' and commit" && exit 1)
+
       - name: Build
         run: go build ./...
 

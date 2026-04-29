@@ -73,7 +73,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           VERSION="v$(cat VERSION)"
-          if git ls-remote --tags origin "$VERSION" | grep -q .; then
+          if git tag -l "$VERSION" | grep -q . || git ls-remote --tags origin "$VERSION" | grep -q .; then
             echo "Tag $VERSION already exists, skipping."
             echo "created=false" >> "$GITHUB_OUTPUT"
           else

@@ -7,3 +7,4 @@
 | [ADR-005](ADR-005-dynamic-column-widths.md) | Dynamic column widths | ui |
 | [ADR-006](ADR-006-multi-forge-provider-abstraction.md) | Multi-forge provider abstraction | model, gh, config, app, clone |
 | [ADR-007](ADR-007-television-sesh-integration.md) | Television and sesh integration | app, commands |
+| [ADR-008](ADR-008-release-pipeline-structure.md) | Release pipeline structure | CI, Nix |

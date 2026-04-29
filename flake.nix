@@ -20,7 +20,7 @@
 
             # Update when go.mod changes:
             #   nix build .# 2>&1 | grep "got:" | awk '{print $2}'
-            vendorHash = "sha256-Ea94DPGLBQhW3gILQlWQXVVSZzJxGVtr0vuzYZSSUsk=";
+            vendorHash = "sha256-H3UWahntqhEIhYvaX9JyUe27lraVDeh5zUzE2tLs28o=";
 
             subPackages = [ "cmd/grove" ];
             ldflags = [ "-s" "-w" "-X main.version=${version}" ];

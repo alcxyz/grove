@@ -10,8 +10,49 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build & vet
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check go.mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "FAIL: go.mod/go.sum not tidy" && exit 1)
+
+      - name: Check gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "FAIL: files not formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+      - name: Test
+        run: go test -race ./...
+
+  release:
+    name: Release
+    needs: check
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,20 +63,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Check go.mod tidy
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum || (echo "FAIL: go.mod/go.sum not tidy — run 'go mod tidy' and commit" && exit 1)
-
-      - name: Build
-        run: go build ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
 
       - name: GoReleaser snapshot
         uses: goreleaser/goreleaser-action@v6

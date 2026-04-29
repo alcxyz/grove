@@ -515,7 +515,7 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 	repoW, branchW, authorW, agoW := cols[0], cols[1], cols[2], cols[3]
 
 	var b strings.Builder
-	header := "  " + cell("Repository", repoW) + cell("Branch", branchW) + cell("Author", authorW) + cell("PR", 3) + cell("∈", 2) + cell("When", agoW)
+	header := "  " + cell("Repository", repoW) + cell("Branch", branchW) + cell("PR", 3) + cell("∈", 2) + cell("Author", authorW) + cell("When", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -557,8 +557,8 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 			repoStyled := hlText(repo, "repo", hlField, hlValue)
 			row := "  " +
 				cell(repoStyled, repoW) + cell(nameStyled, branchW) +
-				cell(DimStyle.Render(author), authorW) +
 				cell(prStyled, 3) + cell(mergedStyled, 2) +
+				cell(DimStyle.Render(author), authorW) +
 				cell(DimStyle.Render(ago), agoW)
 			if flatIdx == cursor {
 				sw.writeLine(selRow(row))

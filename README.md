@@ -1,6 +1,6 @@
 # grove
 
-A terminal UI for monitoring GitHub repositories. See branch status, dirty working trees, ahead/behind counts, open PRs, recent branches, and commit activity across all your repos without leaving the terminal.
+A terminal UI for monitoring GitHub repositories. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
 
 ```
                {o,o}
@@ -21,7 +21,8 @@ A terminal UI for monitoring GitHub repositories. See branch status, dirty worki
 - **CI** (tab 3): recent GitHub Actions workflow runs across all repos with pass/fail/running status
 - **Branches** (tab 4): all remote branches with PR and merge indicators
 - **Activity** (tab 5): recent commits across repos with inline diff viewer
-- **Detail pane**: full repo detail with local/remote branches, open PRs, CI runs, recent commits, and stats; item-level cursor with contextual actions per item type
+- **Issues** (tab 6): open GitHub issues across all repos with labels, assignees, milestones, and age
+- **Detail pane**: full repo detail with local/remote branches, open PRs, open issues, CI runs, recent commits, and stats; item-level cursor with contextual actions per item type
 - **Diff viewer**: scrollable inline `git show` output with syntax colouring; respects your configured diff pager (`delta`, `bat`); navigate between commits with `[` / `]` and between files with `{` / `}`
 - **External tools**: `space` opens diffnav (commits) or lazygit (repos) based on context; `e` opens `$EDITOR` / nvim at repo root
 - **Grouped / flat view**: toggle between config-defined groups and a flat sorted list
@@ -140,7 +141,7 @@ grove ~/dir1 ~/dir2
 | `{ }`               | Jump between config groups                                                |
 | `[ ]`               | Jump between repo blocks                                                  |
 | `( )`               | Jump between CI status blocks (tab 1) / subject / branch / message blocks |
-| `1` `2` `3` `4` `5` | Switch to tab directly                                                    |
+| `1`–`6`              | Switch to tab directly                                                    |
 
 ### Filters and sort
 
@@ -164,7 +165,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 
 | Key                 | Action                                                                                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `enter`             | Open detail pane (tabs 1-4) / open diff (tab 5)                                                                              |
+| `enter`             | Open detail pane (tabs 1-4, 6) / open diff (tab 5)                                                                           |
 | `o`                 | Open on GitHub in browser (all tabs and views)                                                                               |
 | `space`             | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
 | `e`                 | Open `$EDITOR` / nvim at repo root (all tabs and views)                                                                      |
@@ -184,7 +185,7 @@ The detail pane opens with `enter` on any tab and shows full repo info with an i
 | Key        | Action                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------- |
 | `j` / `k`  | Select next / previous item                                                                       |
-| `{ }`      | Jump between sections (branches, PRs, CI, commits)                                                |
+| `{ }`      | Jump between sections (branches, PRs, issues, CI, commits)                                        |
 | `[ ]`      | Previous / next repo (follows source tab, skips duplicates)                                       |
 | `gg` / `G` | First / last item                                                                                 |
 | `space`    | Contextual: diffnav (commits), gh-dash (PRs), checkout + lazygit (branches), workflow editor (CI) |
@@ -230,6 +231,7 @@ The **Dashboard** tab (tab 1) also shows a compact CI status icon (`✓` / `✗`
 | ---------------- | -------------------------------------------------------------------- |
 | `PR`             | Open PR count, colour scales blue to yellow to red                   |
 | `Br`             | Branch count, colour scales blue to yellow to red                    |
+| `Is`             | Open issue count, colour scales blue to yellow to red                |
 | `CI`             | Latest CI run: `✓` success / `✗` failure / `●` running / `—` no data |
 | `●` (tab 4)      | Branch has an open PR                                                |
 | `∈` (tab 4)      | Branch is merged into the default branch                             |
@@ -277,11 +279,12 @@ Grove caches GitHub API responses to disk so the UI opens instantly and remains 
 | `branches.json` | Remote branches           | 2 000 items |
 | `activity.json` | Recent commits            | 100 items   |
 | `runs.json`     | CI workflow runs          | 500 items   |
+| `issues.json`   | Open issues               | 500 items   |
 | `state.json`    | UI state (active profile) | —           |
 
 Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string>, "data": [...] }`.
 
-**Startup** — all four cache files are read before the TUI launches. The UI renders immediately with the cached data; fresh data loads in the background and replaces it without any visual flicker. The last active profile is restored from `state.json`.
+**Startup** — all five cache files are read before the TUI launches. The UI renders immediately with the cached data; fresh data loads in the background and replaces it without any visual flicker. The last active profile is restored from `state.json`.
 
 **TTL** — controlled by `refresh_secs` in config (default 300 s). On startup and on every tab switch, grove checks whether the data for that tab is older than the TTL. If so, a background fetch is triggered automatically. Auto-refresh (toggled with `R`) repeats this on a timer.
 
@@ -291,7 +294,7 @@ Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string
 
 ## Rate limiting
 
-All GitHub API calls go through the `gh` CLI. To avoid hitting GitHub's rate limits when scanning many repos, grove limits concurrent `gh` invocations to **5 at a time** (a buffered semaphore channel in `internal/gh`). This applies to PR listing, branch listing, and CI run listing.
+All GitHub API calls go through the `gh` CLI. To avoid hitting GitHub's rate limits when scanning many repos, grove limits concurrent `gh` invocations to **5 at a time** (a buffered semaphore channel in `internal/gh`). This applies to PR listing, branch listing, CI run listing, and issue listing.
 
 `grove clone` uses a separate semaphore capped at **8 concurrent clones**, since `git clone` is network-bound rather than API-bound and GitHub's clone rate limits are more permissive.
 

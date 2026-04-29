@@ -733,9 +733,7 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
-func RenderTabs(tabs []string, active int) string {
-	const perRow = 3
-
+func RenderTabs(tabs []string, active, width int) string {
 	// Find the longest tab label to set a uniform column width.
 	colW := 0
 	for _, t := range tabs {
@@ -744,12 +742,25 @@ func RenderTabs(tabs []string, active int) string {
 		}
 	}
 
+	// Measure the rendered width of a single tab cell (label + padding).
+	cellW := lipgloss.Width(TabStyle.Render(fmt.Sprintf("%-*s", colW, "")))
+
+	// Determine how many tabs fit per row; fall back to all-on-one-row
+	// when width is unknown (zero) or large enough.
+	perRow := len(tabs)
+	if width > 0 && cellW > 0 {
+		perRow = width / cellW
+		if perRow < 1 {
+			perRow = 1
+		}
+		if perRow > len(tabs) {
+			perRow = len(tabs)
+		}
+	}
+
 	var rows []string
 	for start := 0; start < len(tabs); start += perRow {
-		end := start + perRow
-		if end > len(tabs) {
-			end = len(tabs)
-		}
+		end := min(start+perRow, len(tabs))
 		var row []string
 		for i := start; i < end; i++ {
 			label := fmt.Sprintf("%-*s", colW, tabs[i])
@@ -762,6 +773,72 @@ func RenderTabs(tabs []string, active int) string {
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}
 	return strings.Join(rows, "\n")
+}
+
+// TabHitTest returns the tab index for a mouse click at column x on the
+// given row (0-based, relative to the first tab row). Returns -1 if outside
+// all tabs. The layout mirrors RenderTabs exactly.
+func TabHitTest(tabs []string, x, row, width int) int {
+	colW := 0
+	for _, t := range tabs {
+		if len(t) > colW {
+			colW = len(t)
+		}
+	}
+	cellW := lipgloss.Width(TabStyle.Render(fmt.Sprintf("%-*s", colW, "")))
+	if cellW == 0 {
+		return -1
+	}
+
+	perRow := len(tabs)
+	if width > 0 {
+		perRow = width / cellW
+		if perRow < 1 {
+			perRow = 1
+		}
+		if perRow > len(tabs) {
+			perRow = len(tabs)
+		}
+	}
+
+	col := x / cellW
+	if col >= perRow {
+		return -1
+	}
+	idx := row*perRow + col
+	if idx < 0 || idx >= len(tabs) {
+		return -1
+	}
+	// Verify click is within the cell bounds
+	if x < col*cellW || x >= (col+1)*cellW {
+		return -1
+	}
+	return idx
+}
+
+// TabRows returns how many rows the tab bar occupies at the given width.
+func TabRows(tabs []string, width int) int {
+	colW := 0
+	for _, t := range tabs {
+		if len(t) > colW {
+			colW = len(t)
+		}
+	}
+	cellW := lipgloss.Width(TabStyle.Render(fmt.Sprintf("%-*s", colW, "")))
+	if cellW == 0 {
+		return 1
+	}
+	perRow := len(tabs)
+	if width > 0 {
+		perRow = width / cellW
+		if perRow < 1 {
+			perRow = 1
+		}
+		if perRow > len(tabs) {
+			perRow = len(tabs)
+		}
+	}
+	return (len(tabs) + perRow - 1) / perRow
 }
 
 func RenderProfileTabs(tabs []string, active int) string {

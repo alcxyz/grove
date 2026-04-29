@@ -5,3 +5,4 @@
 | [ADR-003](ADR-003-remote-profiles.md) | Remote profiles for browsing uncloned repos | config, ui |
 | [ADR-004](ADR-004-github-issues-tab.md) | GitHub Issues tab | model, gh, cache, app, ui |
 | [ADR-005](ADR-005-dynamic-column-widths.md) | Dynamic column widths | ui |
+| [ADR-006](ADR-006-multi-forge-provider-abstraction.md) | Multi-forge provider abstraction | model, gh, config, app, clone |

@@ -1,6 +1,6 @@
 # grove
 
-A terminal UI for monitoring GitHub repositories. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
+TUI for multi-repo git forge monitoring — currently GitHub-native via the `gh` CLI. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
 
 ```
                {o,o}

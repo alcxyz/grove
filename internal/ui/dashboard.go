@@ -129,10 +129,10 @@ func groupHeader(name string, width int) string {
 
 // scrollWriter helps render only visible lines within [offset, offset+maxLines).
 type scrollWriter struct {
-	b       strings.Builder
-	vl      int // current visual line (0-indexed, excludes column header)
-	offset  int
-	maxVL   int // offset + maxLines
+	b      strings.Builder
+	vl     int // current visual line (0-indexed, excludes column header)
+	offset int
+	maxVL  int // offset + maxLines
 }
 
 func newScrollWriter(offset, maxLines int) *scrollWriter {

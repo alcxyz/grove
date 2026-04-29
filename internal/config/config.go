@@ -20,7 +20,7 @@ type Group struct {
 // Profile holds per-profile configuration.
 type Profile struct {
 	Name      string   `yaml:"name"`
-	Owner     string   `yaml:"owner"`     // GitHub org or username; "" = no GitHub
+	Owner     string   `yaml:"owner"` // GitHub org or username; "" = no GitHub
 	BasePaths []string `yaml:"base_paths"`
 	BasePath  string   `yaml:"base_path"` // legacy; merged into BasePaths on load
 	Prefixes  []string `yaml:"prefixes"`

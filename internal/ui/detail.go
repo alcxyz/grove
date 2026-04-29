@@ -69,18 +69,18 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 		syncInfo = CleanStyle.Render("up to date")
 	}
 
-	b.WriteString(fmt.Sprintf("  Branch:  %s\n", HeaderStyle.Render(repo.Branch)))
+	fmt.Fprintf(&b, "  Branch:  %s\n", HeaderStyle.Render(repo.Branch))
 	lineNum++
-	b.WriteString(fmt.Sprintf("  Status:  %s\n", status))
+	fmt.Fprintf(&b, "  Status:  %s\n", status)
 	lineNum++
-	b.WriteString(fmt.Sprintf("  Sync:    %s\n", syncInfo))
+	fmt.Fprintf(&b, "  Sync:    %s\n", syncInfo)
 	lineNum++
-	b.WriteString(fmt.Sprintf("  Path:    %s\n", DimStyle.Render(repo.Path)))
+	fmt.Fprintf(&b, "  Path:    %s\n", DimStyle.Render(repo.Path))
 	lineNum++
 	if stats.CommitCount > 0 || stats.Contributors > 0 {
-		b.WriteString(fmt.Sprintf("  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount))))
+		fmt.Fprintf(&b, "  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount)))
 		if stats.Contributors > 0 {
-			b.WriteString(fmt.Sprintf("   Contributors: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.Contributors))))
+			fmt.Fprintf(&b, "   Contributors: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.Contributors)))
 		}
 		b.WriteString("\n")
 		lineNum++
@@ -441,8 +441,8 @@ var helpPages = [2][]struct {
 // contentW is the box content width (same value passed to lipgloss Width).
 // keyW is the padded key column width.
 func wrapHelpLine(key, desc string, keyW, contentW int) string {
-	prefixW := 2 + keyW                     // "  " + padded key column
-	descW := contentW - prefixW             // chars available for description
+	prefixW := 2 + keyW         // "  " + padded key column
+	descW := contentW - prefixW // chars available for description
 	prefix := "  " + cell(DimStyle.Render(key), keyW)
 	if descW <= 0 {
 		return prefix + desc
@@ -543,7 +543,7 @@ func RenderDiff(repoName, hash, content string, preColored bool) string {
 	var b strings.Builder
 	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s  %s", repoName, hash)))
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render("  "+strings.Repeat("─", 86)))
+	b.WriteString(DimStyle.Render("  " + strings.Repeat("─", 86)))
 	b.WriteString("\n")
 
 	for _, line := range strings.Split(content, "\n") {

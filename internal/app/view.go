@@ -164,8 +164,8 @@ func (m Model) View() string {
 
 	// Indicator line: text filter + cycle filter + sort
 	if m.filtering {
-		b.WriteString(fmt.Sprintf("  %s%s▏",
-			ui.DimStyle.Render("filter: "), ui.HeaderStyle.Render(m.filterQuery)))
+		fmt.Fprintf(&b, "  %s%s▏",
+			ui.DimStyle.Render("filter: "), ui.HeaderStyle.Render(m.filterQuery))
 	} else if m.filterQuery != "" {
 		b.WriteString(ui.RenderFilter(m.filterQuery))
 	}
@@ -176,7 +176,8 @@ func (m Model) View() string {
 	if ts := m.tabSort[m.activeTab]; ts.Field != "" {
 		// Label the sort field per-tab
 		label := ts.Field
-		if ts.Field == "date" {
+		switch ts.Field {
+		case "date":
 			label = map[tab]string{
 				tabDashboard: "date",
 				tabPRs:       "updated",
@@ -185,7 +186,7 @@ func (m Model) View() string {
 				tabCI:        "updated",
 				tabIssues:    "updated",
 			}[m.activeTab]
-		} else if ts.Field == "subject" {
+		case "subject":
 			label = map[tab]string{
 				tabDashboard: "name",
 				tabPRs:       "title",
@@ -194,25 +195,25 @@ func (m Model) View() string {
 				tabCI:        "workflow",
 				tabIssues:    "title",
 			}[m.activeTab]
-		} else if ts.Field == "repo" {
+		case "repo":
 			label = "repo"
-		} else if ts.Field == "prcount" {
+		case "prcount":
 			if m.activeTab == tabBranches {
 				label = "has PR"
 			} else {
 				label = "PR count"
 			}
-		} else if ts.Field == "brcount" {
+		case "brcount":
 			label = "branch count"
-		} else if ts.Field == "ci" {
+		case "ci":
 			label = "CI status"
-		} else if ts.Field == "review" {
+		case "review":
 			label = "review"
-		} else if ts.Field == "checks" {
+		case "checks":
 			label = "checks"
-		} else if ts.Field == "merged" {
+		case "merged":
 			label = "merged"
-		} else if ts.Field == "branch" {
+		case "branch":
 			label = "branch"
 		}
 		b.WriteString(ui.RenderSortIndicator(label, ts.Order == sortAsc))

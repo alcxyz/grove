@@ -617,11 +617,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, fetchAll(m.cfg.Profiles)
 		case "H":
 			if len(m.cfg.Profiles) > 1 {
-				if m.activeProfile == 0 {
+				switch m.activeProfile {
+				case 0:
 					m.activeProfile = -1
-				} else if m.activeProfile == -1 {
+				case -1:
 					m.activeProfile = len(m.cfg.Profiles) - 1
-				} else {
+				default:
 					m.activeProfile--
 				}
 				m.cursor = 0

@@ -11,10 +11,10 @@ func TestRepoBaseName(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"org/repo", "repo"},
 		{"my-org/my-service", "my-service"},
-		{"repo", "repo"},               // no slash → unchanged
-		{"a/b/c", "c"},                 // last segment
-		{"", ""},                       // empty
-		{"org/", ""},                   // trailing slash
+		{"repo", "repo"}, // no slash → unchanged
+		{"a/b/c", "c"},   // last segment
+		{"", ""},         // empty
+		{"org/", ""},     // trailing slash
 	}
 	for _, c := range cases {
 		if got := repoBaseName(c.in); got != c.want {

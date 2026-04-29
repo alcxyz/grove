@@ -1016,7 +1016,8 @@ func (m Model) issueAtCursor() (model.Issue, bool) {
 // detailSectionStarts returns the line indices where each section of the detail pane
 // starts, plus a sentinel total-line-count as the last element.
 // Indices: [0]header, [1]local branches, [2]remote branches,
-//          [3]open PRs, [4]CI runs, [5]recent commits, [6]sentinel.
+//
+//	[3]open PRs, [4]CI runs, [5]recent commits, [6]sentinel.
 func (m Model) detailSectionStarts() []int {
 	// itemLines is the number of data rows a section with n items renders.
 	itemLines := func(n, cap int) int {

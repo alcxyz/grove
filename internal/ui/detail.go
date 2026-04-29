@@ -441,8 +441,8 @@ var helpPages = [2][]struct {
 // contentW is the box content width (same value passed to lipgloss Width).
 // keyW is the padded key column width.
 func wrapHelpLine(key, desc string, keyW, contentW int) string {
-	prefixW := 2 + keyW                     // "  " + padded key column
-	descW := contentW - prefixW             // chars available for description
+	prefixW := 2 + keyW         // "  " + padded key column
+	descW := contentW - prefixW // chars available for description
 	prefix := "  " + cell(DimStyle.Render(key), keyW)
 	if descW <= 0 {
 		return prefix + desc
@@ -543,7 +543,7 @@ func RenderDiff(repoName, hash, content string, preColored bool) string {
 	var b strings.Builder
 	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s  %s", repoName, hash)))
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render("  "+strings.Repeat("─", 86)))
+	b.WriteString(DimStyle.Render("  " + strings.Repeat("─", 86)))
 	b.WriteString("\n")
 
 	for _, line := range strings.Split(content, "\n") {

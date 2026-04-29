@@ -135,7 +135,7 @@ type Model struct {
 
 	// Detail pane
 	showDetail     bool
-	detailRepo     model.Repo   // the repo currently shown in detail
+	detailRepo     model.Repo // the repo currently shown in detail
 	detailCommits  []model.Commit
 	detailPRs      []model.PR
 	detailIssues   []model.Issue
@@ -240,7 +240,7 @@ type issuesLoadedMsg struct {
 type detailSect int
 
 const (
-	detailLocalBranch  detailSect = iota
+	detailLocalBranch detailSect = iota
 	detailRemoteBranch
 	detailPR
 	detailIssue
@@ -258,6 +258,6 @@ type detailItem struct {
 
 type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
-type ssTickMsg struct{}           // screensaver animation frame
-type idleCheckMsg struct{}        // periodic idle-time check
+type ssTickMsg struct{}                // screensaver animation frame
+type idleCheckMsg struct{}             // periodic idle-time check
 type splashBlinkMsg struct{ next int } // next blink state

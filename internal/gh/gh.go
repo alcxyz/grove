@@ -110,14 +110,14 @@ func ListPRs(repoFullName string) ([]model.PR, error) {
 	}
 
 	var raw []struct {
-		Number         int       `json:"number"`
-		Title          string    `json:"title"`
-		Author         ghAuthor  `json:"author"`
-		HeadRef        string    `json:"headRefName"`
-		State          string    `json:"state"`
-		UpdatedAt      time.Time `json:"updatedAt"`
-		URL            string    `json:"url"`
-		ReviewDecision string    `json:"reviewDecision"`
+		Number            int       `json:"number"`
+		Title             string    `json:"title"`
+		Author            ghAuthor  `json:"author"`
+		HeadRef           string    `json:"headRefName"`
+		State             string    `json:"state"`
+		UpdatedAt         time.Time `json:"updatedAt"`
+		URL               string    `json:"url"`
+		ReviewDecision    string    `json:"reviewDecision"`
 		StatusCheckRollup []struct {
 			Status     string `json:"status"`
 			Conclusion string `json:"conclusion"`
@@ -167,10 +167,10 @@ func ListIssues(repoFullName string) ([]model.Issue, error) {
 	}
 
 	var raw []struct {
-		Number    int      `json:"number"`
-		Title     string   `json:"title"`
-		Author    ghAuthor `json:"author"`
-		Labels    []struct {
+		Number int      `json:"number"`
+		Title  string   `json:"title"`
+		Author ghAuthor `json:"author"`
+		Labels []struct {
 			Name string `json:"name"`
 		} `json:"labels"`
 		Assignees []struct {

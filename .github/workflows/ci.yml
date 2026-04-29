@@ -32,6 +32,37 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+
+      - name: Validate release archives
+        run: |
+          set -euo pipefail
+          for tarball in dist/*.tar.gz; do
+            echo "==> Checking $tarball"
+
+            # No '.' directory entry (breaks Homebrew extraction)
+            if tar tzf "$tarball" | grep -qx '\./$\|^\.'; then
+              echo "FAIL: $tarball contains a '.' directory entry"
+              tar tzf "$tarball" | head -20
+              exit 1
+            fi
+
+            # Expected files present
+            for f in grove README.md LICENSE config.example.yaml; do
+              if ! tar tzf "$tarball" | grep -q "$f"; then
+                echo "FAIL: $tarball missing $f"
+                tar tzf "$tarball"
+                exit 1
+              fi
+            done
+
+            echo "  OK"
+          done
+
       - name: Auto-tag release
         id: tag
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

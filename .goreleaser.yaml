@@ -28,7 +28,7 @@ archives:
       - README.md
       - LICENSE
       - src: cmd/grove/config.example.yaml
-        dst: .
+        strip_parent: true
 
 checksum:
   name_template: "grove_{{ .Version }}_checksums.txt"

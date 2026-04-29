@@ -18,7 +18,7 @@ TUI for multi-repo git forge monitoring — currently GitHub-native via the `gh`
 - **Clone**: `grove clone` enumerates all repos for each profile's GitHub owner and clones any that are missing locally; groups can route clones to separate subdirectories
 - **Dashboard** (tab 1): all repos in one view with branch, dirty/clean state, sync status, open PR count, branch count, CI status, last author, and last commit time
 - **Pull Requests** (tab 2): open PRs across all repos with review status and checks
-- **CI** (tab 3): recent GitHub Actions workflow runs across all repos with pass/fail/running status
+- **CI Runs** (tab 3): recent GitHub Actions workflow runs across all repos with pass/fail/running status
 - **Branches** (tab 4): all remote branches with PR and merge indicators
 - **Activity** (tab 5): recent commits across repos with inline diff viewer
 - **Issues** (tab 6): open GitHub issues across all repos with labels, assignees, milestones, and age
@@ -221,7 +221,7 @@ The diff view opens with `enter` on the Activity tab:
 | `e`        | Open editor at repo root       |
 | `esc`      | Close diff view                |
 
-## CI / GitHub Actions
+## CI Runs / GitHub Actions
 
 Tab 3 shows recent GitHub Actions workflow runs across all repos:
 

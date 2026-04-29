@@ -561,6 +561,41 @@ func (m Model) filteredRuns() []model.WorkflowRun {
 	return out
 }
 
+func applyIssueSort(out []model.Issue, ts tabSortState) {
+	asc := ts.Order == sortAsc
+	switch ts.Field {
+	case "date":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].UpdatedAt.Before(out[j].UpdatedAt)
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		})
+	case "author":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].Author < out[j].Author
+			}
+			return out[i].Author > out[j].Author
+		})
+	case "subject":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].Title < out[j].Title
+			}
+			return out[i].Title > out[j].Title
+		})
+	case "repo":
+		sort.SliceStable(out, func(i, j int) bool {
+			ri, rj := repoBaseName(out[i].Repo), repoBaseName(out[j].Repo)
+			if asc {
+				return ri < rj
+			}
+			return ri > rj
+		})
+	}
+}
+
 func (m Model) filteredActivity() []model.Commit {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabActivity]
@@ -600,6 +635,50 @@ func (m Model) filteredActivity() []model.Commit {
 		out = append(out, c)
 	}
 	applyCommitSort(out, ts)
+	return out
+}
+
+func (m Model) filteredIssues() []model.Issue {
+	q := strings.ToLower(m.filterQuery)
+	ts := m.tabSort[tabIssues]
+	hasCycle := m.cycleField == "author" || m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date"
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
+		return m.issues
+	}
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
+	}
+	out := make([]model.Issue, 0, len(m.issues))
+	for _, iss := range m.issues {
+		if profileFilter && iss.Profile != activeProfileName {
+			continue
+		}
+		if q != "" {
+			labelStr := strings.Join(iss.Labels, " ")
+			if !strings.Contains(strings.ToLower(iss.Repo), q) &&
+				!strings.Contains(strings.ToLower(iss.Title), q) &&
+				!strings.Contains(strings.ToLower(iss.Author), q) &&
+				!strings.Contains(strings.ToLower(labelStr), q) {
+				continue
+			}
+		}
+		if !m.cycleMatch("author", iss.Author) {
+			continue
+		}
+		if !m.cycleMatch("subject", iss.Title) {
+			continue
+		}
+		if !m.cycleMatch("repo", repoBaseName(iss.Repo)) {
+			continue
+		}
+		if !m.cycleMatchDate(iss.UpdatedAt) {
+			continue
+		}
+		out = append(out, iss)
+	}
+	applyIssueSort(out, ts)
 	return out
 }
 
@@ -863,6 +942,21 @@ func (m Model) collectCycleValues(field string) []string {
 				add(normalizeCI(r.Status, r.Conclusion))
 			case "branch":
 				add(cyclePrefix(r.Branch))
+			}
+		}
+	case tabIssues:
+		for _, iss := range m.issues {
+			labelStr := strings.Join(iss.Labels, " ")
+			if !match(iss.Repo, iss.Title, iss.Author, labelStr) {
+				continue
+			}
+			switch field {
+			case "author":
+				add(iss.Author)
+			case "subject":
+				add(cyclePrefix(iss.Title))
+			case "repo":
+				add(repoBaseName(iss.Repo))
 			}
 		}
 	}

@@ -146,6 +146,78 @@ func ListPRs(repoFullName string) ([]model.PR, error) {
 	return prs, nil
 }
 
+func ListIssues(repoFullName string) ([]model.Issue, error) {
+	acquire()
+	defer release()
+
+	cmd := exec.Command("gh", "issue", "list",
+		"--repo", repoFullName,
+		"--state", "open",
+		"--json", "number,title,author,labels,assignees,milestone,updatedAt,createdAt,url",
+		"--limit", "50",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		var stderr []byte
+		if errors.As(err, &ee) {
+			stderr = ee.Stderr
+		}
+		return nil, wrapErr(repoFullName, err, stderr)
+	}
+
+	var raw []struct {
+		Number    int      `json:"number"`
+		Title     string   `json:"title"`
+		Author    ghAuthor `json:"author"`
+		Labels    []struct {
+			Name string `json:"name"`
+		} `json:"labels"`
+		Assignees []struct {
+			Login string `json:"login"`
+		} `json:"assignees"`
+		Milestone *struct {
+			Title string `json:"title"`
+		} `json:"milestone"`
+		UpdatedAt time.Time `json:"updatedAt"`
+		CreatedAt time.Time `json:"createdAt"`
+		URL       string    `json:"url"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("gh issue list %s: parse: %w", repoFullName, err)
+	}
+
+	issues := make([]model.Issue, len(raw))
+	for i, r := range raw {
+		labels := make([]string, len(r.Labels))
+		for j, l := range r.Labels {
+			labels[j] = l.Name
+		}
+		assignees := make([]string, len(r.Assignees))
+		for j, a := range r.Assignees {
+			assignees[j] = a.Login
+		}
+		milestone := ""
+		if r.Milestone != nil {
+			milestone = r.Milestone.Title
+		}
+		issues[i] = model.Issue{
+			Repo:      repoFullName,
+			Number:    r.Number,
+			Title:     r.Title,
+			Author:    r.Author.Login,
+			State:     "open",
+			Labels:    labels,
+			Assignees: assignees,
+			Milestone: milestone,
+			CreatedAt: r.CreatedAt,
+			UpdatedAt: r.UpdatedAt,
+			URL:       r.URL,
+		}
+	}
+	return issues, nil
+}
+
 // branchQuery fetches branch names, last commit date/author, and the default
 // branch in a single GraphQL call — far more efficient than N REST calls.
 const branchQuery = `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){defaultBranchRef{name}refs(refPrefix:"refs/heads/",first:100,orderBy:{field:TAG_COMMIT_DATE,direction:DESC}){nodes{name target{... on Commit{committedDate author{name}}}}}}}`

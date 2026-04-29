@@ -54,8 +54,32 @@ func main() {
 		}
 	}
 
+	// Help flag — print usage and exit.
+	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "-help" || os.Args[1] == "help" || os.Args[1] == "h") {
+		fmt.Print(`grove — terminal UI for monitoring GitHub repositories
+
+Usage:
+  grove                     launch the TUI
+  grove clone [profile]     clone missing org repos into base_paths
+  grove -v, --version       print version and paths
+  grove -h, --help          show this help
+
+Navigation:
+  1-6         switch tabs (Dashboard, PRs, CI, Branches, Activity, Issues)
+  h/l         previous/next tab
+  j/k         move cursor down/up
+  enter       open detail view
+  o           open on GitHub in browser
+  /           text filter
+  ?           keybinding reference
+  q           quit
+
+Config: ` + config.ConfigPath() + "\n")
+		return
+	}
+
 	// Version flag — print and exit before any TUI setup.
-	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version" || os.Args[1] == "v") {
 		fmt.Printf("grove %s\nconfig: %s\ncache:  %s\nlog:    %s\n",
 			version, config.ConfigPath(), config.CacheDir(), config.LogPath())
 		return
@@ -142,6 +166,8 @@ func main() {
 	var initActivityAt time.Time
 	var initRuns []model.WorkflowRun
 	var initRunsAt time.Time
+	var initIssues []model.Issue
+	var initIssuesAt time.Time
 
 	if prs, at, err := cache.LoadPRs(cacheDir, cacheKey); err == nil {
 		initPRs, initPRsAt = prs, at
@@ -154,6 +180,9 @@ func main() {
 	}
 	if runs, at, err := cache.LoadRuns(cacheDir, cacheKey); err == nil {
 		initRuns, initRunsAt = runs, at
+	}
+	if issues, at, err := cache.LoadIssues(cacheDir, cacheKey); err == nil {
+		initIssues, initIssuesAt = issues, at
 	}
 
 	// Restore last active profile from persisted state.
@@ -179,6 +208,8 @@ func main() {
 		ActivityLoadedAt: initActivityAt,
 		Runs:             initRuns,
 		RunsLoadedAt:     initRunsAt,
+		Issues:           initIssues,
+		IssuesLoadedAt:   initIssuesAt,
 		ActiveProfile:    initProfile,
 	})
 

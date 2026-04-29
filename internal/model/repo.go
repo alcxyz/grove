@@ -71,3 +71,18 @@ type WorkflowRun struct {
 	URL          string
 	Profile      string
 }
+
+type Issue struct {
+	Repo      string
+	Number    int
+	Title     string
+	Author    string
+	State     string // "open", "closed"
+	Labels    []string
+	Assignees []string
+	Milestone string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	URL       string
+	Profile   string
+}

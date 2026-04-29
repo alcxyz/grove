@@ -38,7 +38,7 @@ func detailSection(b *strings.Builder, title string, total, maxRows int, lineNum
 	}
 }
 
-func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int, highlightLine int) string {
+func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, issues []model.Issue, localBranches []string, remoteBranches []model.BranchInfo, runs []model.WorkflowRun, stats model.RepoStats, width int, highlightLine int) string {
 	var b strings.Builder
 	lineNum := 0
 
@@ -148,6 +148,25 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, l
 			title := truncate(pr.Title, 52)
 			write(fmt.Sprintf("  #%-4d %s  %s  %s",
 				pr.Number, title, formatReview(pr.ReviewDecision), DimStyle.Render(pr.Author)))
+		}
+	}
+	b.WriteString("\n")
+	lineNum++
+
+	// ── Open Issues ──────────────────────────────────────────────────────────
+	write = detailSection(&b, fmt.Sprintf("  Open issues (%d)", len(issues)), len(issues), 10, &lineNum, highlightLine)
+	if len(issues) == 0 {
+		b.WriteString(DimStyle.Render("  (none)\n"))
+		lineNum++
+	} else {
+		for _, iss := range issues {
+			title := truncate(iss.Title, 48)
+			labels := ""
+			if len(iss.Labels) > 0 {
+				labels = DimStyle.Render(truncate(strings.Join(iss.Labels, ", "), 20))
+			}
+			write(fmt.Sprintf("  #%-4d %s  %s  %s",
+				iss.Number, title, labels, DimStyle.Render(iss.Author)))
 		}
 	}
 	b.WriteString("\n")

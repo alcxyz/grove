@@ -368,3 +368,79 @@ func CIGroupStarts(groups []CIGroup) []int {
 	}
 	return s
 }
+
+type IssueGroup struct {
+	Name     string
+	Issues   []model.Issue
+	StartIdx int
+}
+
+func BuildIssueGroups(issues []model.Issue, groupFor func(string) string, groupOrder func(string) int) []IssueGroup {
+	var groups []IssueGroup
+	idx := map[string]int{}
+	for _, iss := range issues {
+		gname := groupFor(repoShortName(iss.Repo))
+		gi, exists := idx[gname]
+		if !exists {
+			gi = len(groups)
+			idx[gname] = gi
+			groups = append(groups, IssueGroup{Name: gname})
+		}
+		groups[gi].Issues = append(groups[gi].Issues, iss)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groupOrder(groups[i].Name) < groupOrder(groups[j].Name)
+	})
+	si := 0
+	for i := range groups {
+		groups[i].StartIdx = si
+		si += len(groups[i].Issues)
+	}
+	return groups
+}
+
+func IssueCursorLine(groups []IssueGroup, cursor int) int {
+	vl := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			vl++
+		}
+		if g.Name != "" {
+			vl++
+		}
+		for i := range g.Issues {
+			if g.StartIdx+i == cursor {
+				return vl
+			}
+			vl++
+		}
+	}
+	return 0
+}
+
+func IssueIndexAtVL(groups []IssueGroup, vl int) int {
+	cur := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			cur++
+		}
+		if g.Name != "" {
+			cur++
+		}
+		for i := range g.Issues {
+			if cur == vl {
+				return g.StartIdx + i
+			}
+			cur++
+		}
+	}
+	return -1
+}
+
+func IssueGroupStarts(groups []IssueGroup) []int {
+	s := make([]int, len(groups))
+	for i, g := range groups {
+		s[i] = g.StartIdx
+	}
+	return s
+}

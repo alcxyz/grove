@@ -29,6 +29,7 @@ const (
 	maxBranches = 2000
 	maxActivity = 100
 	maxRuns     = 500
+	maxIssues   = 500
 )
 
 // ErrConfigChanged is returned by Load* when the stored config key doesn't
@@ -137,4 +138,12 @@ func LoadRuns(dir, configKey string) ([]model.WorkflowRun, time.Time, error) {
 
 func SaveRuns(dir, configKey string, data []model.WorkflowRun) error {
 	return save(dir, "runs", configKey, capSlice(data, maxRuns))
+}
+
+func LoadIssues(dir, configKey string) ([]model.Issue, time.Time, error) {
+	return load[[]model.Issue](dir, "issues", configKey)
+}
+
+func SaveIssues(dir, configKey string, data []model.Issue) error {
+	return save(dir, "issues", configKey, capSlice(data, maxIssues))
 }

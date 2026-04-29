@@ -15,9 +15,10 @@ const (
 	tabCI
 	tabBranches
 	tabActivity
+	tabIssues
 )
 
-var tabNames = []string{"Dashboard [1]", "Pull Requests [2]", "CI [3]", "Branches [4]", "Activity [5]"}
+var tabNames = []string{"1 Dashboard", "2 Pull Requests", "3 CI", "4 Branches", "5 Activity", "6 Issues"}
 
 type sortOrder int
 
@@ -50,6 +51,8 @@ type Options struct {
 	ActivityLoadedAt time.Time
 	Runs             []model.WorkflowRun
 	RunsLoadedAt     time.Time
+	Issues           []model.Issue
+	IssuesLoadedAt   time.Time
 	ActiveProfile    int
 }
 
@@ -79,6 +82,8 @@ func New(o Options) Model {
 		activityLoadedAt: o.ActivityLoadedAt,
 		runs:             o.Runs,
 		runsLoadedAt:     o.RunsLoadedAt,
+		issues:           o.Issues,
+		issuesLoadedAt:   o.IssuesLoadedAt,
 		activeProfile:    o.ActiveProfile,
 	}
 }
@@ -91,6 +96,7 @@ type Model struct {
 	branches []model.BranchInfo
 	activity []model.Commit
 	runs     []model.WorkflowRun
+	issues   []model.Issue
 
 	activeTab tab
 	cursor    int
@@ -108,6 +114,7 @@ type Model struct {
 	branchesLoadedAt time.Time
 	activityLoadedAt time.Time
 	runsLoadedAt     time.Time
+	issuesLoadedAt   time.Time
 
 	// Load errors — shown in view when a tab has no data
 	errLog  []string
@@ -131,6 +138,7 @@ type Model struct {
 	detailRepo     model.Repo   // the repo currently shown in detail
 	detailCommits  []model.Commit
 	detailPRs      []model.PR
+	detailIssues   []model.Issue
 	detailBranches []string
 	detailStats    model.RepoStats
 	detailScroll   int          // scroll offset within the detail content
@@ -206,6 +214,7 @@ type tickMsg time.Time
 type detailLoadedMsg struct {
 	commits  []model.Commit
 	prs      []model.PR
+	issues   []model.Issue
 	branches []string
 	stats    model.RepoStats
 }
@@ -222,6 +231,11 @@ type runsLoadedMsg struct {
 	errors []string
 }
 
+type issuesLoadedMsg struct {
+	issues []model.Issue
+	errors []string
+}
+
 // detailSect identifies which section of the detail pane an item belongs to.
 type detailSect int
 
@@ -229,6 +243,7 @@ const (
 	detailLocalBranch  detailSect = iota
 	detailRemoteBranch
 	detailPR
+	detailIssue
 	detailCIRun
 	detailCommit
 )

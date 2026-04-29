@@ -107,8 +107,8 @@ func TestUpdateTabSwitchHL(t *testing.T) {
 
 	// h wraps around
 	m = sendKey(m, "h")
-	if m.activeTab != tabActivity {
-		t.Errorf("h from dashboard: activeTab = %d, want %d (should wrap)", m.activeTab, tabActivity)
+	if m.activeTab != tabIssues {
+		t.Errorf("h from dashboard: activeTab = %d, want %d (should wrap)", m.activeTab, tabIssues)
 	}
 }
 

@@ -18,7 +18,7 @@ const (
 	tabIssues
 )
 
-var tabNames = []string{"Dashboard [1]", "Pull Requests [2]", "CI [3]", "Branches [4]", "Activity [5]", "Issues [6]"}
+var tabNames = []string{"1 Dashboard", "2 Pull Requests", "3 CI", "4 Branches", "5 Activity", "6 Issues"}
 
 type sortOrder int
 

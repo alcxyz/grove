@@ -735,6 +735,15 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 
 func RenderTabs(tabs []string, active int) string {
 	const perRow = 3
+
+	// Find the longest tab label to set a uniform column width.
+	colW := 0
+	for _, t := range tabs {
+		if len(t) > colW {
+			colW = len(t)
+		}
+	}
+
 	var rows []string
 	for start := 0; start < len(tabs); start += perRow {
 		end := start + perRow
@@ -743,10 +752,11 @@ func RenderTabs(tabs []string, active int) string {
 		}
 		var row []string
 		for i := start; i < end; i++ {
+			label := fmt.Sprintf("%-*s", colW, tabs[i])
 			if i == active {
-				row = append(row, ActiveTabStyle.Render(tabs[i]))
+				row = append(row, ActiveTabStyle.Render(label))
 			} else {
-				row = append(row, TabStyle.Render(tabs[i]))
+				row = append(row, TabStyle.Render(label))
 			}
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))

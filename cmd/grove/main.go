@@ -54,6 +54,30 @@ func main() {
 		}
 	}
 
+	// Help flag — print usage and exit.
+	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help") {
+		fmt.Print(`grove — terminal UI for monitoring GitHub repositories
+
+Usage:
+  grove                     launch the TUI
+  grove clone [profile]     clone missing org repos into base_paths
+  grove -v, --version       print version and paths
+  grove -h, --help          show this help
+
+Navigation:
+  1-6         switch tabs (Dashboard, PRs, CI, Branches, Activity, Issues)
+  h/l         previous/next tab
+  j/k         move cursor down/up
+  enter       open detail view
+  o           open on GitHub in browser
+  /           text filter
+  ?           keybinding reference
+  q           quit
+
+Config: ` + config.ConfigPath() + "\n")
+		return
+	}
+
 	// Version flag — print and exit before any TUI setup.
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
 		fmt.Printf("grove %s\nconfig: %s\ncache:  %s\nlog:    %s\n",

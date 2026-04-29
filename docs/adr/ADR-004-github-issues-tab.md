@@ -55,8 +55,8 @@ Issues is added as `[6]` rather than inserted between existing tabs. This avoids
 
 ## Consequences
 
-- Tab bar gains a 6th entry. On narrow terminals the tab bar may need truncation or abbreviation — the existing tab renderer should be checked for overflow.
+- Tab bar gains a 6th entry. Addressed by wrapping tabs into a 2×3 grid with number-first labels and equal-width columns.
 - One additional `gh issue list` call per repo per refresh. With the semaphore cap of 5 and typical repo counts, this is within rate-limit budget but increases total refresh time proportionally.
 - Cache directory gains one more JSON file (`issues.json`).
-- The dashboard table gains one more column — verify it fits in the default 80-column width or abbreviate.
+- The dashboard table gains one more "Is" column. Addressed by the dynamic column width system (see ADR-005) which distributes all columns proportionally within the terminal width.
 - Label colors from GitHub are not used (terminal color mapping is unreliable). Labels render as plain text.

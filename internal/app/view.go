@@ -211,11 +211,7 @@ func (m Model) View() string {
 	if width == 0 {
 		width = 120
 	}
-	// cw caps content width for tab/detail renders; overlays (splash/help) use full width.
 	cw := width
-	if cw > 160 {
-		cw = 160
-	}
 
 	// Splash overlay replaces main content
 	if m.showSplash {

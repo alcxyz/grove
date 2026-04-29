@@ -1112,60 +1112,50 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	case tea.MouseButtonLeft:
 		if msg.Action == tea.MouseActionPress {
-			// Tab bar / profile bar click handling
+			// Layout: Y0="grove", Y1=blank, Y2=profile(if present), then tab rows.
+			tabStartY := 2
 			if m.showProfileBar() {
-				if msg.Y == 2 {
-					// Profile tab click
-					if idx := m.profileAtX(msg.X); idx >= -1 {
-						m.activeProfile = idx
-						m.cursor = 0
-						m.filterQuery = ""
-						m.clearCycleFilter()
-						for k := range m.scrollOffset {
-							m.scrollOffset[k] = 0
-						}
-						go m.saveState()
-						return m, nil
+				tabStartY = 3
+			}
+			tabRows := ui.TabRows(tabNames, m.width)
+			tabEndY := tabStartY + tabRows // exclusive
+
+			switchTab := func(t int) (Model, tea.Cmd) {
+				m.showDiff = false
+				m.showDetail = false
+				m.showHelp = false
+				m.showSplash = false
+				m.activeTab = tab(t)
+				m.cursor = 0
+				m.filterQuery = ""
+				m.clearCycleFilter()
+				m.scrollOffset[m.activeTab] = 0
+				return m, m.loadTabIfNeeded()
+			}
+
+			if m.showProfileBar() && msg.Y == 2 {
+				// Profile tab click
+				if idx := m.profileAtX(msg.X); idx >= -1 {
+					m.activeProfile = idx
+					m.cursor = 0
+					m.filterQuery = ""
+					m.clearCycleFilter()
+					for k := range m.scrollOffset {
+						m.scrollOffset[k] = 0
 					}
-				} else if msg.Y == 3 || msg.Y == 4 {
-					// Content tab click (shifted down by 1 row due to profile bar)
-					if t := tabAtX(msg.X); t >= 0 {
-						m.showDiff = false
-						m.showDetail = false
-						m.showHelp = false
-						m.showSplash = false
-						m.activeTab = tab(t)
-						m.cursor = 0
-						m.filterQuery = ""
-						m.clearCycleFilter()
-						m.scrollOffset[m.activeTab] = 0
-						return m, m.loadTabIfNeeded()
-					}
-				} else if !m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
-					if idx := m.termRowToCursor(msg.Y); idx >= 0 && idx < m.listLen() {
-						m.cursor = idx
-						m.adjustScroll()
-					}
+					go m.saveState()
+					return m, nil
 				}
-			} else {
-				if msg.Y == 2 || msg.Y == 3 {
-					if t := tabAtX(msg.X); t >= 0 {
-						m.showDiff = false
-						m.showDetail = false
-						m.showHelp = false
-						m.showSplash = false
-						m.activeTab = tab(t)
-						m.cursor = 0
-						m.filterQuery = ""
-						m.clearCycleFilter()
-						m.scrollOffset[m.activeTab] = 0
-						return m, m.loadTabIfNeeded()
-					}
-				} else if !m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
-					if idx := m.termRowToCursor(msg.Y); idx >= 0 && idx < m.listLen() {
-						m.cursor = idx
-						m.adjustScroll()
-					}
+			} else if msg.Y >= tabStartY && msg.Y < tabEndY {
+				// Content tab click
+				row := msg.Y - tabStartY
+				if t := tabAtXY(msg.X, row, m.width); t >= 0 {
+					return switchTab(t)
+				}
+			} else if !m.showDiff && !m.showDetail && !m.showHelp && !m.showSplash {
+				if idx := m.termRowToCursor(msg.Y); idx >= 0 && idx < m.listLen() {
+					m.cursor = idx
+					m.adjustScroll()
 				}
 			}
 		}

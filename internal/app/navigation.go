@@ -115,8 +115,8 @@ func (m Model) contentHeight() int {
 	if m.showProfileBar() {
 		extra = 1
 	}
-	// 5 top (title + blank + tabs + indicator + blank) + ui.BottomChromeHeight bottom + extra for profile bar
-	h := m.height - 5 - ui.BottomChromeHeight - extra
+	// 6 top (title + blank + 2 tab rows + indicator + blank) + ui.BottomChromeHeight bottom + extra for profile bar
+	h := m.height - 6 - ui.BottomChromeHeight - extra
 	if h < 1 {
 		return 1
 	}

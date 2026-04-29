@@ -504,17 +504,18 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 		return DimStyle.Render("\n  No branches found.\n")
 	}
 
-	// indent(2) + when(10) + PR(3) + merged(2) = 17 fixed
-	fixedW := 2 + 10 + 3 + 2
+	// indent(2) + PR(3) + merged(2) = 7 fixed
+	fixedW := 2 + 3 + 2
 	cols := flexCols(width-fixedW, []colSpec{
 		{Min: 16, Weight: 2}, // repo
 		{Min: 16, Weight: 2}, // branch
 		{Min: 10, Weight: 1}, // author
+		{Min: 7, Weight: 1},  // when
 	})
-	repoW, branchW, authorW := cols[0], cols[1], cols[2]
+	repoW, branchW, authorW, agoW := cols[0], cols[1], cols[2], cols[3]
 
 	var b strings.Builder
-	header := "  " + cell("Repository", repoW) + cell("Branch", branchW) + cell("Author", authorW) + cell("When", 10) + cell("PR", 3) + "∈"
+	header := "  " + cell("Repository", repoW) + cell("Branch", branchW) + cell("Author", authorW) + cell("PR", 3) + cell("∈", 2) + cell("When", agoW)
 	b.WriteString(HeaderStyle.Render(header))
 	b.WriteString("\n")
 
@@ -556,8 +557,9 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 			repoStyled := hlText(repo, "repo", hlField, hlValue)
 			row := "  " +
 				cell(repoStyled, repoW) + cell(nameStyled, branchW) +
-				cell(DimStyle.Render(author), authorW) + cell(DimStyle.Render(ago), 10) +
-				cell(prStyled, 3) + mergedStyled
+				cell(DimStyle.Render(author), authorW) +
+				cell(prStyled, 3) + cell(mergedStyled, 2) +
+				cell(DimStyle.Render(ago), agoW)
 			if flatIdx == cursor {
 				sw.writeLine(selRow(row))
 			} else {
@@ -732,15 +734,24 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
 func RenderTabs(tabs []string, active int) string {
-	var rendered []string
-	for i, t := range tabs {
-		if i == active {
-			rendered = append(rendered, ActiveTabStyle.Render(t))
-		} else {
-			rendered = append(rendered, TabStyle.Render(t))
+	const perRow = 3
+	var rows []string
+	for start := 0; start < len(tabs); start += perRow {
+		end := start + perRow
+		if end > len(tabs) {
+			end = len(tabs)
 		}
+		var row []string
+		for i := start; i < end; i++ {
+			if i == active {
+				row = append(row, ActiveTabStyle.Render(tabs[i]))
+			} else {
+				row = append(row, TabStyle.Render(tabs[i]))
+			}
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
+	return strings.Join(rows, "\n")
 }
 
 func RenderProfileTabs(tabs []string, active int) string {

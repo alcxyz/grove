@@ -49,18 +49,20 @@ jobs:
           for tarball in dist/*.tar.gz; do
             echo "==> Checking $tarball"
 
+            contents=$(tar tzf "$tarball")
+
             # No '.' directory entry (breaks Homebrew extraction)
-            if tar tzf "$tarball" | grep -qx '\./$\|^\.'; then
+            if echo "$contents" | grep -qx '\./$\|^\.'; then
               echo "FAIL: $tarball contains a '.' directory entry"
-              tar tzf "$tarball" | head -20
+              echo "$contents" | head -20
               exit 1
             fi
 
             # Expected files present
             for f in grove README.md LICENSE config.example.yaml; do
-              if ! tar tzf "$tarball" | grep -q "$f"; then
+              if ! echo "$contents" | grep -q "$f"; then
                 echo "FAIL: $tarball missing $f"
-                tar tzf "$tarball"
+                echo "$contents"
                 exit 1
               fi
             done

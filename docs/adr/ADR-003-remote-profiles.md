@@ -18,7 +18,7 @@ Add a `type` field to profiles: `local` (default, current behaviour) and `remote
 - List repos via GitHub API (`gh api`) using the profile's `owner`, filtered by `prefixes`.
 - Show a dashboard with API-derived columns: description, language, visibility, stars/forks, last pushed, archived status.
 - `enter` opens a read-only detail view with full repo metadata (description, topics, license, default branch, issue/PR counts).
-- PRs and CI tabs work (already GitHub API data).
+- PRs, CI, and Issues tabs work (already GitHub API data — see ADR-004 for the Issues tab).
 - Activity and Branches tabs are not available (they require local git data).
 - `@` key triggers clone. Clone destination is inferred from the profile's group `base_path` / `match` rules (same routing as `grove clone`), with the option to override.
 - After cloning, the repo appears in the matching local profile on next refresh.
@@ -40,5 +40,6 @@ Add a `type` field to profiles: `local` (default, current behaviour) and `remote
 - Detail view needs a remote variant showing API metadata instead of local git info.
 - The `@` key is reserved for clone actions (currently unmapped).
 - Clone routing reuses existing group `base_path` infrastructure, no new config needed.
+- Issues tab (ADR-004) is fully available for remote profiles since it uses the same GitHub API data source as PRs and CI.
 - Network dependency: remote profiles require API access on every load (no local fallback on first use, but cacheable after).
 - The "All" profile view will need to handle mixed local/remote grouping gracefully.

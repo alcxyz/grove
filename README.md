@@ -35,6 +35,19 @@ A terminal UI for monitoring GitHub repositories. See branch status, dirty worki
 - **Update notifications**: footer shows when a newer release is available
 - Catppuccin Mocha colour palette
 
+## How grove fits in
+
+Grove is a **multi-repo orchestration layer** — it sits above single-repo tools and below the browser, giving you a terminal-native overview across all your repositories.
+
+| Tool | Scope | Strength | Gap grove fills |
+| --- | --- | --- | --- |
+| **`gh` CLI** | One repo / one entity at a time | Scriptable, full API access | No cross-repo dashboard; no directory-aware clone routing |
+| **lazygit** | Single repo, local git | Deep interactive git operations | No GitHub API (PRs, CI, issues); no multi-repo view |
+| **gh-dash** | PRs and issues across repos | Focused PR review workflow | No local git state, branches, activity, or CI overview |
+| **grove** | All repos, all signals | Unified dashboard + detail drill-down | — |
+
+Grove doesn't replace these tools — it launches them. `space` opens lazygit or diffnav for deep single-repo work; `o` opens GitHub in the browser; gh-dash handles PR review. Grove is the flight-control layer that ties them together across repos, showing you where to focus before you drill down.
+
 ## Installation
 
 ### Homebrew

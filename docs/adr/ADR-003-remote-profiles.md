@@ -8,6 +8,13 @@
 
 Grove currently only shows repos that are already cloned locally. To discover new repos in an org, users must run `grove clone` (a batch operation) or browse GitHub manually. There is no way to interactively browse remote repos, see their metadata, and selectively clone the ones you need.
 
+Existing tools each cover part of this workflow but none cover the full lifecycle:
+
+- **`gh` CLI** can list org repos (`gh repo list`) and clone them (`gh repo clone`), but operates on one repo or one entity at a time. There is no cross-repo overview — seeing PRs, CI status, and issues across dozens of repos requires scripting multiple commands. It also has no awareness of your directory layout or routing rules.
+- **lazygit** is excellent for deep single-repo git work but is purely local and single-repo. It has no GitHub API integration (no PRs, issues, or CI) and no multi-repo awareness. Grove already launches lazygit as its drill-down tool — they are complementary layers, not competing.
+
+Grove's value is as the **multi-repo orchestration layer**: a single dashboard showing PRs, CI, branches, issues, and activity across all repos. Remote profiles extend this to the full discover → clone → monitor lifecycle. You browse an org's uncloned repos in the same TUI where you monitor cloned ones, see their GitHub context (PRs, CI, issues) before deciding to clone, then clone with a keystroke into the right directory via group routing rules — all without leaving the terminal.
+
 A shared config across machines (macOS/Linux) already has profiles with `owner` and group routing rules. Extending profiles with a `type` field lets us reuse this infrastructure for remote browsing without a separate concept.
 
 ## Decision

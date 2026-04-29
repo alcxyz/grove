@@ -55,7 +55,7 @@ func main() {
 	}
 
 	// Help flag — print usage and exit.
-	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "help") {
+	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "-help" || os.Args[1] == "help" || os.Args[1] == "h") {
 		fmt.Print(`grove — terminal UI for monitoring GitHub repositories
 
 Usage:
@@ -79,7 +79,7 @@ Config: ` + config.ConfigPath() + "\n")
 	}
 
 	// Version flag — print and exit before any TUI setup.
-	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "version") {
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version" || os.Args[1] == "v") {
 		fmt.Printf("grove %s\nconfig: %s\ncache:  %s\nlog:    %s\n",
 			version, config.ConfigPath(), config.CacheDir(), config.LogPath())
 		return

@@ -14,6 +14,7 @@ import (
 	"github.com/alcxyz/grove/internal/cache"
 	"github.com/alcxyz/grove/internal/clone"
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/forge"
 	"github.com/alcxyz/grove/internal/model"
 )
 
@@ -193,6 +194,15 @@ Config: ` + config.ConfigPath() + "\n")
 		}
 	}
 
+	providers := make(map[string]forge.Provider)
+	for _, p := range cfg.Profiles {
+		prov, err := forge.NewProvider(p.Forge)
+		if err != nil {
+			log.Fatalf("profile %q: %v", p.Name, err)
+		}
+		providers[p.Name] = prov
+	}
+
 	m := app.New(app.Options{
 		Cfg:              cfg,
 		Version:          version,
@@ -211,6 +221,7 @@ Config: ` + config.ConfigPath() + "\n")
 		Issues:           initIssues,
 		IssuesLoadedAt:   initIssuesAt,
 		ActiveProfile:    initProfile,
+		Providers:        providers,
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

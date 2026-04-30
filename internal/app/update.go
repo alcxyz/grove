@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alcxyz/grove/internal/cache"
-	"github.com/alcxyz/grove/internal/gh"
+	"github.com/alcxyz/grove/internal/forge"
 	gitpkg "github.com/alcxyz/grove/internal/git"
 	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
@@ -19,9 +19,9 @@ func (m Model) saveState() {
 	_ = cache.SaveState(m.cacheDir, cache.UIState{ActiveProfile: m.activeProfile})
 }
 
-// containsAuthErr returns true if any error string matches the gh auth sentinel.
+// containsAuthErr returns true if any error string matches the auth sentinel.
 func containsAuthErr(errs []string) bool {
-	needle := gh.ErrNotLoggedIn.Error()
+	needle := forge.ErrNotAuthenticated.Error()
 	for _, e := range errs {
 		if strings.Contains(e, needle) {
 			return true
@@ -36,19 +36,19 @@ func (m Model) Init() tea.Cmd {
 
 	// Background-refresh any cached data that is stale
 	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
-		cmds = append(cmds, loadPRs(m.cfg.Profiles))
+		cmds = append(cmds, loadPRs(m.cfg.Profiles, m.providers))
 	}
 	if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-		cmds = append(cmds, loadBranches(m.cfg.Profiles))
+		cmds = append(cmds, loadBranches(m.cfg.Profiles, m.providers))
 	}
 	if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
 		cmds = append(cmds, loadActivity(m.cfg.Profiles))
 	}
 	if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
-		cmds = append(cmds, loadRuns(m.cfg.Profiles))
+		cmds = append(cmds, loadRuns(m.cfg.Profiles, m.providers))
 	}
 	if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
-		cmds = append(cmds, loadIssues(m.cfg.Profiles))
+		cmds = append(cmds, loadIssues(m.cfg.Profiles, m.providers))
 	}
 
 	if m.autoRefresh {
@@ -368,9 +368,11 @@ func (m Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		if c, ok := m.commitAtCursor(); ok {
 			if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
-				_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+				if prov := m.providers[r.Profile]; prov != nil {
+					_ = ui.OpenURL(prov.CommitURL(r.Owner, r.Name, c.Hash))
+				}
 			} else {
-				m.statusMsg = "no GitHub owner configured"
+				m.statusMsg = "no forge owner configured"
 			}
 		} else {
 			m.statusMsg = "nothing selected"
@@ -457,7 +459,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScroll = 0
 			m.loading = true
 			m.statusMsg = fmt.Sprintf("Loading %s…", repo.Name)
-			return m, loadDetail(repo)
+			return m, loadDetail(repo, m.providers[repo.Profile])
 		}
 		return m, nil
 	}
@@ -474,9 +476,11 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case detailRemoteBranch:
 				branches := m.detailRemoteBranches()
 				if item.Index < len(branches) && repo.Owner != "" {
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/tree/%s", repo.Owner, repo.Name, branches[item.Index].Name))
+					if prov := m.providers[repo.Profile]; prov != nil {
+						_ = ui.OpenURL(prov.BranchURL(repo.Owner, repo.Name, branches[item.Index].Name))
+					}
 				} else {
-					m.statusMsg = "no GitHub URL for this branch"
+					m.statusMsg = "no forge URL for this branch"
 				}
 			case detailPR:
 				if item.Index < len(m.detailPRs) {
@@ -494,13 +498,15 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case detailCommit:
 				if item.Index < len(m.detailCommits) && repo.Owner != "" {
 					c := m.detailCommits[item.Index]
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", repo.Owner, repo.Name, c.Hash))
+					if prov := m.providers[repo.Profile]; prov != nil {
+						_ = ui.OpenURL(prov.CommitURL(repo.Owner, repo.Name, c.Hash))
+					}
 				} else {
-					m.statusMsg = "no GitHub owner configured"
+					m.statusMsg = "no forge owner configured"
 				}
 			default:
-				// Local branches: no direct GitHub URL.
-				m.statusMsg = "no GitHub URL for local branches"
+				// Local branches: no direct forge URL.
+				m.statusMsg = "no forge URL for local branches"
 			}
 		} else {
 			m.statusMsg = "nothing selected"
@@ -699,7 +705,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading PRs..."
-			return m, loadPRs(m.cfg.Profiles)
+			return m, loadPRs(m.cfg.Profiles, m.providers)
 		}
 	case "3":
 		m.activeTab = tabCI
@@ -710,7 +716,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading CI runs..."
-			return m, loadRuns(m.cfg.Profiles)
+			return m, loadRuns(m.cfg.Profiles, m.providers)
 		}
 	case "4":
 		m.activeTab = tabBranches
@@ -721,7 +727,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading branches..."
-			return m, loadBranches(m.cfg.Profiles)
+			return m, loadBranches(m.cfg.Profiles, m.providers)
 		}
 	case "5":
 		m.activeTab = tabActivity
@@ -743,7 +749,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading issues..."
-			return m, loadIssues(m.cfg.Profiles)
+			return m, loadIssues(m.cfg.Profiles, m.providers)
 		}
 	case "enter":
 		// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
@@ -753,7 +759,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.detailScroll = 0
 			m.loading = true
 			m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-			return m, loadDetail(repo)
+			return m, loadDetail(repo, m.providers[repo.Profile])
 		}
 		switch m.activeTab {
 		case tabDashboard:
@@ -801,15 +807,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabDashboard:
 			return m, loadRepos(m.cfg.Profiles)
 		case tabPRs:
-			return m, loadPRs(m.cfg.Profiles)
+			return m, loadPRs(m.cfg.Profiles, m.providers)
 		case tabBranches:
-			return m, loadBranches(m.cfg.Profiles)
+			return m, loadBranches(m.cfg.Profiles, m.providers)
 		case tabActivity:
 			return m, loadActivity(m.cfg.Profiles)
 		case tabCI:
-			return m, loadRuns(m.cfg.Profiles)
+			return m, loadRuns(m.cfg.Profiles, m.providers)
 		case tabIssues:
-			return m, loadIssues(m.cfg.Profiles)
+			return m, loadIssues(m.cfg.Profiles, m.providers)
 		}
 	case "R":
 		m.autoRefresh = !m.autoRefresh
@@ -998,14 +1004,16 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = "no repo selected"
 	case "o":
-		// o = open on GitHub in browser.
+		// o = open in browser.
 		switch m.activeTab {
 		case tabDashboard:
 			if r, ok := m.repoAtCursor(); ok {
 				if r.Owner != "" {
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					if prov := m.providers[r.Profile]; prov != nil {
+						_ = ui.OpenURL(prov.RepoURL(r.Owner, r.Name))
+					}
 				} else {
-					m.statusMsg = "no GitHub owner configured"
+					m.statusMsg = "no forge owner configured"
 				}
 			} else {
 				m.statusMsg = "nothing selected"
@@ -1018,16 +1026,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabBranches:
 			if br, ok := m.branchAtCursor(); ok {
-				_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/tree/%s", br.Repo, br.Name))
+				if prov := m.providers[br.Profile]; prov != nil {
+					owner, name, _ := strings.Cut(br.Repo, "/")
+					_ = ui.OpenURL(prov.BranchURL(owner, name, br.Name))
+				}
 			} else {
 				m.statusMsg = "nothing selected"
 			}
 		case tabActivity:
 			if c, ok := m.commitAtCursor(); ok {
 				if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+					if prov := m.providers[r.Profile]; prov != nil {
+						_ = ui.OpenURL(prov.CommitURL(r.Owner, r.Name, c.Hash))
+					}
 				} else {
-					m.statusMsg = "no GitHub owner configured"
+					m.statusMsg = "no forge owner configured"
 				}
 			} else {
 				m.statusMsg = "nothing selected"
@@ -1172,7 +1185,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					m.detailScroll = 0
 					m.loading = true
 					m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-					return m, loadDetail(repo)
+					return m, loadDetail(repo, m.providers[repo.Profile])
 				}
 				switch m.activeTab {
 				case tabDashboard:

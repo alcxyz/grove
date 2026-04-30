@@ -21,6 +21,7 @@ type Group struct {
 type Profile struct {
 	Name      string   `yaml:"name"`
 	Owner     string   `yaml:"owner"` // GitHub org or username; "" = no GitHub
+	Forge     string   `yaml:"forge"` // "github" (default), "forgejo", etc.
 	BasePaths []string `yaml:"base_paths"`
 	BasePath  string   `yaml:"base_path"` // legacy; merged into BasePaths on load
 	Prefixes  []string `yaml:"prefixes"`

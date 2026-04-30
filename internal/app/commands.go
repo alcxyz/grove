@@ -17,7 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alcxyz/grove/internal/config"
-	"github.com/alcxyz/grove/internal/gh"
+	"github.com/alcxyz/grove/internal/forge"
 	gitpkg "github.com/alcxyz/grove/internal/git"
 	"github.com/alcxyz/grove/internal/model"
 )
@@ -108,7 +108,7 @@ func loadRepos(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadPRs(profiles []config.Profile) tea.Cmd {
+func loadPRs(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -119,14 +119,18 @@ func loadPRs(profiles []config.Profile) tea.Cmd {
 			if p.Owner == "" {
 				continue
 			}
+			prov := providers[p.Name]
+			if prov == nil {
+				continue
+			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile) {
+				go func(path string, profile config.Profile, prov forge.Provider) {
 					defer wg.Done()
 					name := filepath.Base(path)
 					repoFull := profile.Owner + "/" + name
-					prs, err := gh.ListPRs(repoFull)
+					prs, err := prov.ListPRs(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
@@ -137,7 +141,7 @@ func loadPRs(profiles []config.Profile) tea.Cmd {
 						allPRs = append(allPRs, prs...)
 					}
 					mu.Unlock()
-				}(path, p)
+				}(path, p, prov)
 			}
 		}
 		wg.Wait()
@@ -149,7 +153,7 @@ func loadPRs(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadBranches(profiles []config.Profile) tea.Cmd {
+func loadBranches(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -160,14 +164,18 @@ func loadBranches(profiles []config.Profile) tea.Cmd {
 			if p.Owner == "" {
 				continue
 			}
+			prov := providers[p.Name]
+			if prov == nil {
+				continue
+			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile) {
+				go func(path string, profile config.Profile, prov forge.Provider) {
 					defer wg.Done()
 					name := filepath.Base(path)
 					repoFull := profile.Owner + "/" + name
-					branches, err := gh.ListBranches(repoFull)
+					branches, err := prov.ListBranches(repoFull)
 					if err != nil {
 						mu.Lock()
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
@@ -196,7 +204,7 @@ func loadBranches(profiles []config.Profile) tea.Cmd {
 					mu.Lock()
 					allBranches = append(allBranches, branches...)
 					mu.Unlock()
-				}(path, p)
+				}(path, p, prov)
 			}
 		}
 		wg.Wait()
@@ -267,7 +275,7 @@ func loadActivity(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadRuns(profiles []config.Profile) tea.Cmd {
+func loadRuns(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -278,14 +286,18 @@ func loadRuns(profiles []config.Profile) tea.Cmd {
 			if p.Owner == "" {
 				continue
 			}
+			prov := providers[p.Name]
+			if prov == nil {
+				continue
+			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile) {
+				go func(path string, profile config.Profile, prov forge.Provider) {
 					defer wg.Done()
 					name := filepath.Base(path)
 					repoFull := profile.Owner + "/" + name
-					runs, err := gh.ListWorkflowRuns(repoFull)
+					runs, err := prov.ListWorkflowRuns(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
@@ -296,7 +308,7 @@ func loadRuns(profiles []config.Profile) tea.Cmd {
 						allRuns = append(allRuns, runs...)
 					}
 					mu.Unlock()
-				}(path, p)
+				}(path, p, prov)
 			}
 		}
 		wg.Wait()
@@ -308,7 +320,7 @@ func loadRuns(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadIssues(profiles []config.Profile) tea.Cmd {
+func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -319,14 +331,18 @@ func loadIssues(profiles []config.Profile) tea.Cmd {
 			if p.Owner == "" {
 				continue
 			}
+			prov := providers[p.Name]
+			if prov == nil {
+				continue
+			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile) {
+				go func(path string, profile config.Profile, prov forge.Provider) {
 					defer wg.Done()
 					name := filepath.Base(path)
 					repoFull := profile.Owner + "/" + name
-					issues, err := gh.ListIssues(repoFull)
+					issues, err := prov.ListIssues(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
@@ -337,7 +353,7 @@ func loadIssues(profiles []config.Profile) tea.Cmd {
 						allIssues = append(allIssues, issues...)
 					}
 					mu.Unlock()
-				}(path, p)
+				}(path, p, prov)
 			}
 		}
 		wg.Wait()
@@ -349,7 +365,7 @@ func loadIssues(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadDetail(repo model.Repo) tea.Cmd {
+func loadDetail(repo model.Repo, provider forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var commits []model.Commit
@@ -369,14 +385,14 @@ func loadDetail(repo model.Repo) tea.Cmd {
 		}()
 		go func() {
 			defer wg.Done()
-			if repo.Owner != "" {
-				prs, _ = gh.ListPRs(repo.Owner + "/" + repo.Name)
+			if repo.Owner != "" && provider != nil {
+				prs, _ = provider.ListPRs(repo.Owner + "/" + repo.Name)
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if repo.Owner != "" {
-				issues, _ = gh.ListIssues(repo.Owner + "/" + repo.Name)
+			if repo.Owner != "" && provider != nil {
+				issues, _ = provider.ListIssues(repo.Owner + "/" + repo.Name)
 			}
 		}()
 		go func() {
@@ -716,13 +732,13 @@ func (m *Model) loadTabIfNeeded() tea.Cmd {
 		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading PRs..."
-			return loadPRs(m.cfg.Profiles)
+			return loadPRs(m.cfg.Profiles, m.providers)
 		}
 	case tabBranches:
 		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading branches..."
-			return loadBranches(m.cfg.Profiles)
+			return loadBranches(m.cfg.Profiles, m.providers)
 		}
 	case tabActivity:
 		if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
@@ -734,13 +750,13 @@ func (m *Model) loadTabIfNeeded() tea.Cmd {
 		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading CI runs..."
-			return loadRuns(m.cfg.Profiles)
+			return loadRuns(m.cfg.Profiles, m.providers)
 		}
 	case tabIssues:
 		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading issues..."
-			return loadIssues(m.cfg.Profiles)
+			return loadIssues(m.cfg.Profiles, m.providers)
 		}
 	}
 	return nil

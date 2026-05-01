@@ -196,7 +196,12 @@ Config: ` + config.ConfigPath() + "\n")
 
 	providers := make(map[string]forge.Provider)
 	for _, p := range cfg.Profiles {
-		prov, err := forge.NewProvider(p.Forge)
+		prov, err := forge.NewProvider(forge.ProviderConfig{
+			Forge:       p.Forge,
+			InstanceURL: p.InstanceURL,
+			TokenFile:   p.TokenFile,
+			CloneProto:  p.CloneProto,
+		})
 		if err != nil {
 			log.Fatalf("profile %q: %v", p.Name, err)
 		}

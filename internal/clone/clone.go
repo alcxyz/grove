@@ -27,7 +27,12 @@ func Run(cfg config.Config) {
 			fmt.Fprintf(os.Stderr, "profile %q: missing owner or base_path, skipping\n", profile.Name)
 			continue
 		}
-		prov, err := forge.NewProvider(profile.Forge)
+		prov, err := forge.NewProvider(forge.ProviderConfig{
+			Forge:       profile.Forge,
+			InstanceURL: profile.InstanceURL,
+			TokenFile:   profile.TokenFile,
+			CloneProto:  profile.CloneProto,
+		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "profile %q: %v\n", profile.Name, err)
 			continue

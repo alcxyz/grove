@@ -25,13 +25,23 @@ type Provider interface {
 	BranchURL(owner, repo, branch string) string
 }
 
-// NewProvider returns the Provider implementation for the named forge.
-// An empty forgeName defaults to "github".
-func NewProvider(forgeName string) (Provider, error) {
-	switch forgeName {
+// ProviderConfig holds the fields needed to construct a Provider.
+type ProviderConfig struct {
+	Forge       string // "github", "forgejo"
+	InstanceURL string // base URL for non-GitHub forges
+	TokenFile   string // path to file containing API token
+	CloneProto  string // "https" or "ssh"
+}
+
+// NewProvider returns the Provider implementation for the given config.
+// An empty Forge defaults to "github".
+func NewProvider(cfg ProviderConfig) (Provider, error) {
+	switch cfg.Forge {
 	case "github", "":
 		return NewGitHubProvider(), nil
+	case "forgejo":
+		return NewForgejoProvider(cfg)
 	default:
-		return nil, fmt.Errorf("unknown forge: %q", forgeName)
+		return nil, fmt.Errorf("unknown forge: %q", cfg.Forge)
 	}
 }

@@ -19,10 +19,13 @@ type Group struct {
 
 // Profile holds per-profile configuration.
 type Profile struct {
-	Name      string   `yaml:"name"`
-	Owner     string   `yaml:"owner"` // GitHub org or username; "" = no GitHub
-	Forge     string   `yaml:"forge"` // "github" (default), "forgejo", etc.
-	BasePaths []string `yaml:"base_paths"`
+	Name        string   `yaml:"name"`
+	Owner       string   `yaml:"owner"`        // org or username; "" = no forge API
+	Forge       string   `yaml:"forge"`        // "github" (default), "forgejo"
+	InstanceURL string   `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
+	TokenFile   string   `yaml:"token_file"`   // path to file containing API token
+	CloneProto  string   `yaml:"clone_proto"`  // "https" (default) or "ssh"
+	BasePaths   []string `yaml:"base_paths"`
 	BasePath  string   `yaml:"base_path"` // legacy; merged into BasePaths on load
 	Prefixes  []string `yaml:"prefixes"`
 	Groups    []Group  `yaml:"groups"`

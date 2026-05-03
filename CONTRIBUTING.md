@@ -39,13 +39,32 @@ go vet ./...
 
 ## Making changes
 
-1. Fork the repo and create a branch from `dev`
+1. Create a branch from `dev`
 2. Make your changes
 3. Add or update tests as needed
 4. Run `go test ./...` and `go vet ./...`
-5. Open a pull request against `dev`
+5. Push `dev` or your feature branch to GitHub when PR checks are needed
+6. Open a pull request against `main` on GitHub
 
 CI runs build, vet, and tests. All checks must pass before merging.
+
+## Split-host workflow
+
+Grove is Forgejo-primary for code hosting but GitHub-fronted for PRs, CI, releases, and distribution. GitHub is therefore the integration authority for `main`.
+
+Do not merge the same `dev -> main` change on both GitHub and Forgejo. Merge once on GitHub, then fast-forward Forgejo to the exact GitHub `main` commit:
+
+```bash
+git fetch github main dev --tags
+git fetch origin main dev --tags
+git switch dev
+git merge --ff-only github/main
+git push origin github/main:main
+git push origin dev
+git push github dev
+```
+
+If any fast-forward step is rejected, stop and inspect the divergence before doing anything else.
 
 ## Commit messages
 
@@ -64,12 +83,13 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 To cut a release:
 
 1. Bump the `VERSION` file on `dev`
-2. Merge `dev` into `main`
+2. Open and merge the GitHub PR from `dev` to `main`
 3. CI automatically creates the git tag and runs GoReleaser
+4. Fast-forward the Forgejo mirror after GitHub `main` is green
 
 This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).
 
-The `release.yml` workflow also exists as a fallback for manually re-triggering a release by pushing a `v*.*.*` tag.
+The old `release.yml` tag-triggered fallback was removed. `.github/workflows/ci.yml` is the release pipeline.
 
 ### Version numbering
 

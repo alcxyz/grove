@@ -13,13 +13,16 @@ func (m Model) infoBarParts() []string {
 	if m.showHelp {
 		return []string{"? close help"}
 	}
+	if m.showConfigPreview {
+		return []string{", close config", "j/k scroll", "gg/G top/bottom"}
+	}
 	if m.showDiff {
 		return []string{
 			fmt.Sprintf("%s  %s", m.diffRepo, m.diffHash),
 			"j/k scroll",
 			"[/] next/prev commit",
 			"{/} files",
-			"o open on GitHub",
+			"o open in browser",
 			"esc back",
 		}
 	}
@@ -134,6 +137,7 @@ func (m Model) infoBarParts() []string {
 		parts = append(parts, ui.DimStyle.Render("auto-refresh off"))
 	}
 	parts = append(parts, ui.DimStyle.Render("? help"))
+	parts = append(parts, ui.DimStyle.Render(", config"))
 	parts = append(parts, ui.DimStyle.Render("v"+m.version))
 	if m.latestVersion != "" {
 		parts = append(parts, ui.PendingStyle.Render("↑ "+m.latestVersion+" available"))
@@ -231,6 +235,17 @@ func (m Model) View() string {
 		b.WriteString(ui.RenderSplash(config.ConfigPath(), m.cacheDir, m.logPath, m.version, width, m.splashBlink))
 	} else if m.showHelp {
 		b.WriteString(ui.RenderHelp(width, m.helpPage, m.version))
+	} else if m.showConfigPreview {
+		lines := strings.Split(ui.RenderConfigPreview(m.configPreview, width), "\n")
+		start := m.configScroll
+		if start > len(lines) {
+			start = len(lines)
+		}
+		end := start + m.contentHeight()
+		if end > len(lines) {
+			end = len(lines)
+		}
+		b.WriteString(strings.Join(lines[start:end], "\n"))
 	} else if m.showDiff {
 		// Diff pane — render full content, slice to viewport using diffScroll.
 		content := ui.RenderDiff(m.diffRepo, m.diffHash, m.diffContent, m.diffPreColored)

@@ -59,7 +59,7 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/alcxyz/grove
-    description: Terminal UI for monitoring GitHub repositories
+    description: Terminal UI for monitoring git forge repositories
     license: MIT
     install: |
       bin.install "grove"
@@ -67,7 +67,7 @@ brews:
 aurs:
   - name: grove-tui-bin
     homepage: https://github.com/alcxyz/grove
-    description: Terminal UI for monitoring GitHub repositories
+    description: Terminal UI for monitoring git forge repositories
     maintainers:
       - alcxyz <alcxyz@users.noreply.github.com>
     license: MIT

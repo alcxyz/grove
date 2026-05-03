@@ -19,6 +19,7 @@ type ForgejoProvider struct {
 	baseURL    string // e.g. "https://git.alc.xyz"
 	tokenFile  string
 	cloneProto string // "https" or "ssh"
+	sshHost    string
 
 	tokenOnce sync.Once
 	token     string
@@ -36,6 +37,7 @@ func NewForgejoProvider(cfg ProviderConfig) (*ForgejoProvider, error) {
 		baseURL:    strings.TrimRight(cfg.InstanceURL, "/"),
 		tokenFile:  cfg.TokenFile,
 		cloneProto: proto,
+		sshHost:    cfg.SSHHost,
 	}, nil
 }
 
@@ -110,13 +112,13 @@ func (f *ForgejoProvider) ListPRs(repoFullName string) ([]model.PR, error) {
 	}
 
 	var raw []struct {
-		Number    int       `json:"number"`
-		Title     string    `json:"title"`
+		Number    int                    `json:"number"`
+		Title     string                 `json:"title"`
 		User      struct{ Login string } `json:"user"`
-		Head      struct{ Ref string } `json:"head"`
-		State     string    `json:"state"`
-		UpdatedAt time.Time `json:"updated_at"`
-		HTMLURL   string    `json:"html_url"`
+		Head      struct{ Ref string }   `json:"head"`
+		State     string                 `json:"state"`
+		UpdatedAt time.Time              `json:"updated_at"`
+		HTMLURL   string                 `json:"html_url"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse PRs for %s: %w", repoFullName, err)
@@ -146,16 +148,16 @@ func (f *ForgejoProvider) ListIssues(repoFullName string) ([]model.Issue, error)
 	}
 
 	var raw []struct {
-		Number    int       `json:"number"`
-		Title     string    `json:"title"`
-		User      struct{ Login string } `json:"user"`
-		State     string    `json:"state"`
-		Labels    []struct{ Name string } `json:"labels"`
+		Number    int                      `json:"number"`
+		Title     string                   `json:"title"`
+		User      struct{ Login string }   `json:"user"`
+		State     string                   `json:"state"`
+		Labels    []struct{ Name string }  `json:"labels"`
 		Assignees []struct{ Login string } `json:"assignees"`
-		Milestone *struct{ Title string } `json:"milestone"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		HTMLURL   string    `json:"html_url"`
+		Milestone *struct{ Title string }  `json:"milestone"`
+		CreatedAt time.Time                `json:"created_at"`
+		UpdatedAt time.Time                `json:"updated_at"`
+		HTMLURL   string                   `json:"html_url"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse issues for %s: %w", repoFullName, err)
@@ -328,14 +330,7 @@ func (f *ForgejoProvider) ListRepos(owner string, prefixes []string) ([]string, 
 }
 
 func (f *ForgejoProvider) CloneRepo(owner, name, targetDir string) error {
-	var cloneURL string
-	switch f.cloneProto {
-	case "ssh":
-		host := strings.TrimPrefix(strings.TrimPrefix(f.baseURL, "https://"), "http://")
-		cloneURL = fmt.Sprintf("git@%s:%s/%s.git", host, owner, name)
-	default:
-		cloneURL = fmt.Sprintf("%s/%s/%s.git", f.baseURL, owner, name)
-	}
+	cloneURL := f.cloneURL(owner, name)
 	cmd := exec.Command("git", "clone", "--quiet", cloneURL, targetDir)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -346,6 +341,19 @@ func (f *ForgejoProvider) CloneRepo(owner, name, targetDir string) error {
 		return err
 	}
 	return nil
+}
+
+func (f *ForgejoProvider) cloneURL(owner, name string) string {
+	switch f.cloneProto {
+	case "ssh":
+		host := f.sshHost
+		if host == "" {
+			host = strings.TrimPrefix(strings.TrimPrefix(f.baseURL, "https://"), "http://")
+		}
+		return fmt.Sprintf("git@%s:%s/%s.git", host, owner, name)
+	default:
+		return fmt.Sprintf("%s/%s/%s.git", f.baseURL, owner, name)
+	}
 }
 
 func (f *ForgejoProvider) RepoURL(owner, repo string) string {

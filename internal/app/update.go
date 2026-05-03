@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alcxyz/grove/internal/cache"
-	"github.com/alcxyz/grove/internal/gh"
+	"github.com/alcxyz/grove/internal/forge"
 	gitpkg "github.com/alcxyz/grove/internal/git"
 	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
@@ -19,9 +19,9 @@ func (m Model) saveState() {
 	_ = cache.SaveState(m.cacheDir, cache.UIState{ActiveProfile: m.activeProfile})
 }
 
-// containsAuthErr returns true if any error string matches the gh auth sentinel.
+// containsAuthErr returns true if any error string matches the auth sentinel.
 func containsAuthErr(errs []string) bool {
-	needle := gh.ErrNotLoggedIn.Error()
+	needle := forge.ErrNotAuthenticated.Error()
 	for _, e := range errs {
 		if strings.Contains(e, needle) {
 			return true
@@ -36,19 +36,19 @@ func (m Model) Init() tea.Cmd {
 
 	// Background-refresh any cached data that is stale
 	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
-		cmds = append(cmds, loadPRs(m.cfg.Profiles))
+		cmds = append(cmds, loadPRs(m.cfg.Profiles, m.providers))
 	}
 	if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-		cmds = append(cmds, loadBranches(m.cfg.Profiles))
+		cmds = append(cmds, loadBranches(m.cfg.Profiles, m.providers))
 	}
 	if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
 		cmds = append(cmds, loadActivity(m.cfg.Profiles))
 	}
 	if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
-		cmds = append(cmds, loadRuns(m.cfg.Profiles))
+		cmds = append(cmds, loadRuns(m.cfg.Profiles, m.providers))
 	}
 	if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
-		cmds = append(cmds, loadIssues(m.cfg.Profiles))
+		cmds = append(cmds, loadIssues(m.cfg.Profiles, m.providers))
 	}
 
 	if m.autoRefresh {
@@ -88,6 +88,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Help overlay
 		if m.showHelp {
 			return m.handleHelpKey(msg)
+		}
+
+		// Config preview overlay
+		if m.showConfigPreview {
+			return m.handleConfigPreviewKey(msg)
 		}
 
 		// Filter mode input
@@ -314,6 +319,44 @@ func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleConfigPreviewKey handles input while the config preview overlay is active.
+func (m Model) handleConfigPreviewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	switch key {
+	case ",", "esc", "backspace", "q":
+		m.showConfigPreview = false
+		m.configScroll = 0
+	case "j", "down":
+		m.configScroll++
+		m.clampConfigScroll()
+	case "k", "up":
+		if m.configScroll > 0 {
+			m.configScroll--
+		}
+	case "tab":
+		m.configScroll += 5
+		m.clampConfigScroll()
+	case "shift+tab":
+		m.configScroll -= 5
+		if m.configScroll < 0 {
+			m.configScroll = 0
+		}
+	case "G":
+		m.configScroll = max(0, m.configPreviewTotalLines()-m.contentHeight())
+	case "g":
+		if m.prevKey == "g" {
+			m.prevKey = ""
+			m.configScroll = 0
+		} else {
+			m.prevKey = "g"
+			return m, tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
+				return gTimeoutMsg{}
+			})
+		}
+	}
+	return m, nil
+}
+
 // handleFilterKey handles key input when filter mode is active.
 func (m Model) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
@@ -368,9 +411,14 @@ func (m Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		if c, ok := m.commitAtCursor(); ok {
 			if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
-				_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+				if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
+					remote := profile.CodeRemote(r.Name, r.Path)
+					if prov := providerForRemote(m.providers, remote); prov != nil {
+						_ = ui.OpenURL(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
+					}
+				}
 			} else {
-				m.statusMsg = "no GitHub owner configured"
+				m.statusMsg = "no forge owner configured"
 			}
 		} else {
 			m.statusMsg = "nothing selected"
@@ -452,12 +500,17 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// items of the tab that opened the detail, not always Dashboard repos.
 	loadAt := func(c int) (Model, tea.Cmd) {
 		if repo, ok := m.repoForDetailNav(c); ok {
+			profile, ok := profileByName(m.cfg.Profiles, repo.Profile)
+			if !ok {
+				m.statusMsg = "profile not found"
+				return m, nil
+			}
 			m.cursor = c
 			m.detailRepo = repo
 			m.detailScroll = 0
 			m.loading = true
 			m.statusMsg = fmt.Sprintf("Loading %s…", repo.Name)
-			return m, loadDetail(repo)
+			return m, loadDetail(repo, profile, m.providers)
 		}
 		return m, nil
 	}
@@ -465,6 +518,8 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc", "backspace", "q":
 		m.showDetail = false
+	case ",":
+		return m.openRepoConfigPreview(m.detailRepo), nil
 	case "o":
 		// Contextual open-in-browser based on selected item.
 		if m.detailCursor >= 0 && m.detailCursor < len(m.detailItems) {
@@ -474,9 +529,14 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case detailRemoteBranch:
 				branches := m.detailRemoteBranches()
 				if item.Index < len(branches) && repo.Owner != "" {
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/tree/%s", repo.Owner, repo.Name, branches[item.Index].Name))
+					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
+						remote := profile.CodeRemote(repo.Name, repo.Path)
+						if prov := providerForRemote(m.providers, remote); prov != nil {
+							_ = ui.OpenURL(prov.BranchURL(remote.Owner, remote.RepoName(repo.Name), branches[item.Index].Name))
+						}
+					}
 				} else {
-					m.statusMsg = "no GitHub URL for this branch"
+					m.statusMsg = "no forge URL for this branch"
 				}
 			case detailPR:
 				if item.Index < len(m.detailPRs) {
@@ -494,13 +554,18 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case detailCommit:
 				if item.Index < len(m.detailCommits) && repo.Owner != "" {
 					c := m.detailCommits[item.Index]
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", repo.Owner, repo.Name, c.Hash))
+					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
+						remote := profile.CodeRemote(repo.Name, repo.Path)
+						if prov := providerForRemote(m.providers, remote); prov != nil {
+							_ = ui.OpenURL(prov.CommitURL(remote.Owner, remote.RepoName(repo.Name), c.Hash))
+						}
+					}
 				} else {
-					m.statusMsg = "no GitHub owner configured"
+					m.statusMsg = "no forge owner configured"
 				}
 			default:
-				// Local branches: no direct GitHub URL.
-				m.statusMsg = "no GitHub URL for local branches"
+				// Local branches: no direct forge URL.
+				m.statusMsg = "no forge URL for local branches"
 			}
 		} else {
 			m.statusMsg = "nothing selected"
@@ -522,7 +587,13 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case detailPR:
 				if m.detailRepo.Path != "" {
-					return m, launchGhDash(m.detailRepo.Path)
+					if profile, ok := profileByName(m.cfg.Profiles, m.detailRepo.Profile); ok {
+						if profile.SocialRemote(m.detailRepo.Name, m.detailRepo.Path).EffectiveForge() == "github" {
+							return m, launchGhDash(m.detailRepo.Path)
+						}
+					}
+					m.statusMsg = "gh-dash only supports GitHub-backed PRs"
+					return m, nil
 				}
 				m.statusMsg = "no repo selected"
 			case detailRemoteBranch:
@@ -619,6 +690,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if key == "," && !m.filtering {
+		return m.openProfileConfigPreview(), nil
+	}
+
 	// g / gg / G
 	// Single g (after 400 ms timeout) → toggle grouping.
 	// Double gg (second g before timeout) → go to first item.
@@ -699,7 +774,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading PRs..."
-			return m, loadPRs(m.cfg.Profiles)
+			return m, loadPRs(m.cfg.Profiles, m.providers)
 		}
 	case "3":
 		m.activeTab = tabCI
@@ -710,7 +785,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading CI runs..."
-			return m, loadRuns(m.cfg.Profiles)
+			return m, loadRuns(m.cfg.Profiles, m.providers)
 		}
 	case "4":
 		m.activeTab = tabBranches
@@ -721,7 +796,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading branches..."
-			return m, loadBranches(m.cfg.Profiles)
+			return m, loadBranches(m.cfg.Profiles, m.providers)
 		}
 	case "5":
 		m.activeTab = tabActivity
@@ -743,17 +818,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading issues..."
-			return m, loadIssues(m.cfg.Profiles)
+			return m, loadIssues(m.cfg.Profiles, m.providers)
 		}
 	case "enter":
 		// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
 		openDetail := func(repo model.Repo) (Model, tea.Cmd) {
+			profile, ok := profileByName(m.cfg.Profiles, repo.Profile)
+			if !ok {
+				m.statusMsg = "profile not found"
+				return m, nil
+			}
 			m.showDetail = true
 			m.detailRepo = repo
 			m.detailScroll = 0
 			m.loading = true
 			m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-			return m, loadDetail(repo)
+			return m, loadDetail(repo, profile, m.providers)
 		}
 		switch m.activeTab {
 		case tabDashboard:
@@ -801,15 +881,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabDashboard:
 			return m, loadRepos(m.cfg.Profiles)
 		case tabPRs:
-			return m, loadPRs(m.cfg.Profiles)
+			return m, loadPRs(m.cfg.Profiles, m.providers)
 		case tabBranches:
-			return m, loadBranches(m.cfg.Profiles)
+			return m, loadBranches(m.cfg.Profiles, m.providers)
 		case tabActivity:
 			return m, loadActivity(m.cfg.Profiles)
 		case tabCI:
-			return m, loadRuns(m.cfg.Profiles)
+			return m, loadRuns(m.cfg.Profiles, m.providers)
 		case tabIssues:
-			return m, loadIssues(m.cfg.Profiles)
+			return m, loadIssues(m.cfg.Profiles, m.providers)
 		}
 	case "R":
 		m.autoRefresh = !m.autoRefresh
@@ -936,8 +1016,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Context-aware external tool per tab.
 		switch m.activeTab {
 		case tabPRs:
-			if path := m.repoPathAtCursor(); path != "" {
-				return m, launchGhDash(path)
+			if pr, ok := m.prAtCursor(); ok {
+				if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
+					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
+						if profile.SocialRemote(repo.Name, repo.Path).EffectiveForge() == "github" {
+							if path := repo.Path; path != "" {
+								return m, launchGhDash(path)
+							}
+						} else {
+							m.statusMsg = "gh-dash only supports GitHub-backed PRs"
+							return m, nil
+						}
+					}
+				}
 			}
 			m.statusMsg = "no repo selected"
 		case tabBranches:
@@ -966,8 +1057,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.statusMsg = "nothing selected"
 		case tabIssues:
-			if path := m.repoPathAtCursor(); path != "" {
-				return m, launchGhDash(path)
+			if iss, ok := m.issueAtCursor(); ok {
+				if repo, ok := m.repoByName(repoBaseName(iss.Repo)); ok {
+					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
+						if profile.SocialRemote(repo.Name, repo.Path).EffectiveForge() == "github" {
+							if path := repo.Path; path != "" {
+								return m, launchGhDash(path)
+							}
+						} else {
+							m.statusMsg = "gh-dash only supports GitHub-backed issues"
+							return m, nil
+						}
+					}
+				}
 			}
 			m.statusMsg = "no repo selected"
 		default:
@@ -998,14 +1100,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = "no repo selected"
 	case "o":
-		// o = open on GitHub in browser.
+		// o = open in browser.
 		switch m.activeTab {
 		case tabDashboard:
 			if r, ok := m.repoAtCursor(); ok {
 				if r.Owner != "" {
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s", r.Owner, r.Name))
+					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
+						remote := profile.CodeRemote(r.Name, r.Path)
+						if prov := providerForRemote(m.providers, remote); prov != nil {
+							_ = ui.OpenURL(prov.RepoURL(remote.Owner, remote.RepoName(r.Name)))
+						}
+					}
 				} else {
-					m.statusMsg = "no GitHub owner configured"
+					m.statusMsg = "no forge owner configured"
 				}
 			} else {
 				m.statusMsg = "nothing selected"
@@ -1018,16 +1125,31 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabBranches:
 			if br, ok := m.branchAtCursor(); ok {
-				_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/tree/%s", br.Repo, br.Name))
+				if profile, ok := profileByName(m.cfg.Profiles, br.Profile); ok {
+					_, name, _ := strings.Cut(br.Repo, "/")
+					repoPath := ""
+					if repo, ok := m.repoByName(name); ok {
+						repoPath = repo.Path
+					}
+					remote := profile.CodeRemote(name, repoPath)
+					if prov := providerForRemote(m.providers, remote); prov != nil {
+						_ = ui.OpenURL(prov.BranchURL(remote.Owner, remote.RepoName(name), br.Name))
+					}
+				}
 			} else {
 				m.statusMsg = "nothing selected"
 			}
 		case tabActivity:
 			if c, ok := m.commitAtCursor(); ok {
 				if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
-					_ = ui.OpenURL(fmt.Sprintf("https://github.com/%s/%s/commit/%s", r.Owner, r.Name, c.Hash))
+					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
+						remote := profile.CodeRemote(r.Name, r.Path)
+						if prov := providerForRemote(m.providers, remote); prov != nil {
+							_ = ui.OpenURL(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
+						}
+					}
 				} else {
-					m.statusMsg = "no GitHub owner configured"
+					m.statusMsg = "no forge owner configured"
 				}
 			} else {
 				m.statusMsg = "nothing selected"
@@ -1085,6 +1207,8 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseButtonWheelUp:
 		if m.showDiff {
 			m.diffScroll = max(0, m.diffScroll-3)
+		} else if m.showConfigPreview {
+			m.configScroll = max(0, m.configScroll-3)
 		} else if m.showDetail {
 			m.detailScroll = max(0, m.detailScroll-3)
 		} else {
@@ -1100,6 +1224,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		if m.showDiff {
 			m.diffScroll += 3
 			m.clampDiffScroll()
+		} else if m.showConfigPreview {
+			m.configScroll += 3
+			m.clampConfigScroll()
 		} else if m.showDetail {
 			m.detailScroll += 3
 			m.clampDetailScroll()
@@ -1167,12 +1294,17 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				m.lastClickAt = time.Time{}
 				// synthesise enter — same semantics as the keyboard handler
 				dblOpenDetail := func(repo model.Repo) (Model, tea.Cmd) {
+					profile, ok := profileByName(m.cfg.Profiles, repo.Profile)
+					if !ok {
+						m.statusMsg = "profile not found"
+						return m, nil
+					}
 					m.showDetail = true
 					m.detailRepo = repo
 					m.detailScroll = 0
 					m.loading = true
 					m.statusMsg = fmt.Sprintf("Loading %s details…", repo.Name)
-					return m, loadDetail(repo)
+					return m, loadDetail(repo, profile, m.providers)
 				}
 				switch m.activeTab {
 				case tabDashboard:

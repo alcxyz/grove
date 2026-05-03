@@ -16,6 +16,36 @@ profiles:
       - ~/projects
       - ~/nix
     prefixes: []   # empty = no filtering, all local repos are shown
+    # Optional split-remote defaults:
+    # code/browse uses the profile's top-level owner/forge fields.
+    # social covers PRs + issues. ci covers workflow runs / pipelines.
+    # social:
+    #   owner: my-github-username
+    #   forge: github
+    # ci:
+    #   owner: my-github-username
+    #   forge: github
+    #
+    # Per-repo overrides let one repo keep GitHub PRs/issues/CI while the
+    # code hosting has moved to Forgejo:
+    # repos:
+    #   - name: annaetattoo              # local directory name
+    #     code:
+    #       owner: my-forgejo-user
+    #       repo: annaetattoo.github.io  # optional remote repo name
+    #       forge: forgejo
+    #       instance_url: https://git.example.com
+    #       token_file: ~/.config/forgejo/token
+    #       clone_proto: ssh
+    #       ssh_host: ssh-git.example.com
+    #     social:
+    #       owner: my-github-username
+    #       repo: annaetattoo.github.io
+    #       forge: github
+    #     ci:
+    #       owner: my-github-username
+    #       repo: annaetattoo.github.io
+    #       forge: github
     groups:
       - name: nix
         match_path: ~/nix              # all repos under ~/nix

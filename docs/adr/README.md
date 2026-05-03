@@ -8,3 +8,4 @@
 | [ADR-006](ADR-006-multi-forge-provider-abstraction.md) | Multi-forge provider abstraction | model, gh, config, app, clone |
 | [ADR-007](ADR-007-television-sesh-integration.md) | Television and sesh integration | app, commands |
 | [ADR-008](ADR-008-release-pipeline-structure.md) | Release pipeline structure | CI, Nix |
+| [ADR-009](ADR-009-split-remote-concerns.md) | Split remote concerns per profile, group, and repo | config, app, clone |

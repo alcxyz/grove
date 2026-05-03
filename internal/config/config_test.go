@@ -172,6 +172,182 @@ func TestCacheKey_MultipleProfiles(t *testing.T) {
 	}
 }
 
+func TestCacheKey_ChangesOnRemoteConcernChange(t *testing.T) {
+	c1 := Config{Profiles: []Profile{{
+		Name:  "test",
+		Owner: "alcxyz",
+		Social: Remote{
+			Owner: "alcxyz",
+			Forge: "github",
+		},
+	}}}
+	c2 := Config{Profiles: []Profile{{
+		Name:  "test",
+		Owner: "alcxyz",
+		Social: Remote{
+			Owner: "alcxyz-alt",
+			Forge: "github",
+		},
+	}}}
+	if c1.CacheKey() == c2.CacheKey() {
+		t.Error("cache keys should differ when social remote changes")
+	}
+}
+
+func TestCacheKey_ChangesOnRemoteRepoNameChange(t *testing.T) {
+	c1 := Config{Profiles: []Profile{{
+		Name:  "test",
+		Owner: "alcxyz",
+		Repos: []RepoOverride{{
+			Name: "annaetattoo",
+			Code: Remote{
+				Repo: "annaetattoo.github.io",
+			},
+		}},
+	}}}
+	c2 := Config{Profiles: []Profile{{
+		Name:  "test",
+		Owner: "alcxyz",
+		Repos: []RepoOverride{{
+			Name: "annaetattoo",
+			Code: Remote{
+				Repo: "annaetattoo-pages",
+			},
+		}},
+	}}}
+	if c1.CacheKey() == c2.CacheKey() {
+		t.Error("cache keys should differ when a remote repo name override changes")
+	}
+}
+
+func TestProfileRemoteResolution(t *testing.T) {
+	p := Profile{
+		Name:        "alcxyz",
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.alc.xyz",
+		TokenFile:   "/tmp/forgejo-token",
+		CloneProto:  "ssh",
+		SSHHost:     "ssh-git.alc.xyz",
+		Social: Remote{
+			Owner: "alcxyz",
+			Forge: "github",
+		},
+		CI: Remote{
+			Owner: "alcxyz-ci",
+			Forge: "github",
+		},
+		Repos: []RepoOverride{{
+			Name: "hedgedoc",
+			Social: Remote{
+				Owner: "alcxyz-legacy",
+			},
+			CI: Remote{
+				Owner: "alcxyz-legacy",
+			},
+		}},
+	}
+
+	code := p.CodeRemote("hedgedoc", "")
+	if code.Owner != "alcxyz" || code.EffectiveForge() != "forgejo" || code.InstanceURL != "https://git.alc.xyz" || code.SSHHost != "ssh-git.alc.xyz" {
+		t.Fatalf("unexpected code remote: %+v", code)
+	}
+
+	social := p.SocialRemote("grove", "")
+	if social.Owner != "alcxyz" || social.EffectiveForge() != "github" {
+		t.Fatalf("unexpected default social remote: %+v", social)
+	}
+
+	ci := p.CIRemote("grove", "")
+	if ci.Owner != "alcxyz-ci" || ci.EffectiveForge() != "github" {
+		t.Fatalf("unexpected default ci remote: %+v", ci)
+	}
+
+	overrideSocial := p.SocialRemote("hedgedoc", "")
+	if overrideSocial.Owner != "alcxyz-legacy" || overrideSocial.EffectiveForge() != "github" {
+		t.Fatalf("unexpected override social remote: %+v", overrideSocial)
+	}
+
+	overrideCI := p.CIRemote("hedgedoc", "")
+	if overrideCI.Owner != "alcxyz-legacy" || overrideCI.EffectiveForge() != "github" {
+		t.Fatalf("unexpected override ci remote: %+v", overrideCI)
+	}
+}
+
+func TestProfileRemoteRepoNameOverride(t *testing.T) {
+	p := Profile{
+		Name:  "alcxyz",
+		Owner: "alcxyz",
+		Repos: []RepoOverride{{
+			Name: "annaetattoo",
+			Code: Remote{
+				Repo: "annaetattoo.github.io",
+			},
+			Social: Remote{
+				Owner: "alcxyz",
+				Forge: "github",
+				Repo:  "annaetattoo.github.io",
+			},
+		}},
+	}
+
+	code := p.CodeRemote("annaetattoo", "")
+	if code.RepoName("annaetattoo") != "annaetattoo.github.io" {
+		t.Fatalf("unexpected code repo name: %q", code.RepoName("annaetattoo"))
+	}
+	if code.FullName("annaetattoo") != "alcxyz/annaetattoo.github.io" {
+		t.Fatalf("unexpected code full name: %q", code.FullName("annaetattoo"))
+	}
+
+	social := p.SocialRemote("annaetattoo", "")
+	if social.FullName("annaetattoo") != "alcxyz/annaetattoo.github.io" {
+		t.Fatalf("unexpected social full name: %q", social.FullName("annaetattoo"))
+	}
+
+	defaultRemote := p.CodeRemote("grove", "")
+	if defaultRemote.RepoName("grove") != "grove" {
+		t.Fatalf("unexpected default repo name: %q", defaultRemote.RepoName("grove"))
+	}
+}
+
+func TestProfileGroupRemoteResolution(t *testing.T) {
+	p := Profile{
+		Name:        "alcxyz",
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.alc.xyz",
+		Groups: []Group{
+			{
+				Name:      "forks",
+				MatchPath: "/home/user/src/forks",
+				Social: Remote{
+					Owner: "alcxyz",
+					Forge: "github",
+				},
+				CI: Remote{
+					Owner: "alcxyz",
+					Forge: "github",
+				},
+			},
+		},
+	}
+
+	social := p.SocialRemote("frappe_docker", "/home/user/src/forks/frappe_docker")
+	if social.Owner != "alcxyz" || social.EffectiveForge() != "github" {
+		t.Fatalf("unexpected group social remote: %+v", social)
+	}
+
+	ci := p.CIRemote("frappe_docker", "/home/user/src/forks/frappe_docker")
+	if ci.Owner != "alcxyz" || ci.EffectiveForge() != "github" {
+		t.Fatalf("unexpected group ci remote: %+v", ci)
+	}
+
+	code := p.CodeRemote("frappe_docker", "/home/user/src/forks/frappe_docker")
+	if code.Owner != "alcxyz" || code.EffectiveForge() != "forgejo" {
+		t.Fatalf("unexpected group code remote: %+v", code)
+	}
+}
+
 // ── Load — legacy migration ───────────────────────────────────────────────
 
 func TestLoad_LegacyFlatConfig(t *testing.T) {

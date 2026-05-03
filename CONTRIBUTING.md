@@ -2,7 +2,7 @@
 
 ## Development setup
 
-Prerequisites: Go 1.26+, [`gh` CLI](https://cli.github.com/) (grove uses it to talk to the GitHub API)
+Prerequisites: Go 1.26+. GitHub-backed profiles require the [`gh` CLI](https://cli.github.com/); Forgejo-backed profiles use token auth via `token_file`.
 
 ```bash
 git clone https://github.com/alcxyz/grove.git
@@ -32,6 +32,7 @@ go vet ./...
 - `internal/clone/` -- `grove clone` command
 - `internal/config/` -- YAML config loading
 - `internal/gh/` -- GitHub API via `gh` CLI
+- `internal/forge/` -- forge provider abstraction and provider implementations
 - `internal/git/` -- git operations
 - `internal/model/` -- repository model
 - `internal/ui/` -- dashboard, detail pane, groups, tabs, styles

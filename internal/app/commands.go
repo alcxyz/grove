@@ -17,7 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alcxyz/grove/internal/config"
-	"github.com/alcxyz/grove/internal/gh"
+	"github.com/alcxyz/grove/internal/forge"
 	gitpkg "github.com/alcxyz/grove/internal/git"
 	"github.com/alcxyz/grove/internal/model"
 )
@@ -61,6 +61,19 @@ func discoverRepoPaths(profile config.Profile) []string {
 	return paths
 }
 
+func profileByName(profiles []config.Profile, name string) (config.Profile, bool) {
+	for _, p := range profiles {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return config.Profile{}, false
+}
+
+func providerForRemote(providers map[string]forge.Provider, remote config.Remote) forge.Provider {
+	return providers[remote.Key()]
+}
+
 func loadRepos(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
 		// Collect all (path, profile) pairs, deduplicated by path.
@@ -92,7 +105,7 @@ func loadRepos(profiles []config.Profile) tea.Cmd {
 				if err != nil {
 					r = model.Repo{Name: filepath.Base(pp.path), Path: pp.path}
 				}
-				r.Owner = pp.profile.Owner
+				r.Owner = pp.profile.CodeRemote(r.Name, pp.path).Owner
 				r.Profile = pp.profile.Name
 				mu.Lock()
 				repos = append(repos, r)
@@ -108,7 +121,7 @@ func loadRepos(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadPRs(profiles []config.Profile) tea.Cmd {
+func loadPRs(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -116,23 +129,30 @@ func loadPRs(profiles []config.Profile) tea.Cmd {
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
 				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
-					prs, err := gh.ListPRs(repoFull)
+					remote := profile.SocialRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
+					prs, err := prov.ListPRs(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 					} else {
+						localRepoFull := remote.Owner + "/" + name
 						for i := range prs {
 							prs[i].Profile = profile.Name
+							prs[i].Repo = localRepoFull
 						}
 						allPRs = append(allPRs, prs...)
 					}
@@ -149,7 +169,7 @@ func loadPRs(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadBranches(profiles []config.Profile) tea.Cmd {
+func loadBranches(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -157,17 +177,22 @@ func loadBranches(profiles []config.Profile) tea.Cmd {
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
 				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
-					branches, err := gh.ListBranches(repoFull)
+					remote := profile.CodeRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
+					branches, err := prov.ListBranches(repoFull)
 					if err != nil {
 						mu.Lock()
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
@@ -190,8 +215,10 @@ func loadBranches(profiles []config.Profile) tea.Cmd {
 							}
 						}
 					}
+					localRepoFull := remote.Owner + "/" + name
 					for i := range branches {
 						branches[i].Profile = profile.Name
+						branches[i].Repo = localRepoFull
 					}
 					mu.Lock()
 					allBranches = append(allBranches, branches...)
@@ -267,7 +294,7 @@ func loadActivity(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadRuns(profiles []config.Profile) tea.Cmd {
+func loadRuns(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -275,23 +302,30 @@ func loadRuns(profiles []config.Profile) tea.Cmd {
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
 				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
-					runs, err := gh.ListWorkflowRuns(repoFull)
+					remote := profile.CIRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
+					runs, err := prov.ListWorkflowRuns(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 					} else {
+						localRepoFull := remote.Owner + "/" + name
 						for i := range runs {
 							runs[i].Profile = profile.Name
+							runs[i].Repo = localRepoFull
 						}
 						allRuns = append(allRuns, runs...)
 					}
@@ -308,7 +342,7 @@ func loadRuns(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadIssues(profiles []config.Profile) tea.Cmd {
+func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var mu sync.Mutex
 		var wg sync.WaitGroup
@@ -316,23 +350,30 @@ func loadIssues(profiles []config.Profile) tea.Cmd {
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
 				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
-					issues, err := gh.ListIssues(repoFull)
+					remote := profile.SocialRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
+					issues, err := prov.ListIssues(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 					} else {
+						localRepoFull := remote.Owner + "/" + name
 						for i := range issues {
 							issues[i].Profile = profile.Name
+							issues[i].Repo = localRepoFull
 						}
 						allIssues = append(allIssues, issues...)
 					}
@@ -349,7 +390,7 @@ func loadIssues(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-func loadDetail(repo model.Repo) tea.Cmd {
+func loadDetail(repo model.Repo, profile config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var commits []model.Commit
@@ -369,14 +410,30 @@ func loadDetail(repo model.Repo) tea.Cmd {
 		}()
 		go func() {
 			defer wg.Done()
-			if repo.Owner != "" {
-				prs, _ = gh.ListPRs(repo.Owner + "/" + repo.Name)
+			remote := profile.SocialRemote(repo.Name, repo.Path)
+			if remote.Owner != "" {
+				if provider := providerForRemote(providers, remote); provider != nil {
+					prs, _ = provider.ListPRs(remote.FullName(repo.Name))
+					localRepoFull := remote.Owner + "/" + repo.Name
+					for i := range prs {
+						prs[i].Profile = profile.Name
+						prs[i].Repo = localRepoFull
+					}
+				}
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if repo.Owner != "" {
-				issues, _ = gh.ListIssues(repo.Owner + "/" + repo.Name)
+			remote := profile.SocialRemote(repo.Name, repo.Path)
+			if remote.Owner != "" {
+				if provider := providerForRemote(providers, remote); provider != nil {
+					issues, _ = provider.ListIssues(remote.FullName(repo.Name))
+					localRepoFull := remote.Owner + "/" + repo.Name
+					for i := range issues {
+						issues[i].Profile = profile.Name
+						issues[i].Repo = localRepoFull
+					}
+				}
 			}
 		}()
 		go func() {
@@ -716,13 +773,13 @@ func (m *Model) loadTabIfNeeded() tea.Cmd {
 		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading PRs..."
-			return loadPRs(m.cfg.Profiles)
+			return loadPRs(m.cfg.Profiles, m.providers)
 		}
 	case tabBranches:
 		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading branches..."
-			return loadBranches(m.cfg.Profiles)
+			return loadBranches(m.cfg.Profiles, m.providers)
 		}
 	case tabActivity:
 		if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
@@ -734,13 +791,13 @@ func (m *Model) loadTabIfNeeded() tea.Cmd {
 		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading CI runs..."
-			return loadRuns(m.cfg.Profiles)
+			return loadRuns(m.cfg.Profiles, m.providers)
 		}
 	case tabIssues:
 		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
 			m.loading = true
 			m.statusMsg = "Loading issues..."
-			return loadIssues(m.cfg.Profiles)
+			return loadIssues(m.cfg.Profiles, m.providers)
 		}
 	}
 	return nil

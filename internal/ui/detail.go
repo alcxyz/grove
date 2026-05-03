@@ -391,7 +391,7 @@ var helpPages = [2][]struct {
 		}},
 		{"Actions", [][2]string{
 			{"enter", "open detail (tabs 1–4) · open diff (tab 5)"},
-			{"o", "open on GitHub in browser"},
+			{"o", "open in browser"},
 			{"space", "diffnav · gh-dash · lazygit · workflow (per tab)"},
 			{"e", "open $EDITOR / nvim at repo root"},
 			{"p", "git pull current repo"},
@@ -399,6 +399,7 @@ var helpPages = [2][]struct {
 			{"R", "toggle auto-refresh"},
 			{"ctrl+f", "git fetch all repos"},
 			{"g (single)", "toggle grouped / flat view"},
+			{",", "config preview  (profile in main views, repo in detail)"},
 			{"!", "about / paths"},
 			{"?", "this help"},
 			{"q / ctrl+c", "quit"},
@@ -523,6 +524,40 @@ func RenderHelp(width, page int, version string) string {
 
 	inner := strings.Join(lines, "\n")
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, box.Render(inner))
+}
+
+// RenderConfigPreview renders a human-readable view of the active config.
+func RenderConfigPreview(content string, width int) string {
+	boxW := min(width-4, 100)
+	if boxW < 40 {
+		boxW = width
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "Config preview"):
+			lines[i] = HeaderStyle.Render(line)
+		case strings.HasPrefix(line, "Profile:"),
+			strings.HasPrefix(line, "Resolved remotes"),
+			strings.HasPrefix(line, "Default remotes"),
+			strings.HasPrefix(line, "Groups"),
+			strings.HasPrefix(line, "Repo overrides"),
+			strings.HasPrefix(line, "Matching group"):
+			lines[i] = HeaderStyle.Render(line)
+		case strings.HasPrefix(line, "  - "):
+			lines[i] = GroupHeaderStyle.Render(line)
+		case strings.HasPrefix(line, "    "):
+			lines[i] = DimStyle.Render(line)
+		}
+	}
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("241")).
+		Padding(0, 2).
+		Width(boxW)
+
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, box.Render(strings.Join(lines, "\n")))
 }
 
 // RenderInfoBar renders the context-aware bottom info bar.

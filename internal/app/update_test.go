@@ -517,3 +517,34 @@ func TestUpdateVersionCheck(t *testing.T) {
 		t.Errorf("latestVersion = %q, want %q", m.latestVersion, "v0.2.0")
 	}
 }
+
+func TestIsNewerRelease(t *testing.T) {
+	tests := []struct {
+		latest  string
+		current string
+		want    bool
+	}{
+		{"v0.9.1", "0.9.0", true},
+		{"v0.10.0", "0.9.9", true},
+		{"v1.0.0", "0.9.9", true},
+		{"v0.9.0", "0.9.0", false},
+		{"v0.7.0", "0.9.0", false},
+		{"0.9.1", "v0.9.0", true},
+		{"latest", "0.9.0", false},
+		{"v0.9.1", "dev", false},
+	}
+	for _, tt := range tests {
+		if got := isNewerRelease(tt.latest, tt.current); got != tt.want {
+			t.Errorf("isNewerRelease(%q, %q) = %v, want %v", tt.latest, tt.current, got, tt.want)
+		}
+	}
+}
+
+func TestIsReleaseVersion(t *testing.T) {
+	if !IsReleaseVersion("0.9.0") || !IsReleaseVersion("v0.9.0") {
+		t.Error("semver releases should be recognized")
+	}
+	if IsReleaseVersion("dev") || IsReleaseVersion("0.9") || IsReleaseVersion("0.9.0-beta") {
+		t.Error("non-release versions should not be recognized")
+	}
+}

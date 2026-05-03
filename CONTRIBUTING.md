@@ -66,6 +66,8 @@ git push github dev
 
 If any fast-forward step is rejected, stop and inspect the divergence before doing anything else.
 
+Forgejo `main` is still protected, but the branch protection must allow the maintainer identity to push-whitelisted fast-forward mirrors. A protected-branch push rejection is a repo setting problem, not a reason to create a second Forgejo PR for the same change.
+
 ## Commit messages
 
 Use conventional-ish prefixes to keep history scannable:

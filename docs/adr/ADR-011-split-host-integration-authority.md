@@ -34,6 +34,8 @@ The non-authoritative host is mirror-only for `main` and `dev`:
 - do not open a second PR on the mirror host for the same integration
 - do not force-push except as an explicit break-glass repair after inspecting divergence
 
+Mirror branch protection must allow the mirroring identity to push to protected `main` without force. For Forgejo, keep `main` protected, but enable a push whitelist for the maintainer or deploy identity that performs fast-forward mirrors. If branch protection rejects the fast-forward push, fix the protection rule before falling back to a mirror PR.
+
 For a GitHub-fronted repository, the normal sync after a GitHub PR merge is:
 
 ```sh
@@ -56,6 +58,7 @@ If any fast-forward push or merge is rejected, stop and inspect the divergence. 
 - There is one merge commit per integration.
 - Release automation is triggered from the authoritative host only.
 - Mirror hosts remain useful for browsing and cloning, but they do not create integration commits.
+- Mirror branch protection has to allow controlled fast-forward pushes.
 - Grove's split remote concerns describe where data comes from; they do not imply that every configured forge should receive its own PR merge.
 - Automation should prefer fast-forward mirroring commands over API-created mirror PRs.
 

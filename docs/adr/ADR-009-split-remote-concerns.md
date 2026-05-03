@@ -23,7 +23,7 @@ Treating the entire profile as one remote forces bad compromises:
 
 ADR-003 remote profiles are out of scope here. This is about already-cloned local repos whose remote concerns differ.
 
-Operationally, split concerns do not mean the same change should be integrated on every configured forge. ADR-011 defines the integration authority rule: one host creates the `main` merge commit, and any other host is updated by fast-forward mirror.
+Operationally, split concerns do not mean the same change should be integrated on every configured forge. ADR-011 defines the integration authority rule: one explicit authority creates the `main` merge commit, while GitHub or other public surfaces may remain social, CI, release, or intake mirrors.
 
 ## Decision
 
@@ -77,7 +77,7 @@ This keeps the common case compact while allowing directory-wide exceptions and 
 - cache invalidation must include concern-specific remote config, not just owner names and prefixes
 - API calls and browser URLs can target a remote repo name that differs from the local checkout directory
 - SSH clone URLs no longer have to guess the SSH host from `instance_url`
-- A repo with split concerns still needs one integration authority for `main`; the configured code, social, and CI remotes are data sources, not instructions to create PR merges on every forge
+- A repo with split concerns still needs one integration authority for `main`; the configured code, social, and CI remotes are data sources, not instructions to trust or merge on every forge
 
 ## Alternatives Considered
 

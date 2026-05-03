@@ -320,6 +320,44 @@ func TestUpdateBranchesLoadedWithErrors(t *testing.T) {
 	}
 }
 
+func TestAuthErrorKind(t *testing.T) {
+	tests := []struct {
+		name string
+		errs []string
+		want string
+	}{
+		{
+			name: "github",
+			errs: []string{"repo [github]: not authenticated: run gh auth login"},
+			want: "github",
+		},
+		{
+			name: "forgejo",
+			errs: []string{"repo [forgejo https://git.alc.xyz]: not authenticated: https://git.alc.xyz returned 401"},
+			want: "forgejo",
+		},
+		{
+			name: "mixed",
+			errs: []string{
+				"repo-a [github]: not authenticated: run gh auth login",
+				"repo-b [forgejo https://git.alc.xyz]: not authenticated: https://git.alc.xyz returned 401",
+			},
+			want: "mixed",
+		},
+		{
+			name: "none",
+			errs: []string{"repo: connection refused"},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		if got := authErrorKind(tt.errs); got != tt.want {
+			t.Errorf("%s: authErrorKind() = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 // ── Window resize ───────────────────────────────────────────────────────
 
 func TestUpdateWindowResize(t *testing.T) {

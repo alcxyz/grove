@@ -17,17 +17,19 @@ Grove's value is as the **multi-repo orchestration layer**: a single dashboard s
 
 A shared config across machines (macOS/Linux) already has profiles with `owner` and group routing rules. Extending profiles with a `type` field lets us reuse this infrastructure for remote browsing without a separate concept.
 
+Since ADR-006 introduced a `Provider` interface abstracting forge-specific API calls, remote profiles should work against any supported forge (GitHub, Forgejo/Codeberg), not just GitHub. The provider already covers PRs, issues, branches, CI runs, repo listing, and cloning. Remote profiles will need the `Provider` interface extended with richer repo metadata (see Consequences).
+
 ## Decision
 
 Add a `type` field to profiles: `local` (default, current behaviour) and `remote`.
 
 **Remote profiles:**
-- List repos via GitHub API (`gh api`) using the profile's `owner`, filtered by `prefixes`.
+- List repos via the profile's forge `Provider` using the profile's `owner`, filtered by `prefixes`.
 - Show a dashboard with API-derived columns: description, language, visibility, stars/forks, last pushed, archived status.
 - `enter` opens a read-only detail view with full repo metadata (description, topics, license, default branch, issue/PR counts).
-- PRs, CI, and Issues tabs work (already GitHub API data — see ADR-004 for the Issues tab).
+- PRs, CI, and Issues tabs work via the `Provider` interface (see ADR-004 for the Issues tab, ADR-006 for the provider abstraction).
 - Activity and Branches tabs are not available (they require local git data).
-- `@` key triggers clone. Clone destination is inferred from the profile's group `base_path` / `match` rules (same routing as `grove clone`), with the option to override.
+- `@` key triggers clone via `Provider.CloneRepo()`. Clone destination is inferred from the profile's group `base_path` / `match` rules (same routing as `grove clone`), with the option to override.
 - After cloning, the repo appears in the matching local profile on next refresh.
 
 **Profile type defaults to `local`** so existing configs are unaffected.
@@ -47,6 +49,7 @@ Add a `type` field to profiles: `local` (default, current behaviour) and `remote
 - Detail view needs a remote variant showing API metadata instead of local git info.
 - The `@` key is reserved for clone actions (currently unmapped).
 - Clone routing reuses existing group `base_path` infrastructure, no new config needed.
-- Issues tab (ADR-004) is fully available for remote profiles since it uses the same GitHub API data source as PRs and CI.
+- Issues tab (ADR-004) is fully available for remote profiles since it uses the same forge API data source as PRs and CI.
 - Network dependency: remote profiles require API access on every load (no local fallback on first use, but cacheable after).
 - The "All" profile view will need to handle mixed local/remote grouping gracefully.
+- The `Provider` interface (ADR-006) needs extension for remote profile browsing: `ListRepos` currently returns `[]string` (names only), but the remote dashboard and detail view require richer metadata (description, language, stars, visibility, license, topics). A `ListReposDetailed` method or similar will be needed.

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -418,6 +419,42 @@ func TestUpdateHelpOverlay(t *testing.T) {
 	m = sendKey(m, "?")
 	if m.showHelp {
 		t.Error("? again should close help")
+	}
+}
+
+func TestUpdateConfigPreviewOverlay(t *testing.T) {
+	m := newTestModel()
+	m.loading = false
+
+	m = sendKey(m, ",")
+	if !m.showConfigPreview {
+		t.Error(", should open config preview")
+	}
+	if !strings.Contains(m.configPreview, "Profile: test") {
+		t.Errorf("config preview should include active profile, got %q", m.configPreview)
+	}
+
+	m = sendKey(m, ",")
+	if m.showConfigPreview {
+		t.Error(", should close config preview")
+	}
+}
+
+func TestUpdateDetailConfigPreviewUsesRepo(t *testing.T) {
+	m := newTestModel()
+	m.loading = false
+	m.showDetail = true
+	m.detailRepo = model.Repo{Name: "repo", Path: "/tmp/repo", Profile: "test"}
+
+	m = sendKey(m, ",")
+	if !m.showConfigPreview {
+		t.Error(", should open config preview from detail")
+	}
+	if !strings.Contains(m.configPreview, "Config preview: repo") {
+		t.Errorf("detail config preview should include repo name, got %q", m.configPreview)
+	}
+	if !strings.Contains(m.configPreview, "Resolved remotes") {
+		t.Errorf("detail config preview should include resolved remotes, got %q", m.configPreview)
 	}
 }
 

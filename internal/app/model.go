@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/forge"
 	"github.com/alcxyz/grove/internal/model"
 )
 
@@ -54,6 +55,7 @@ type Options struct {
 	Issues           []model.Issue
 	IssuesLoadedAt   time.Time
 	ActiveProfile    int
+	Providers        map[string]forge.Provider
 }
 
 // New creates a Model ready to be passed to tea.NewProgram.
@@ -85,6 +87,7 @@ func New(o Options) Model {
 		issues:           o.Issues,
 		issuesLoadedAt:   o.IssuesLoadedAt,
 		activeProfile:    o.ActiveProfile,
+		providers:        o.Providers,
 	}
 }
 
@@ -157,6 +160,11 @@ type Model struct {
 	showHelp bool
 	helpPage int
 
+	// Config preview overlay
+	showConfigPreview bool
+	configPreview     string
+	configScroll      int
+
 	// Splash/about overlay (! key) with blink animation
 	showSplash  bool
 	splashBlink int // 0=both open 1=left closed 2=right closed 3=both closed
@@ -194,6 +202,9 @@ type Model struct {
 	// Cache directory and config-derived key for invalidation
 	cacheDir string
 	cacheKey string
+
+	// Per-profile forge providers
+	providers map[string]forge.Provider
 }
 
 // Messages

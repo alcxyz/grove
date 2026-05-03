@@ -14,6 +14,7 @@ import (
 	"github.com/alcxyz/grove/internal/cache"
 	"github.com/alcxyz/grove/internal/clone"
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/forge"
 	"github.com/alcxyz/grove/internal/model"
 )
 
@@ -56,7 +57,7 @@ func main() {
 
 	// Help flag — print usage and exit.
 	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help" || os.Args[1] == "-help" || os.Args[1] == "help" || os.Args[1] == "h") {
-		fmt.Print(`grove — terminal UI for monitoring GitHub repositories
+		fmt.Print(`grove — terminal UI for monitoring git forge repositories
 
 Usage:
   grove                     launch the TUI
@@ -69,7 +70,7 @@ Navigation:
   h/l         previous/next tab
   j/k         move cursor down/up
   enter       open detail view
-  o           open on GitHub in browser
+  o           open in browser
   /           text filter
   ?           keybinding reference
   q           quit
@@ -193,6 +194,21 @@ Config: ` + config.ConfigPath() + "\n")
 		}
 	}
 
+	providers := make(map[string]forge.Provider)
+	for _, remote := range cfg.AllRemotes() {
+		prov, err := forge.NewProvider(forge.ProviderConfig{
+			Forge:       remote.Forge,
+			InstanceURL: remote.InstanceURL,
+			TokenFile:   remote.TokenFile,
+			CloneProto:  remote.CloneProto,
+			SSHHost:     remote.SSHHost,
+		})
+		if err != nil {
+			log.Fatalf("remote %q/%q: %v", remote.Owner, remote.Forge, err)
+		}
+		providers[remote.Key()] = prov
+	}
+
 	m := app.New(app.Options{
 		Cfg:              cfg,
 		Version:          version,
@@ -211,6 +227,7 @@ Config: ` + config.ConfigPath() + "\n")
 		Issues:           initIssues,
 		IssuesLoadedAt:   initIssuesAt,
 		ActiveProfile:    initProfile,
+		Providers:        providers,
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

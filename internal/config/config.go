@@ -366,7 +366,7 @@ func (r Remote) Key() string {
 	return strings.Join([]string{
 		r.Owner,
 		r.Repo,
-		r.Forge,
+		r.EffectiveForge(),
 		r.InstanceURL,
 		r.TokenFile,
 		r.CloneProto,
@@ -403,6 +403,12 @@ func mergeRemote(base, override Remote) Remote {
 		base.Repo = override.Repo
 	}
 	if override.Forge != "" {
+		if base.EffectiveForge() != override.EffectiveForge() {
+			base.InstanceURL = ""
+			base.TokenFile = ""
+			base.CloneProto = ""
+			base.SSHHost = ""
+		}
 		base.Forge = override.Forge
 	}
 	if override.InstanceURL != "" {
@@ -511,6 +517,11 @@ func (c Config) AllRemotes() []Remote {
 		add(p.CodeRemote("", ""))
 		add(p.SocialRemote("", ""))
 		add(p.CIRemote("", ""))
+		for _, g := range p.ResolveGroups() {
+			add(mergeRemote(p.codeDefaults(), g.Code))
+			add(mergeRemote(mergeRemote(p.codeDefaults(), p.Social), g.Social))
+			add(mergeRemote(mergeRemote(p.codeDefaults(), p.CI), g.CI))
+		}
 		for _, ov := range p.Repos {
 			add(p.CodeRemote(ov.Name, ""))
 			add(p.SocialRemote(ov.Name, ""))

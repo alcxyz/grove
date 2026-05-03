@@ -1,20 +1,29 @@
 # ADR-006: Multi-forge provider abstraction
 
-**Status:** Proposed
-**Date:** 2026-04-29
+**Status:** Accepted
+**Date:** 2026-05-01 (proposed 2026-04-29)
 **Applies to:** `internal/gh/`, `internal/model/repo.go`, `internal/config/config.go`, `internal/app/commands.go`, `internal/clone/clone.go`
 
 ## Context
 
 Grove is currently tightly coupled to GitHub at every layer of the stack. All data fetching goes through the `gh` CLI wrapper in `internal/gh/gh.go`, all model types in `internal/model/repo.go` assume GitHub semantics, and the `grove clone` subcommand calls the GitHub REST API directly.
 
-Users increasingly self-host git forges — GitLab, Gitea, Forgejo (a Gitea fork) — alongside or instead of GitHub. Supporting these would make grove useful to a much broader audience. Even without adding new providers immediately, extracting a provider abstraction would improve testability (the current `gh` package cannot be mocked without exec-level patching).
+Users increasingly self-host git forges — Forgejo, Gitea, GitLab — alongside or instead of GitHub. Supporting these would make grove useful to a much broader audience. Even without adding new providers immediately, extracting a provider abstraction would improve testability (the current `gh` package cannot be mocked without exec-level patching).
 
 The branding and about text have been updated to reflect the intent: grove is a "multi-repo git forge monitoring TUI" that is currently GitHub-native.
 
+Forgejo (a community fork of Gitea) is the priority second target. Codeberg — a major public hosting service — runs Forgejo, so a single `forgejo` provider covers both Codeberg and self-hosted Forgejo instances. Modern Gitea (which shares the same v1 REST API) is also covered as a side effect, but Gitea-specific compatibility is a non-goal.
+
 ## Decision
 
-Not yet decided. This ADR records the problem, the candidate approaches, and the open questions that need resolution before a direction can be chosen.
+**Option B then C:** First extract a `Provider` interface with GitHub as the sole implementation (Phase 1), then add a `forgejo` provider targeting Forgejo 1.20+ (Phase 2).
+
+- **Phase 1** — Create `internal/forge/forge.go` with a `Provider` interface. Move `internal/gh/` behind a `GitHubProvider` implementation. Add a `forge` field to `config.Profile` (default `"github"`). Wire `commands.go` to call through the interface. Models stay mostly as-is; GitHub-specific fields (`ReviewDecision`, `WorkflowRun` details) become optional/nullable for forges that don't support them.
+- **Phase 2** — Implement `ForgejoProvider` using Forgejo's v1 REST API with token-based auth. Config gains an `instance_url` field for non-GitHub profiles. Feature-detect Actions support (graceful nil if unavailable on older instances).
+
+**Provider naming:** The second provider is called `forgejo`, not `gitea` or `forgejo_compat`. It targets Forgejo and Codeberg directly; Gitea compatibility is incidental.
+
+**Version floor:** Forgejo 1.20+ (stable v1 API, Actions support). No effort spent on older Gitea versions or Gitea-specific API divergences.
 
 ## Alternatives Considered
 
@@ -44,41 +53,40 @@ Explicitly commit to GitHub as the only supported forge.
 
 ## Open Questions / Edge Cases
 
-These need resolution before a final design can be accepted:
+Resolved or scoped down by the decision above:
 
 **CI runs:**
-GitHub has Actions (`WorkflowRun`). GitLab has Pipelines. Gitea/Forgejo has its own Actions (GitHub Actions-compatible API, but different endpoints). A generic model would need either: a lowest-common-denominator `PipelineRun` type, or provider-specific extensions on a shared base.
+GitHub has Actions (`WorkflowRun`). Forgejo 1.20+ has its own Actions (GitHub Actions-compatible API, different endpoints). The `Provider` interface returns `[]model.WorkflowRun`; providers that don't support Actions return nil. No lowest-common-denominator abstraction needed — Forgejo Actions are close enough to GitHub Actions to share the model.
 
 **Review decisions:**
-`ReviewDecision` (APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED) is GitHub-specific. GitLab has approvals but a different model. Forgejo has a similar concept but not identical. Can these map to a shared enum, or do they need to be optional/provider-specific?
+`ReviewDecision` (APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED) is GitHub-specific. Forgejo has a similar review model. Make the field optional in the shared model; map Forgejo's review states where possible, leave empty where not.
 
 **Org/user repo enumeration:**
-`grove clone` calls `gh api orgs/<owner>/repos` or `users/<owner>/repos`. Each forge has a different REST path and pagination scheme. This is solvable but needs a per-provider implementation.
+`grove clone` calls `gh api orgs/<owner>/repos` or `users/<owner>/repos`. Forgejo uses `/api/v1/orgs/{org}/repos` and `/api/v1/users/{user}/repos` — structurally similar, different base URL. Per-provider implementation via the `Provider` interface.
 
 **Auth:**
-The `gh` CLI handles all GitHub authentication transparently. Other forges would need token-based auth configured per profile. Where does this live in config, and how are tokens stored securely?
+The `gh` CLI handles all GitHub authentication transparently. Forgejo profiles will use token-based auth. Token storage location in config is TBD (likely a `token_command` field that shells out, similar to how `gh` works, to avoid storing tokens in plaintext config).
 
 **Rate limits:**
-GitHub caps at 5,000 req/hr (enforced via semaphore in `internal/gh/gh.go`). GitLab and Gitea have different limits (and Gitea/Forgejo instances are admin-configurable). The concurrency model would need to be per-provider.
+GitHub caps at 5,000 req/hr (enforced via semaphore in `internal/gh/gh.go`). Forgejo instance limits are admin-configurable. The concurrency model will be per-provider, configured at the `Provider` level.
 
 **Clone mechanism:**
-`grove clone` uses `gh repo clone` which wraps git with GitHub auth. Other forges would use plain `git clone` with a token embedded in the URL or SSH. The clone interface would need to abstract this.
+`grove clone` uses `gh repo clone` which wraps git with GitHub auth. Forgejo will use `git clone` with token-based HTTPS or SSH. Abstracted via `Provider.CloneRepo()`.
 
 **Labels, assignees, milestones on issues:**
-These exist on GitHub, GitLab, and Gitea, but the schemas differ (GitLab labels are project-scoped objects; Gitea labels are similar to GitHub's). Probably mappable to a shared model with some loss of fidelity.
+Forgejo's model is very close to GitHub's. Mappable to a shared model with minimal loss of fidelity. GitLab is out of scope for now.
 
-## Proposed Next Steps
+## Implementation Plan
 
-1. Decide on alternative A, B, C, or D above
-2. If B or C: sketch the `Fetcher` interface and validate it covers the open questions
-3. If C: pick a second forge target (Forgejo is a strong candidate given its GitHub Actions compatibility)
-4. Write a follow-up ADR once the interface design is settled
+1. **Phase 1:** Extract `Provider` interface in `internal/forge/forge.go`, refactor `internal/gh/` into `GitHubProvider`
+2. **Phase 2:** Implement `ForgejoProvider` using Forgejo v1 REST API, add `forge` and `instance_url` config fields
+3. Validate against Codeberg (public Forgejo instance) as the primary test target
 
 ## Consequences
 
-If a provider abstraction is adopted:
-- Grove becomes useful to self-hosted Forgejo/Gitea/GitLab users
+- Grove becomes useful to Forgejo, Codeberg, and self-hosted users
 - The `gh` package becomes testable via mock injection
-- Config profiles gain a `forge` or `provider` field (breaking change to config schema)
-- Some GitHub-specific richness (ReviewDecision, Actions-specific fields) may be demoted to optional or provider-specific extensions
+- Config profiles gain `forge` and `instance_url` fields (breaking change to config schema)
+- GitHub-specific fields (`ReviewDecision`, Actions-specific workflow metadata) become optional in the model
 - Significant refactor across `internal/gh/`, `internal/model/`, `internal/app/commands.go`, and `internal/clone/`
+- GitLab support is not in scope but the abstraction should not preclude it

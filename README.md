@@ -1,6 +1,6 @@
 # grove
 
-TUI for multi-repo git forge monitoring — currently GitHub-native via the `gh` CLI. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
+TUI for multi-repo git forge monitoring across GitHub and Forgejo. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
 
 ```
                {o,o}
@@ -15,13 +15,13 @@ TUI for multi-repo git forge monitoring — currently GitHub-native via the `gh`
 ## Features
 
 - **Multi-profile**: define any number of profiles (personal, work org, etc.) and switch instantly with `H` / `L` or by clicking the profile tab bar; an **All** view merges every profile at once
-- **Clone**: `grove clone` enumerates all repos for each profile's GitHub owner and clones any that are missing locally; groups can route clones to separate subdirectories
+- **Clone**: `grove clone` enumerates all repos for each profile's code-hosting remote and clones any that are missing locally; groups can route clones to separate subdirectories
 - **Dashboard** (tab 1): all repos in one view with branch, dirty/clean state, sync status, open PR count, branch count, CI status, last author, and last commit time
 - **Pull Requests** (tab 2): open PRs across all repos with review status and checks
-- **CI Runs** (tab 3): recent GitHub Actions workflow runs across all repos with pass/fail/running status
+- **CI Runs** (tab 3): recent workflow / pipeline runs across all repos with pass/fail/running status
 - **Branches** (tab 4): all remote branches with PR and merge indicators
 - **Activity** (tab 5): recent commits across repos with inline diff viewer
-- **Issues** (tab 6): open GitHub issues across all repos with labels, assignees, milestones, and age
+- **Issues** (tab 6): open forge issues across all repos with labels, assignees, milestones, and age
 - **Detail pane**: full repo detail with local/remote branches, open PRs, open issues, CI runs, recent commits, and stats; item-level cursor with contextual actions per item type
 - **Diff viewer**: scrollable inline `git show` output with syntax colouring; respects your configured diff pager (`delta`, `bat`); navigate between commits with `[` / `]` and between files with `{` / `}`
 - **External tools**: `space` opens diffnav (commits) or lazygit (repos) based on context; `e` opens `$EDITOR` / nvim at repo root
@@ -42,11 +42,11 @@ Grove is a **multi-repo orchestration layer** — it sits above single-repo tool
 | Tool | Scope | Strength | Gap grove fills |
 | --- | --- | --- | --- |
 | **`gh` CLI** | One repo / one entity at a time | Scriptable, full API access | No cross-repo dashboard; no directory-aware clone routing |
-| **lazygit** | Single repo, local git | Deep interactive git operations | No GitHub API (PRs, CI, issues); no multi-repo view |
+| **lazygit** | Single repo, local git | Deep interactive git operations | No forge API (PRs, CI, issues); no multi-repo view |
 | **gh-dash** | PRs and issues across repos | Focused PR review workflow | No local git state, branches, activity, or CI overview |
 | **grove** | All repos, all signals | Unified dashboard + detail drill-down | — |
 
-Grove doesn't replace these tools — it launches them. `space` opens lazygit or diffnav for deep single-repo work; `o` opens GitHub in the browser; gh-dash handles PR review. Grove is the flight-control layer that ties them together across repos, showing you where to focus before you drill down.
+Grove doesn't replace these tools — it launches them. `space` opens lazygit or diffnav for deep single-repo work; `o` opens the active forge in the browser; gh-dash handles GitHub-backed PR review. Grove is the flight-control layer that ties them together across repos, showing you where to focus before you drill down.
 
 ## Installation
 
@@ -77,7 +77,7 @@ yay -S grove-tui-bin
 
 ### Build from source
 
-Requires Go 1.22+ and the [gh](https://cli.github.com/) CLI authenticated (`gh auth login`).
+Requires Go 1.22+. GitHub-backed profiles also require the [gh](https://cli.github.com/) CLI authenticated with `gh auth login`. Forgejo-backed profiles use API tokens configured in `token_file`.
 
 ```sh
 git clone git@github.com:alcxyz/grove.git
@@ -93,7 +93,10 @@ On first run grove writes an example config to `$XDG_CONFIG_HOME/grove/config.ya
 ```yaml
 profiles:
   - name: Work
-    owner: my-org # GitHub org or your username — drives PR/branch tabs
+    owner: my-org # code-hosting owner; defaults all concerns unless overridden
+    forge: forgejo
+    instance_url: https://git.example.com
+    token_file: ~/.config/forgejo/token
     base_paths:
       - ~/dev/git/my-org
     prefixes:
@@ -106,22 +109,63 @@ profiles:
         match: platform-
 
   - name: Personal
-    owner: my-github-username
+    owner: my-user
     base_paths:
       - ~/dev/git/personal
       - ~/nix
     prefixes: [] # all git repos in base_paths are scanned
+    social:
+      owner: my-github-username
+      forge: github
+    ci:
+      owner: my-github-username
+      forge: github
     groups:
       - name: nix
         match_path: ~/nix # matches repos under this directory
       - name: pages
         match: github.io # matches repo names containing "github.io"
+        code:
+          owner: my-github-username
+          forge: github
+        social:
+          owner: my-github-username
+          forge: github
+        ci:
+          owner: my-github-username
+          forge: github
+    repos:
+      - name: annaetattoo # local directory name
+        code:
+          owner: my-github-username
+          repo: annaetattoo.github.io # remote repo name, if different
+          forge: github
+        social:
+          owner: my-github-username
+          repo: annaetattoo.github.io
+          forge: github
+        ci:
+          owner: my-github-username
+          repo: annaetattoo.github.io
+          forge: github
 
 refresh_secs: 300
 screensaver_secs: 300
 ```
 
 Groups support two matching strategies: `match` matches against the repo name (prefix or substring), and `match_path` matches against the repo's filesystem path (prefix). Both can be used on the same group — either matching puts the repo in that group. First matching group wins; unmatched repos go to "other".
+
+Remote resolution is concern-specific:
+
+- top-level `owner` / `forge` / `instance_url` / `token_file` / `clone_proto` define the default code-hosting remote
+- `social` overrides PR + issue sourcing
+- `ci` overrides workflow / pipeline sourcing
+- a group may override `code`, `social`, and `ci` for every repo it matches
+- a repo entry under `repos:` may override `code`, `social`, and `ci` for one specific repo
+- `repo` inside any remote block overrides the remote repository name when it differs from the local directory name
+- `ssh_host` overrides the SSH clone host when it differs from the forge web/API host
+
+Resolution order is: profile defaults, then matching group override, then per-repo override.
 
 The legacy single-profile format (`base_path`, `org`, `prefixes` at the top level) is still supported and auto-migrates to a single profile.
 
@@ -179,7 +223,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 | Key                 | Action                                                                                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `enter`             | Open detail pane (tabs 1-4, 6) / open diff (tab 5)                                                                           |
-| `o`                 | Open on GitHub in browser (all tabs and views)                                                                               |
+| `o`                 | Open in browser on the active forge (all tabs and views)                                                                     |
 | `space`             | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
 | `e`                 | Open `$EDITOR` / nvim at repo root (all tabs and views)                                                                      |
 | `p`                 | `git pull` current repo (all tabs)                                                                                           |
@@ -187,6 +231,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 | `R`                 | Toggle auto-refresh                                                                                                          |
 | `ctrl+f`            | `git fetch` all repos                                                                                                        |
 | `g` (single, 400ms) | Toggle grouped / flat view                                                                                                   |
+| `,`                 | Show config preview for the active profile; in detail view, show resolved repo config                                        |
 | `?`                 | Toggle help overlay                                                                                                          |
 | `!`                 | About: version, config path, cache and log locations                                                                         |
 | `q` / `ctrl+c`      | Quit                                                                                                                         |
@@ -201,8 +246,9 @@ The detail pane opens with `enter` on any tab and shows full repo info with an i
 | `{ }`      | Jump between sections (branches, PRs, issues, CI, commits)                                        |
 | `[ ]`      | Previous / next repo (follows source tab, skips duplicates)                                       |
 | `gg` / `G` | First / last item                                                                                 |
+| `,`        | Show resolved config for this repo                                                                 |
 | `space`    | Contextual: diffnav (commits), gh-dash (PRs), checkout + lazygit (branches), workflow editor (CI) |
-| `o`        | Contextual: open item on GitHub (PR URL, commit, branch, CI run)                                  |
+| `o`        | Contextual: open item on the active forge (PR URL, commit, branch, CI run)                         |
 | `e`        | Open editor at repo root                                                                          |
 | `esc`      | Close detail pane                                                                                 |
 
@@ -217,13 +263,13 @@ The diff view opens with `enter` on the Activity tab:
 | `[ ]`      | Previous / next commit         |
 | `gg` / `G` | Top / bottom                   |
 | `space`    | Open in diffnav                |
-| `o`        | Open commit on GitHub          |
+| `o`        | Open commit in browser         |
 | `e`        | Open editor at repo root       |
 | `esc`      | Close diff view                |
 
-## CI Runs / GitHub Actions
+## CI Runs
 
-Tab 3 shows recent GitHub Actions workflow runs across all repos:
+Tab 3 shows recent workflow / pipeline runs across all repos:
 
 | Column     | Meaning                                                     |
 | ---------- | ----------------------------------------------------------- |
@@ -234,7 +280,7 @@ Tab 3 shows recent GitHub Actions workflow runs across all repos:
 | Event      | Trigger event (`push`, `pull_request`, `schedule`, etc.)    |
 | When       | Time since last update                                      |
 
-`o` opens the run on GitHub. `enter` opens the repo's detail pane. `r` refreshes. Filtering and sorting (`s`/`S` workflow, `a`/`A` repo, `f`/`F` date) all work as on other tabs.
+`o` opens the run in the browser. `enter` opens the repo's detail pane. `r` refreshes. Filtering and sorting (`s`/`S` workflow, `a`/`A` repo, `f`/`F` date) all work as on other tabs.
 
 The **Dashboard** tab (tab 1) also shows a compact CI status icon (`✓` / `✗` / `●` / `—`) in the `CI` column, reflecting the latest run for each repo.
 
@@ -257,18 +303,18 @@ Grove hands off to external tools via the `space` and `e` keys:
 | Context                    | `space` opens                                       | `e` opens        |
 | -------------------------- | --------------------------------------------------- | ---------------- |
 | Dashboard                  | lazygit                                             | `$EDITOR` / nvim |
-| PRs tab                    | gh-dash (from repo dir)                             | `$EDITOR` / nvim |
+| PRs tab                    | gh-dash for GitHub-backed repos                     | `$EDITOR` / nvim |
 | Branches tab               | checkout branch + lazygit (restores branch on exit) | `$EDITOR` / nvim |
 | CI tab                     | workflow `.yml` in editor                           | `$EDITOR` / nvim |
 | Activity tab               | diffnav                                             | `$EDITOR` / nvim |
 | Detail pane (commit)       | diffnav                                             | `$EDITOR` / nvim |
-| Detail pane (PR)           | gh-dash                                             | `$EDITOR` / nvim |
+| Detail pane (PR)           | gh-dash for GitHub-backed repos                     | `$EDITOR` / nvim |
 | Detail pane (branch)       | checkout + lazygit                                  | `$EDITOR` / nvim |
 | Detail pane (CI run)       | workflow `.yml` in editor                           | `$EDITOR` / nvim |
 | Detail pane (local branch) | lazygit                                             | `$EDITOR` / nvim |
 | Diff view                  | diffnav                                             | `$EDITOR` / nvim |
 
-If a tool is not found on `PATH` or there is no valid target (no GitHub URL, no repo selected), a status message is shown instead of failing silently.
+If a tool is not found on `PATH` or there is no valid target (no forge URL, no repo selected), a status message is shown instead of failing silently.
 
 ## Mouse
 
@@ -282,7 +328,7 @@ If a tool is not found on `PATH` or there is no valid target (no GitHub URL, no 
 
 ## Caching
 
-Grove caches GitHub API responses to disk so the UI opens instantly and remains usable while refreshes happen in the background.
+Grove caches forge API responses to disk so the UI opens instantly and remains usable while refreshes happen in the background.
 
 **What is cached**
 
@@ -301,19 +347,19 @@ Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string
 
 **TTL** — controlled by `refresh_secs` in config (default 300 s). On startup and on every tab switch, grove checks whether the data for that tab is older than the TTL. If so, a background fetch is triggered automatically. Auto-refresh (toggled with `R`) repeats this on a timer.
 
-**Cache invalidation** — each file stores a `config_key` derived from the owner names and prefixes of all configured profiles. If the config changes (new profile, different owner, changed prefixes), the key changes and all cached data is treated as a miss, forcing a full refresh on next launch.
+**Cache invalidation** — each file stores a `config_key` derived from the resolved remote config and prefixes of all configured profiles. If the config changes (new profile, different owner, changed prefixes, or different concern-specific remotes), the key changes and all cached data is treated as a miss, forcing a full refresh on next launch.
 
 **Forcing a refresh** — press `r` to refresh the active tab immediately, or `ctrl+f` to `git fetch` all repos.
 
 ## Rate limiting
 
-All GitHub API calls go through the `gh` CLI. To avoid hitting GitHub's rate limits when scanning many repos, grove limits concurrent `gh` invocations to **5 at a time** (a buffered semaphore channel in `internal/gh`). This applies to PR listing, branch listing, CI run listing, and issue listing.
+GitHub API calls go through the `gh` CLI. Forgejo calls go through direct HTTP requests with token auth. GitHub-backed API calls are limited to **5 concurrent `gh` invocations** at a time (a buffered semaphore channel in `internal/gh`) to stay inside rate limits.
 
-`grove clone` uses a separate semaphore capped at **8 concurrent clones**, since `git clone` is network-bound rather than API-bound and GitHub's clone rate limits are more permissive.
+`grove clone` uses a separate semaphore capped at **8 concurrent clones**, since `git clone` is network-bound rather than API-bound.
 
 ## Clone
 
-`grove clone` enumerates all repos for each profile's GitHub owner via the GitHub API and clones any that are not already present locally:
+`grove clone` enumerates all repos for each profile's code-hosting remote and clones any that are not already present locally:
 
 ```sh
 grove clone                  # all profiles

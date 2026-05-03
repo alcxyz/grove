@@ -147,6 +147,11 @@ func (m *Model) tabJump(dir int) {
 		}
 		return
 	}
+	if m.showConfigPreview {
+		m.configScroll += dist
+		m.clampConfigScroll()
+		return
+	}
 	if m.showDetail {
 		target := m.detailCursor + dist
 		if target < 0 {
@@ -1256,6 +1261,28 @@ func (m *Model) clampDiffScroll() {
 	}
 	if m.diffScroll < 0 {
 		m.diffScroll = 0
+	}
+}
+
+func (m Model) configPreviewTotalLines() int {
+	if m.configPreview == "" {
+		return 0
+	}
+	width := m.width
+	if width == 0 {
+		width = 120
+	}
+	return len(strings.Split(ui.RenderConfigPreview(m.configPreview, width), "\n"))
+}
+
+// clampConfigScroll clamps m.configScroll to [0, totalLines-contentHeight].
+func (m *Model) clampConfigScroll() {
+	maxScroll := max(0, m.configPreviewTotalLines()-m.contentHeight())
+	if m.configScroll > maxScroll {
+		m.configScroll = maxScroll
+	}
+	if m.configScroll < 0 {
+		m.configScroll = 0
 	}
 }
 

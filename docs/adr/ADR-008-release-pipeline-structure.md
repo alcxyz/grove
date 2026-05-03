@@ -20,6 +20,8 @@ The CI pipeline is structured as three sequential jobs:
 
 All three projects (grove, canopy, paperflow) use this same structure. The `release.yml` fallback workflow (triggered by manual tag push) is removed — `ci.yml` handles everything.
 
+For split-host repositories that are still GitHub-fronted for PRs, CI, releases, or distribution, GitHub is the integration authority for `main`. Merge `dev -> main` once on GitHub, let GitHub Actions run the release pipeline, then fast-forward the Forgejo mirror to the exact GitHub `main` commit. Do not open a second Forgejo PR for the same integration; that creates a duplicate merge commit for the same tree. See ADR-011.
+
 ## Alternatives Considered
 
 **Monolithic release job with inline Nix step**: simpler YAML, but Nix installation adds ~60s to every release even when the hash hasn't changed. A failure in vendorHash computation blocks the binary release. Rejected because distribution channels should be independent.
@@ -37,3 +39,4 @@ All three projects (grove, canopy, paperflow) use this same structure. The `rele
 - The pipeline is identical across all Go projects, reducing maintenance.
 - CI requires the `DeterminateSystems/nix-installer-action` in the Nix job, adding ~30s of setup time.
 - If the Nix job fails for reasons other than vendorHash (e.g., nixpkgs breakage), it surfaces as a separate failure that doesn't affect the release.
+- GitHub-fronted split-host repos keep one release source of truth: GitHub `main`.

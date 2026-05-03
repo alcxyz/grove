@@ -386,9 +386,13 @@ Existing repos (detected by the presence of a `.git` directory) are skipped. Up 
 Releases are automated. To publish a new version:
 
 1. Bump the `VERSION` file
-2. Merge to `main`
+2. Open and merge the GitHub PR from `dev` to `main`
+3. Wait for GitHub `main` CI to finish
+4. Fast-forward the Forgejo mirror to the exact GitHub `main` commit
 
 CI runs tests, creates a git tag from `VERSION`, and triggers goreleaser which builds binaries and publishes to GitHub Releases, Homebrew, and AUR.
+
+Grove is a split-host repo: Forgejo is the primary code host, while GitHub remains the integration authority for PRs, CI, releases, and distribution. Do not merge the same `dev -> main` change on both hosts. See [ADR-011](docs/adr/ADR-011-split-host-integration-authority.md).
 
 ## License
 

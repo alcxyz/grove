@@ -348,6 +348,62 @@ func TestProfileGroupRemoteResolution(t *testing.T) {
 	}
 }
 
+func TestAllRemotesIncludesGroupOverrides(t *testing.T) {
+	c := Config{Profiles: []Profile{{
+		Name:        "alcxyz",
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.alc.xyz",
+		TokenFile:   "/tmp/forgejo-token",
+		Groups: []Group{{
+			Name:      "forks",
+			MatchPath: "/home/user/src/forks",
+			Social: Remote{
+				Owner: "alcxyz",
+				Forge: "github",
+			},
+			CI: Remote{
+				Owner: "alcxyz",
+				Forge: "github",
+			},
+		}},
+	}}}
+
+	seen := map[string]Remote{}
+	for _, r := range c.AllRemotes() {
+		seen[r.Key()] = r
+	}
+
+	groupSocial := mergeRemote(mergeRemote(c.Profiles[0].codeDefaults(), c.Profiles[0].Social), c.Profiles[0].Groups[0].Social)
+	if _, ok := seen[groupSocial.Key()]; !ok {
+		t.Fatalf("group social remote was not included in AllRemotes: %+v", groupSocial)
+	}
+
+	groupCI := mergeRemote(mergeRemote(c.Profiles[0].codeDefaults(), c.Profiles[0].CI), c.Profiles[0].Groups[0].CI)
+	if _, ok := seen[groupCI.Key()]; !ok {
+		t.Fatalf("group ci remote was not included in AllRemotes: %+v", groupCI)
+	}
+}
+
+func TestMergeRemoteClearsForgeSpecificFieldsWhenForgeChanges(t *testing.T) {
+	base := Remote{
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.alc.xyz",
+		TokenFile:   "/tmp/forgejo-token",
+		CloneProto:  "ssh",
+		SSHHost:     "ssh-git.alc.xyz",
+	}
+
+	got := mergeRemote(base, Remote{Forge: "github"})
+	if got.EffectiveForge() != "github" {
+		t.Fatalf("expected github remote, got %+v", got)
+	}
+	if got.InstanceURL != "" || got.TokenFile != "" || got.CloneProto != "" || got.SSHHost != "" {
+		t.Fatalf("forge-specific fields should be cleared when forge changes: %+v", got)
+	}
+}
+
 // ── Load — legacy migration ───────────────────────────────────────────────
 
 func TestLoad_LegacyFlatConfig(t *testing.T) {

@@ -308,8 +308,8 @@ func (m Model) View() string {
 			}
 			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, sh, prCounts, branchCounts, issueCounts, ciStatus, hlField, hlValue))
 		case tabPRs:
-			if m.authErr {
-				b.WriteString(ui.RenderAuthError())
+			if m.authKind != "" && len(m.prs) == 0 {
+				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
 			} else {
 				b.WriteString(ui.RenderPRs(m.groupedPRs(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.prs) == 0 && len(m.errLog) > 0 {
@@ -317,8 +317,8 @@ func (m Model) View() string {
 				}
 			}
 		case tabBranches:
-			if m.authErr {
-				b.WriteString(ui.RenderAuthError())
+			if m.authKind != "" && len(m.branches) == 0 {
+				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
 			} else {
 				prBranches := map[string]bool{}
 				for _, pr := range m.prs {
@@ -332,8 +332,8 @@ func (m Model) View() string {
 		case tabActivity:
 			b.WriteString(ui.RenderActivity(m.groupedActivity(), m.cursor, cw, so, sh, hlField, hlValue))
 		case tabCI:
-			if m.authErr {
-				b.WriteString(ui.RenderAuthError())
+			if m.authKind != "" && len(m.runs) == 0 {
+				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
 			} else {
 				b.WriteString(ui.RenderCI(m.groupedRuns(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.runs) == 0 && len(m.errLog) > 0 {
@@ -341,8 +341,8 @@ func (m Model) View() string {
 				}
 			}
 		case tabIssues:
-			if m.authErr {
-				b.WriteString(ui.RenderAuthError())
+			if m.authKind != "" && len(m.issues) == 0 {
+				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
 			} else {
 				b.WriteString(ui.RenderIssues(m.groupedIssues(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.issues) == 0 && len(m.errLog) > 0 {

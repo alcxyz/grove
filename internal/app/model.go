@@ -120,9 +120,9 @@ type Model struct {
 	issuesLoadedAt   time.Time
 
 	// Load errors — shown in view when a tab has no data
-	errLog  []string
-	authErr bool   // true when any gh call returned ErrNotLoggedIn
-	logPath string // path of the runtime log file, shown in the help bar
+	errLog   []string
+	authKind string // "", "github", "forgejo", or "mixed"
+	logPath  string // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool

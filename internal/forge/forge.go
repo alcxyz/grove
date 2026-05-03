@@ -31,6 +31,7 @@ type ProviderConfig struct {
 	InstanceURL string // base URL for non-GitHub forges
 	TokenFile   string // path to file containing API token
 	CloneProto  string // "https" or "ssh"
+	SSHHost     string // optional SSH clone host when it differs from InstanceURL host
 }
 
 // NewProvider returns the Provider implementation for the given config.

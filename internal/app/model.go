@@ -160,6 +160,11 @@ type Model struct {
 	showHelp bool
 	helpPage int
 
+	// Config preview overlay
+	showConfigPreview bool
+	configPreview     string
+	configScroll      int
+
 	// Splash/about overlay (! key) with blink animation
 	showSplash  bool
 	splashBlink int // 0=both open 1=left closed 2=right closed 3=both closed

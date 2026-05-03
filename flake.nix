@@ -1,5 +1,5 @@
 {
-  description = "grove — terminal UI for monitoring GitHub repositories";
+  description = "grove — terminal UI for monitoring git forge repositories";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -26,7 +26,7 @@
             ldflags = [ "-s" "-w" "-X main.version=${version}" ];
 
             meta = with pkgs.lib; {
-              description = "Terminal UI for monitoring GitHub repositories";
+              description = "Terminal UI for monitoring git forge repositories";
               homepage = "https://github.com/alcxyz/grove";
               license = licenses.mit;
               mainProgram = "grove";

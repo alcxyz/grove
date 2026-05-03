@@ -23,22 +23,24 @@ func Run(cfg config.Config) {
 		if filter != nil && !filter[profile.Name] {
 			continue
 		}
-		if profile.Owner == "" || len(profile.BasePaths) == 0 {
+		codeRemote := profile.CodeRemote("", "")
+		if codeRemote.Owner == "" || len(profile.BasePaths) == 0 {
 			fmt.Fprintf(os.Stderr, "profile %q: missing owner or base_path, skipping\n", profile.Name)
 			continue
 		}
 		prov, err := forge.NewProvider(forge.ProviderConfig{
-			Forge:       profile.Forge,
-			InstanceURL: profile.InstanceURL,
-			TokenFile:   profile.TokenFile,
-			CloneProto:  profile.CloneProto,
+			Forge:       codeRemote.Forge,
+			InstanceURL: codeRemote.InstanceURL,
+			TokenFile:   codeRemote.TokenFile,
+			CloneProto:  codeRemote.CloneProto,
+			SSHHost:     codeRemote.SSHHost,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "profile %q: %v\n", profile.Name, err)
 			continue
 		}
 		ran = true
-		cloneProfile(profile, prov)
+		cloneProfile(profile, codeRemote.Owner, prov)
 	}
 
 	if !ran {
@@ -47,10 +49,10 @@ func Run(cfg config.Config) {
 	}
 }
 
-func cloneProfile(profile config.Profile, provider forge.Provider) {
-	fmt.Printf("Profile %q  owner=%s\n", profile.Name, profile.Owner)
+func cloneProfile(profile config.Profile, owner string, provider forge.Provider) {
+	fmt.Printf("Profile %q  owner=%s\n", profile.Name, owner)
 
-	names, err := provider.ListRepos(profile.Owner, profile.Prefixes)
+	names, err := provider.ListRepos(owner, profile.Prefixes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		return
@@ -90,7 +92,7 @@ func cloneProfile(profile config.Profile, provider forge.Provider) {
 			defer func() { <-sem }()
 			dest := cloneDestFor(profile, n)
 			target := filepath.Join(dest, n)
-			results <- cloneResult{name: n, dest: dest, err: provider.CloneRepo(profile.Owner, n, target)}
+			results <- cloneResult{name: n, dest: dest, err: provider.CloneRepo(owner, n, target)}
 		}(name)
 	}
 	go func() {

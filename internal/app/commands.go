@@ -61,6 +61,19 @@ func discoverRepoPaths(profile config.Profile) []string {
 	return paths
 }
 
+func profileByName(profiles []config.Profile, name string) (config.Profile, bool) {
+	for _, p := range profiles {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return config.Profile{}, false
+}
+
+func providerForRemote(providers map[string]forge.Provider, remote config.Remote) forge.Provider {
+	return providers[remote.Key()]
+}
+
 func loadRepos(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
 		// Collect all (path, profile) pairs, deduplicated by path.
@@ -92,7 +105,7 @@ func loadRepos(profiles []config.Profile) tea.Cmd {
 				if err != nil {
 					r = model.Repo{Name: filepath.Base(pp.path), Path: pp.path}
 				}
-				r.Owner = pp.profile.Owner
+				r.Owner = pp.profile.CodeRemote(r.Name, pp.path).Owner
 				r.Profile = pp.profile.Name
 				mu.Lock()
 				repos = append(repos, r)
@@ -116,32 +129,35 @@ func loadPRs(profiles []config.Profile, providers map[string]forge.Provider) tea
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
-			prov := providers[p.Name]
-			if prov == nil {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile, prov forge.Provider) {
+				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
+					remote := profile.SocialRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
 					prs, err := prov.ListPRs(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 					} else {
+						localRepoFull := remote.Owner + "/" + name
 						for i := range prs {
 							prs[i].Profile = profile.Name
+							prs[i].Repo = localRepoFull
 						}
 						allPRs = append(allPRs, prs...)
 					}
 					mu.Unlock()
-				}(path, p, prov)
+				}(path, p)
 			}
 		}
 		wg.Wait()
@@ -161,20 +177,21 @@ func loadBranches(profiles []config.Profile, providers map[string]forge.Provider
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
-			prov := providers[p.Name]
-			if prov == nil {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile, prov forge.Provider) {
+				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
+					remote := profile.CodeRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
 					branches, err := prov.ListBranches(repoFull)
 					if err != nil {
 						mu.Lock()
@@ -198,13 +215,15 @@ func loadBranches(profiles []config.Profile, providers map[string]forge.Provider
 							}
 						}
 					}
+					localRepoFull := remote.Owner + "/" + name
 					for i := range branches {
 						branches[i].Profile = profile.Name
+						branches[i].Repo = localRepoFull
 					}
 					mu.Lock()
 					allBranches = append(allBranches, branches...)
 					mu.Unlock()
-				}(path, p, prov)
+				}(path, p)
 			}
 		}
 		wg.Wait()
@@ -283,32 +302,35 @@ func loadRuns(profiles []config.Profile, providers map[string]forge.Provider) te
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
-			prov := providers[p.Name]
-			if prov == nil {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile, prov forge.Provider) {
+				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
+					remote := profile.CIRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
 					runs, err := prov.ListWorkflowRuns(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 					} else {
+						localRepoFull := remote.Owner + "/" + name
 						for i := range runs {
 							runs[i].Profile = profile.Name
+							runs[i].Repo = localRepoFull
 						}
 						allRuns = append(allRuns, runs...)
 					}
 					mu.Unlock()
-				}(path, p, prov)
+				}(path, p)
 			}
 		}
 		wg.Wait()
@@ -328,32 +350,35 @@ func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) 
 		var errs []string
 
 		for _, p := range profiles {
-			if p.Owner == "" {
-				continue
-			}
-			prov := providers[p.Name]
-			if prov == nil {
-				continue
-			}
 			paths := discoverRepoPaths(p)
 			for _, path := range paths {
 				wg.Add(1)
-				go func(path string, profile config.Profile, prov forge.Provider) {
+				go func(path string, profile config.Profile) {
 					defer wg.Done()
 					name := filepath.Base(path)
-					repoFull := profile.Owner + "/" + name
+					remote := profile.SocialRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
 					issues, err := prov.ListIssues(repoFull)
 					mu.Lock()
 					if err != nil {
 						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
 					} else {
+						localRepoFull := remote.Owner + "/" + name
 						for i := range issues {
 							issues[i].Profile = profile.Name
+							issues[i].Repo = localRepoFull
 						}
 						allIssues = append(allIssues, issues...)
 					}
 					mu.Unlock()
-				}(path, p, prov)
+				}(path, p)
 			}
 		}
 		wg.Wait()
@@ -365,7 +390,7 @@ func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) 
 	}
 }
 
-func loadDetail(repo model.Repo, provider forge.Provider) tea.Cmd {
+func loadDetail(repo model.Repo, profile config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var commits []model.Commit
@@ -385,14 +410,30 @@ func loadDetail(repo model.Repo, provider forge.Provider) tea.Cmd {
 		}()
 		go func() {
 			defer wg.Done()
-			if repo.Owner != "" && provider != nil {
-				prs, _ = provider.ListPRs(repo.Owner + "/" + repo.Name)
+			remote := profile.SocialRemote(repo.Name, repo.Path)
+			if remote.Owner != "" {
+				if provider := providerForRemote(providers, remote); provider != nil {
+					prs, _ = provider.ListPRs(remote.FullName(repo.Name))
+					localRepoFull := remote.Owner + "/" + repo.Name
+					for i := range prs {
+						prs[i].Profile = profile.Name
+						prs[i].Repo = localRepoFull
+					}
+				}
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			if repo.Owner != "" && provider != nil {
-				issues, _ = provider.ListIssues(repo.Owner + "/" + repo.Name)
+			remote := profile.SocialRemote(repo.Name, repo.Path)
+			if remote.Owner != "" {
+				if provider := providerForRemote(providers, remote); provider != nil {
+					issues, _ = provider.ListIssues(remote.FullName(repo.Name))
+					localRepoFull := remote.Owner + "/" + repo.Name
+					for i := range issues {
+						issues[i].Profile = profile.Name
+						issues[i].Repo = localRepoFull
+					}
+				}
 			}
 		}()
 		go func() {

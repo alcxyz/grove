@@ -32,7 +32,7 @@ TUI for multi-repo git forge monitoring across GitHub and Forgejo. See branch st
 - **Mouse support**: scroll wheel, click to select, tab-bar clicks, double-click to open
 - **Profile persistence**: reopens on the same profile you left
 - **Screensaver**: bouncing logo after a configurable idle timeout
-- **Update notifications**: footer shows when a newer release is available
+- **Update notifications**: footer and `grove --version` show when a newer release is available
 - Catppuccin Mocha colour palette
 
 ## How grove fits in

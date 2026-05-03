@@ -95,19 +95,19 @@ func TestDateInBucket_ThisMonth(t *testing.T) {
 	}
 }
 
-// ── isSemver ──────────────────────────────────────────────────────────────
+// ── IsReleaseVersion ──────────────────────────────────────────────────────
 
-func TestIsSemver(t *testing.T) {
-	valid := []string{"0.1.0", "1.2.3", "10.20.30"}
+func TestIsReleaseVersion_FilterCompat(t *testing.T) {
+	valid := []string{"0.1.0", "v1.2.3", "10.20.30"}
 	for _, v := range valid {
-		if !isSemver(v) {
-			t.Errorf("isSemver(%q) should be true", v)
+		if !IsReleaseVersion(v) {
+			t.Errorf("IsReleaseVersion(%q) should be true", v)
 		}
 	}
-	invalid := []string{"dev", "abc123", "1.2", "1.2.3.4", "v1.2.3", "1.2.x"}
+	invalid := []string{"dev", "abc123", "1.2", "1.2.3.4", "1.2.x"}
 	for _, v := range invalid {
-		if isSemver(v) {
-			t.Errorf("isSemver(%q) should be false", v)
+		if IsReleaseVersion(v) {
+			t.Errorf("IsReleaseVersion(%q) should be false", v)
 		}
 	}
 }

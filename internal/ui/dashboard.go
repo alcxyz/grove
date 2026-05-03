@@ -644,14 +644,44 @@ func RenderErrors(errs []string) string {
 	return b.String()
 }
 
-// RenderAuthError renders a prominent banner when gh is not authenticated.
-func RenderAuthError() string {
-	return "\n" +
-		DirtyStyle.Render("  ✗ GitHub authentication required") + "\n\n" +
-		DimStyle.Render("  Run the following command and then press r to retry:") + "\n\n" +
-		HeaderStyle.Render("    gh auth login") + "\n\n" +
-		DimStyle.Render("  If your org uses SAML SSO, also run:") + "\n" +
-		DimStyle.Render("    gh auth refresh -h github.com --scopes read:org") + "\n"
+// RenderAuthError renders a prominent banner for provider authentication
+// failures. kind is "github", "forgejo", "mixed", or "unknown".
+func RenderAuthError(kind string, errs []string) string {
+	var b strings.Builder
+	switch kind {
+	case "github":
+		b.WriteString("\n")
+		b.WriteString(DirtyStyle.Render("  ✗ GitHub authentication required") + "\n\n")
+		b.WriteString(DimStyle.Render("  Run the following command and then press r to retry:") + "\n\n")
+		b.WriteString(HeaderStyle.Render("    gh auth login") + "\n\n")
+		b.WriteString(DimStyle.Render("  If your org uses SAML SSO, also run:") + "\n")
+		b.WriteString(DimStyle.Render("    gh auth refresh -h github.com --scopes read:org") + "\n")
+	case "forgejo":
+		b.WriteString("\n")
+		b.WriteString(DirtyStyle.Render("  ✗ Forgejo authentication required") + "\n\n")
+		b.WriteString(DimStyle.Render("  Check the profile token_file, token permissions, and instance_url, then press r to retry.") + "\n")
+	case "mixed":
+		b.WriteString("\n")
+		b.WriteString(DirtyStyle.Render("  ✗ Multiple forge authentications failed") + "\n\n")
+		b.WriteString(DimStyle.Render("  Check GitHub login and Forgejo token_file settings, then press r to retry.") + "\n\n")
+		b.WriteString(HeaderStyle.Render("    gh auth login") + "\n")
+	default:
+		b.WriteString("\n")
+		b.WriteString(DirtyStyle.Render("  ✗ Forge authentication required") + "\n\n")
+		b.WriteString(DimStyle.Render("  Check the provider credentials in your config, then press r to retry.") + "\n")
+	}
+	if len(errs) > 0 {
+		b.WriteString("\n")
+		b.WriteString(DimStyle.Render("  Recent errors:") + "\n")
+		limit := len(errs)
+		if limit > 4 {
+			limit = 4
+		}
+		for _, e := range errs[:limit] {
+			b.WriteString(DimStyle.Render("  • "+e) + "\n")
+		}
+	}
+	return b.String()
 }
 
 // ── Issue row ────────────────────────────────────────────────────────────

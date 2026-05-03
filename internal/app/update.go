@@ -19,15 +19,49 @@ func (m Model) saveState() {
 	_ = cache.SaveState(m.cacheDir, cache.UIState{ActiveProfile: m.activeProfile})
 }
 
-// containsAuthErr returns true if any error string matches the auth sentinel.
-func containsAuthErr(errs []string) bool {
+// authErrorKind returns the provider family for auth failures in a load result.
+func authErrorKind(errs []string) string {
 	needle := forge.ErrNotAuthenticated.Error()
+	hasGitHub := false
+	hasForgejo := false
+	hasUnknown := false
 	for _, e := range errs {
-		if strings.Contains(e, needle) {
-			return true
+		if !strings.Contains(e, needle) {
+			continue
+		}
+		lower := strings.ToLower(e)
+		switch {
+		case strings.Contains(lower, "[github]") || strings.Contains(lower, "github"):
+			hasGitHub = true
+		case strings.Contains(lower, "[forgejo") || strings.Contains(lower, "forgejo"):
+			hasForgejo = true
+		default:
+			hasUnknown = true
 		}
 	}
-	return false
+	kinds := 0
+	if hasGitHub {
+		kinds++
+	}
+	if hasForgejo {
+		kinds++
+	}
+	if hasUnknown {
+		kinds++
+	}
+	if kinds > 1 {
+		return "mixed"
+	}
+	if hasGitHub {
+		return "github"
+	}
+	if hasForgejo {
+		return "forgejo"
+	}
+	if hasUnknown {
+		return "unknown"
+	}
+	return ""
 }
 
 func (m Model) Init() tea.Cmd {
@@ -136,7 +170,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case prsLoadedMsg:
 		m.prs = msg.prs
 		m.errLog = msg.errors
-		m.authErr = containsAuthErr(msg.errors)
+		m.authKind = authErrorKind(msg.errors)
 		m.prsLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
@@ -149,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case branchesLoadedMsg:
 		m.branches = msg.branches
 		m.errLog = msg.errors
-		m.authErr = containsAuthErr(msg.errors)
+		m.authKind = authErrorKind(msg.errors)
 		m.branchesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
@@ -169,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runsLoadedMsg:
 		m.runs = msg.runs
 		m.errLog = msg.errors
-		m.authErr = containsAuthErr(msg.errors)
+		m.authKind = authErrorKind(msg.errors)
 		m.runsLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
@@ -182,7 +216,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case issuesLoadedMsg:
 		m.issues = msg.issues
 		m.errLog = msg.errors
-		m.authErr = containsAuthErr(msg.errors)
+		m.authKind = authErrorKind(msg.errors)
 		m.issuesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {

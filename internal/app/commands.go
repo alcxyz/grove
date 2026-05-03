@@ -75,6 +75,18 @@ func providerForRemote(providers map[string]forge.Provider, remote config.Remote
 	return providers[remote.Key()]
 }
 
+func remoteLabel(remote config.Remote) string {
+	forgeName := remote.EffectiveForge()
+	if forgeName == "forgejo" && remote.InstanceURL != "" {
+		return forgeName + " " + remote.InstanceURL
+	}
+	return forgeName
+}
+
+func formatRemoteError(repoName string, remote config.Remote, err error) string {
+	return fmt.Sprintf("%s [%s]: %v", repoName, remoteLabel(remote), err)
+}
+
 func loadRepos(profiles []config.Profile) tea.Cmd {
 	return func() tea.Msg {
 		// Collect all (path, profile) pairs, deduplicated by path.
@@ -148,7 +160,7 @@ func loadPRs(profiles []config.Profile, providers map[string]forge.Provider) tea
 					prs, err := prov.ListPRs(repoFull)
 					mu.Lock()
 					if err != nil {
-						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+						errs = append(errs, formatRemoteError(name, remote, err))
 					} else {
 						localRepoFull := remote.Owner + "/" + name
 						for i := range prs {
@@ -196,7 +208,7 @@ func loadBranches(profiles []config.Profile, providers map[string]forge.Provider
 					branches, err := prov.ListBranches(repoFull)
 					if err != nil {
 						mu.Lock()
-						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+						errs = append(errs, formatRemoteError(name, remote, err))
 						mu.Unlock()
 						return
 					}
@@ -321,7 +333,7 @@ func loadRuns(profiles []config.Profile, providers map[string]forge.Provider) te
 					runs, err := prov.ListWorkflowRuns(repoFull)
 					mu.Lock()
 					if err != nil {
-						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+						errs = append(errs, formatRemoteError(name, remote, err))
 					} else {
 						localRepoFull := remote.Owner + "/" + name
 						for i := range runs {
@@ -369,7 +381,7 @@ func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) 
 					issues, err := prov.ListIssues(repoFull)
 					mu.Lock()
 					if err != nil {
-						errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+						errs = append(errs, formatRemoteError(name, remote, err))
 					} else {
 						localRepoFull := remote.Owner + "/" + name
 						for i := range issues {

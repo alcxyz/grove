@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -674,61 +675,115 @@ func fetchAll(profiles []config.Profile) tea.Cmd {
 	}
 }
 
-// checkLatestVersion fetches the latest GitHub release tag in the background
-// and returns a versionCheckMsg if a newer version is available.
-// isSemver returns true when v looks like a release version (x.y.z).
-// Hash builds (from nix or local builds without a tag) skip the update check.
-func isSemver(v string) bool {
-	parts := strings.SplitN(v, ".", 3)
+type releaseVersion struct {
+	major int
+	minor int
+	patch int
+}
+
+func parseReleaseVersion(v string) (releaseVersion, bool) {
+	v = strings.TrimPrefix(v, "v")
+	parts := strings.Split(v, ".")
 	if len(parts) != 3 {
+		return releaseVersion{}, false
+	}
+	var parsed [3]int
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return releaseVersion{}, false
+		}
+		parsed[i] = n
+	}
+	return releaseVersion{major: parsed[0], minor: parsed[1], patch: parsed[2]}, true
+}
+
+func IsReleaseVersion(v string) bool {
+	_, ok := parseReleaseVersion(v)
+	return ok
+}
+
+func compareReleaseVersion(a, b releaseVersion) int {
+	if a.major != b.major {
+		return a.major - b.major
+	}
+	if a.minor != b.minor {
+		return a.minor - b.minor
+	}
+	return a.patch - b.patch
+}
+
+func isNewerRelease(latest, current string) bool {
+	lv, ok := parseReleaseVersion(latest)
+	if !ok {
 		return false
 	}
-	for _, p := range parts {
-		for _, c := range p {
-			if c < '0' || c > '9' {
-				return false
-			}
+	cv, ok := parseReleaseVersion(current)
+	if !ok {
+		return false
+	}
+	return compareReleaseVersion(lv, cv) > 0
+}
+
+// LatestVersion fetches the latest GitHub release tag and returns it only when
+// it is semantically newer than the current version. It silently no-ops for dev
+// builds, hash builds, or when the network is unavailable.
+func LatestVersion(version string) string {
+	current, ok := parseReleaseVersion(version)
+	if !ok {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		"https://api.github.com/repos/alcxyz/grove/releases?per_page=20", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "grove/"+version)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var payload []struct {
+		TagName    string `json:"tag_name"`
+		Draft      bool   `json:"draft"`
+		Prerelease bool   `json:"prerelease"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return ""
+	}
+	var latestTag string
+	var latest releaseVersion
+	for _, rel := range payload {
+		if rel.Draft || rel.Prerelease {
+			continue
+		}
+		rv, ok := parseReleaseVersion(rel.TagName)
+		if !ok {
+			continue
+		}
+		if latestTag == "" || compareReleaseVersion(rv, latest) > 0 {
+			latestTag = rel.TagName
+			latest = rv
 		}
 	}
-	return true
+	if latestTag == "" || compareReleaseVersion(latest, current) <= 0 {
+		return ""
+	}
+	return latestTag
 }
 
 // checkLatestVersion fetches the latest GitHub release tag in the background
 // and returns a versionCheckMsg if a newer version is available.
-// Silently no-ops for dev builds, hash builds, or when the network is unavailable.
 func checkLatestVersion(version string) tea.Cmd {
 	return func() tea.Msg {
-		if !isSemver(version) {
-			return versionCheckMsg{}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-			"https://api.github.com/repos/alcxyz/grove/releases/latest", nil)
-		if err != nil {
-			return versionCheckMsg{}
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		req.Header.Set("User-Agent", "grove/"+version)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return versionCheckMsg{}
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return versionCheckMsg{}
-		}
-		var payload struct {
-			TagName string `json:"tag_name"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-			return versionCheckMsg{}
-		}
-		// tag_name is "v0.2.0"; version is "0.2.0" (injected by goreleaser without v-prefix)
-		if payload.TagName == "v"+version || payload.TagName == version {
-			return versionCheckMsg{}
-		}
-		return versionCheckMsg{latest: payload.TagName}
+		return versionCheckMsg{latest: LatestVersion(version)}
 	}
 }
 

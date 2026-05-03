@@ -62,7 +62,7 @@ func main() {
 Usage:
   grove                     launch the TUI
   grove clone [profile]     clone missing org repos into base_paths
-  grove -v, --version       print version and paths
+  grove -v, --version       print version, paths, and update status
   grove -h, --help          show this help
 
 Navigation:
@@ -83,6 +83,13 @@ Config: ` + config.ConfigPath() + "\n")
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version" || os.Args[1] == "v") {
 		fmt.Printf("grove %s\nconfig: %s\ncache:  %s\nlog:    %s\n",
 			version, config.ConfigPath(), config.CacheDir(), config.LogPath())
+		if !app.IsReleaseVersion(version) {
+			fmt.Println("update: skipped (non-release build)")
+		} else if latest := app.LatestVersion(version); latest != "" {
+			fmt.Printf("update: %s available\n", latest)
+		} else {
+			fmt.Println("update: current")
+		}
 		return
 	}
 

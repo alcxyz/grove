@@ -1,17 +1,15 @@
 package clone
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/forge"
 )
 
 // Run enumerates org repos for each matching profile and clones any that
@@ -25,12 +23,24 @@ func Run(cfg config.Config) {
 		if filter != nil && !filter[profile.Name] {
 			continue
 		}
-		if profile.Owner == "" || len(profile.BasePaths) == 0 {
+		codeRemote := profile.CodeRemote("", "")
+		if codeRemote.Owner == "" || len(profile.BasePaths) == 0 {
 			fmt.Fprintf(os.Stderr, "profile %q: missing owner or base_path, skipping\n", profile.Name)
 			continue
 		}
+		prov, err := forge.NewProvider(forge.ProviderConfig{
+			Forge:       codeRemote.Forge,
+			InstanceURL: codeRemote.InstanceURL,
+			TokenFile:   codeRemote.TokenFile,
+			CloneProto:  codeRemote.CloneProto,
+			SSHHost:     codeRemote.SSHHost,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "profile %q: %v\n", profile.Name, err)
+			continue
+		}
 		ran = true
-		cloneProfile(profile)
+		cloneProfile(profile, codeRemote.Owner, prov)
 	}
 
 	if !ran {
@@ -39,10 +49,10 @@ func Run(cfg config.Config) {
 	}
 }
 
-func cloneProfile(profile config.Profile) {
-	fmt.Printf("Profile %q  owner=%s\n", profile.Name, profile.Owner)
+func cloneProfile(profile config.Profile, owner string, provider forge.Provider) {
+	fmt.Printf("Profile %q  owner=%s\n", profile.Name, owner)
 
-	names, err := listOrgRepos(profile.Owner, profile.Prefixes)
+	names, err := provider.ListRepos(owner, profile.Prefixes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  error: %v\n", err)
 		return
@@ -82,9 +92,7 @@ func cloneProfile(profile config.Profile) {
 			defer func() { <-sem }()
 			dest := cloneDestFor(profile, n)
 			target := filepath.Join(dest, n)
-			cmd := exec.Command("gh", "repo", "clone", profile.Owner+"/"+n, target, "--", "--quiet")
-			out, err := cmd.CombinedOutput()
-			results <- cloneResult{name: n, dest: dest, err: wrapCloneErr(err, out)}
+			results <- cloneResult{name: n, dest: dest, err: provider.CloneRepo(owner, n, target)}
 		}(name)
 	}
 	go func() {
@@ -173,70 +181,6 @@ func allSearchPaths(profile config.Profile) []string {
 	return paths
 }
 
-// listOrgRepos lists all repos in owner that start with any of the given
-// prefixes. An empty prefix list matches all repos.
-func listOrgRepos(owner string, prefixes []string) ([]string, error) {
-	names, err := ghListRepos("orgs/" + owner + "/repos")
-	if err != nil {
-		names, err = ghListRepos("users/" + owner + "/repos")
-		if err != nil {
-			return nil, fmt.Errorf("listing repos for %s: %w", owner, err)
-		}
-	}
-
-	if len(prefixes) == 0 {
-		sort.Strings(names)
-		return names, nil
-	}
-
-	var filtered []string
-	for _, name := range names {
-		for _, p := range prefixes {
-			if strings.HasPrefix(name, p) {
-				filtered = append(filtered, name)
-				break
-			}
-		}
-	}
-	sort.Strings(filtered)
-	return filtered, nil
-}
-
-// ghListRepos paginates through a GitHub repos API endpoint and returns all
-// repo names.
-func ghListRepos(endpoint string) ([]string, error) {
-	var all []string
-	for page := 1; ; page++ {
-		url := fmt.Sprintf("%s?per_page=100&page=%d", endpoint, page)
-		cmd := exec.Command("gh", "api", url)
-		out, err := cmd.Output()
-		if err != nil {
-			if page == 1 {
-				var ee *exec.ExitError
-				if errors.As(err, &ee) {
-					return nil, fmt.Errorf("%s", strings.TrimSpace(string(ee.Stderr)))
-				}
-				return nil, err
-			}
-			break
-		}
-
-		var repos []struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(out, &repos); err != nil {
-			return nil, fmt.Errorf("parse response page %d: %w", page, err)
-		}
-		for _, r := range repos {
-			all = append(all, r.Name)
-		}
-		if len(repos) < 100 {
-			break
-		}
-	}
-	return all, nil
-}
-
 // repoExistsInAny returns true if a .git directory exists at name/ under any
 // of the given base paths.
 func repoExistsInAny(basePaths []string, name string) bool {
@@ -246,15 +190,4 @@ func repoExistsInAny(basePaths []string, name string) bool {
 		}
 	}
 	return false
-}
-
-func wrapCloneErr(err error, output []byte) error {
-	if err == nil {
-		return nil
-	}
-	msg := strings.TrimSpace(string(output))
-	if msg == "" {
-		return err
-	}
-	return fmt.Errorf("%s", msg)
 }

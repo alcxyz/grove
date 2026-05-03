@@ -88,6 +88,32 @@ func TestViewHelpOverlay(t *testing.T) {
 	}
 }
 
+func TestViewConfigPreviewOverlay(t *testing.T) {
+	m := newTestModel()
+	m.width = 120
+	m.height = 40
+	m = m.openProfileConfigPreview()
+
+	out := m.View()
+	if !strings.Contains(out, "Config preview") || !strings.Contains(out, "Profile: test") {
+		t.Error("View() with config preview should render profile config")
+	}
+}
+
+func TestConfigPreviewScrollCanReachBottomBorder(t *testing.T) {
+	m := newTestModel()
+	m.width = 80
+	m.height = 12
+	m = m.openProfileConfigPreview()
+	m.configScroll = m.configPreviewTotalLines()
+	m.clampConfigScroll()
+
+	out := m.View()
+	if !strings.Contains(out, "╰") {
+		t.Error("config preview at max scroll should include the bottom border")
+	}
+}
+
 // TestViewSplashOverlay verifies the splash overlay renders.
 func TestViewSplashOverlay(t *testing.T) {
 	m := newTestModel()

@@ -15,16 +15,46 @@ type Group struct {
 	Match     string `yaml:"match"`      // prefix/substring match on repo name
 	MatchPath string `yaml:"match_path"` // path prefix match on repo location
 	BasePath  string `yaml:"base_path"`  // optional: clone destination for this group
+	Code      Remote `yaml:"code"`
+	Social    Remote `yaml:"social"`
+	CI        Remote `yaml:"ci"`
+}
+
+// Remote describes how grove should talk to one forge concern.
+type Remote struct {
+	Owner       string `yaml:"owner"`        // org or username
+	Repo        string `yaml:"repo"`         // optional remote repo name; defaults to local repo name
+	Forge       string `yaml:"forge"`        // "github" (default), "forgejo"
+	InstanceURL string `yaml:"instance_url"` // base URL for non-GitHub forges
+	TokenFile   string `yaml:"token_file"`   // path to file containing API token
+	CloneProto  string `yaml:"clone_proto"`  // "https" (default) or "ssh"
+	SSHHost     string `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
+}
+
+// RepoOverride applies concern-specific remote overrides to one repo by name.
+type RepoOverride struct {
+	Name   string `yaml:"name"`
+	Code   Remote `yaml:"code"`
+	Social Remote `yaml:"social"`
+	CI     Remote `yaml:"ci"`
 }
 
 // Profile holds per-profile configuration.
 type Profile struct {
-	Name      string   `yaml:"name"`
-	Owner     string   `yaml:"owner"` // GitHub org or username; "" = no GitHub
-	BasePaths []string `yaml:"base_paths"`
-	BasePath  string   `yaml:"base_path"` // legacy; merged into BasePaths on load
-	Prefixes  []string `yaml:"prefixes"`
-	Groups    []Group  `yaml:"groups"`
+	Name        string         `yaml:"name"`
+	Owner       string         `yaml:"owner"`        // org or username; "" = no forge API
+	Forge       string         `yaml:"forge"`        // "github" (default), "forgejo"
+	InstanceURL string         `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
+	TokenFile   string         `yaml:"token_file"`   // path to file containing API token
+	CloneProto  string         `yaml:"clone_proto"`  // "https" (default) or "ssh"
+	SSHHost     string         `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
+	BasePaths   []string       `yaml:"base_paths"`
+	BasePath    string         `yaml:"base_path"` // legacy; merged into BasePaths on load
+	Prefixes    []string       `yaml:"prefixes"`
+	Groups      []Group        `yaml:"groups"`
+	Social      Remote         `yaml:"social"`
+	CI          Remote         `yaml:"ci"`
+	Repos       []RepoOverride `yaml:"repos"`
 }
 
 type Config struct {
@@ -249,9 +279,43 @@ func (c Config) CacheKey() string {
 		prefixes := make([]string, len(p.Prefixes))
 		copy(prefixes, p.Prefixes)
 		sort.Strings(prefixes)
-		parts = append(parts, p.Owner+"|"+strings.Join(prefixes, ","))
+		parts = append(parts, p.cacheKeyPart(strings.Join(prefixes, ",")))
 	}
 	return strings.Join(parts, ";")
+}
+
+func (p Profile) cacheKeyPart(prefixes string) string {
+	var groupParts []string
+	for _, g := range p.Groups {
+		groupParts = append(groupParts, strings.Join([]string{
+			g.Name,
+			g.Match,
+			g.MatchPath,
+			g.Code.Key(),
+			g.Social.Key(),
+			g.CI.Key(),
+		}, "|"))
+	}
+	sort.Strings(groupParts)
+	var repoParts []string
+	for _, r := range p.Repos {
+		repoParts = append(repoParts, strings.Join([]string{
+			r.Name,
+			r.Code.Key(),
+			r.Social.Key(),
+			r.CI.Key(),
+		}, "|"))
+	}
+	sort.Strings(repoParts)
+	return strings.Join([]string{
+		p.Name,
+		p.codeDefaults().Key(),
+		p.Social.Key(),
+		p.CI.Key(),
+		prefixes,
+		strings.Join(groupParts, ","),
+		strings.Join(repoParts, ","),
+	}, "|")
 }
 
 // Profile methods
@@ -296,4 +360,162 @@ func (p Profile) GroupOrder(name string) int {
 		}
 	}
 	return 9999
+}
+
+func (r Remote) Key() string {
+	return strings.Join([]string{
+		r.Owner,
+		r.Repo,
+		r.Forge,
+		r.InstanceURL,
+		r.TokenFile,
+		r.CloneProto,
+		r.SSHHost,
+	}, "|")
+}
+
+// RepoName returns the remote repository name for a local repo name.
+func (r Remote) RepoName(localName string) string {
+	if r.Repo != "" {
+		return r.Repo
+	}
+	return localName
+}
+
+// FullName returns the owner/repo name used by forge APIs.
+func (r Remote) FullName(localName string) string {
+	return r.Owner + "/" + r.RepoName(localName)
+}
+
+// EffectiveForge returns the forge name after applying the default.
+func (r Remote) EffectiveForge() string {
+	if r.Forge == "" {
+		return "github"
+	}
+	return r.Forge
+}
+
+func mergeRemote(base, override Remote) Remote {
+	if override.Owner != "" {
+		base.Owner = override.Owner
+	}
+	if override.Repo != "" {
+		base.Repo = override.Repo
+	}
+	if override.Forge != "" {
+		base.Forge = override.Forge
+	}
+	if override.InstanceURL != "" {
+		base.InstanceURL = override.InstanceURL
+	}
+	if override.TokenFile != "" {
+		base.TokenFile = override.TokenFile
+	}
+	if override.CloneProto != "" {
+		base.CloneProto = override.CloneProto
+	}
+	if override.SSHHost != "" {
+		base.SSHHost = override.SSHHost
+	}
+	return base
+}
+
+func groupMatches(g Group, repoName, repoPath string) bool {
+	if g.MatchPath != "" && strings.HasPrefix(repoPath, g.MatchPath) {
+		return true
+	}
+	if g.Match != "" && (strings.HasPrefix(repoName, g.Match) || strings.Contains(repoName, g.Match)) {
+		return true
+	}
+	return false
+}
+
+func (p Profile) codeDefaults() Remote {
+	return Remote{
+		Owner:       p.Owner,
+		Forge:       p.Forge,
+		InstanceURL: p.InstanceURL,
+		TokenFile:   p.TokenFile,
+		CloneProto:  p.CloneProto,
+		SSHHost:     p.SSHHost,
+	}
+}
+
+func (p Profile) repoOverride(repoName string) (RepoOverride, bool) {
+	for _, r := range p.Repos {
+		if r.Name == repoName {
+			return r, true
+		}
+	}
+	return RepoOverride{}, false
+}
+
+func (p Profile) groupOverride(repoName, repoPath string) (Group, bool) {
+	for _, g := range p.ResolveGroups() {
+		if groupMatches(g, repoName, repoPath) {
+			return g, true
+		}
+	}
+	return Group{}, false
+}
+
+// CodeRemote resolves the forge used for repo hosting, branches, commits, and clone.
+func (p Profile) CodeRemote(repoName, repoPath string) Remote {
+	remote := p.codeDefaults()
+	if g, ok := p.groupOverride(repoName, repoPath); ok {
+		remote = mergeRemote(remote, g.Code)
+	}
+	if ov, ok := p.repoOverride(repoName); ok {
+		remote = mergeRemote(remote, ov.Code)
+	}
+	return remote
+}
+
+// SocialRemote resolves the forge used for pull requests and issues.
+func (p Profile) SocialRemote(repoName, repoPath string) Remote {
+	remote := mergeRemote(p.codeDefaults(), p.Social)
+	if g, ok := p.groupOverride(repoName, repoPath); ok {
+		remote = mergeRemote(remote, g.Social)
+	}
+	if ov, ok := p.repoOverride(repoName); ok {
+		remote = mergeRemote(remote, ov.Social)
+	}
+	return remote
+}
+
+// CIRemote resolves the forge used for workflow / pipeline runs.
+func (p Profile) CIRemote(repoName, repoPath string) Remote {
+	remote := mergeRemote(p.codeDefaults(), p.CI)
+	if g, ok := p.groupOverride(repoName, repoPath); ok {
+		remote = mergeRemote(remote, g.CI)
+	}
+	if ov, ok := p.repoOverride(repoName); ok {
+		remote = mergeRemote(remote, ov.CI)
+	}
+	return remote
+}
+
+// AllRemotes returns every resolved remote configuration referenced by this config.
+func (c Config) AllRemotes() []Remote {
+	seen := map[string]struct{}{}
+	var remotes []Remote
+	add := func(r Remote) {
+		key := r.Key()
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		remotes = append(remotes, r)
+	}
+	for _, p := range c.Profiles {
+		add(p.CodeRemote("", ""))
+		add(p.SocialRemote("", ""))
+		add(p.CIRemote("", ""))
+		for _, ov := range p.Repos {
+			add(p.CodeRemote(ov.Name, ""))
+			add(p.SocialRemote(ov.Name, ""))
+			add(p.CIRemote(ov.Name, ""))
+		}
+	}
+	return remotes
 }

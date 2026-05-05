@@ -67,7 +67,7 @@ GitHub has Actions (`WorkflowRun`). Forgejo 1.20+ has its own Actions (GitHub Ac
 `grove clone` calls `gh api orgs/<owner>/repos` or `users/<owner>/repos`. Forgejo uses `/api/v1/orgs/{org}/repos` and `/api/v1/users/{user}/repos` — structurally similar, different base URL. Per-provider implementation via the `Provider` interface.
 
 **Auth:**
-GitHub and Forgejo providers use token-based HTTP auth. GitHub reads `token_file` when configured, otherwise `GH_TOKEN` or `GITHUB_TOKEN`. Forgejo reads `token_file`. Fine-grained GitHub PATs should be repository-scoped and read-only: Metadata, Pull requests, Issues, Actions, Commit statuses, Checks, and Contents when GitHub is the code remote for branch/commit metadata. A future `token_command` could avoid plaintext token paths, but is not required for the current design.
+GitHub and Forgejo providers use token-based HTTP auth. GitHub reads `token_file` when configured, otherwise `GH_TOKEN` or `GITHUB_TOKEN`. Forgejo reads `token_file`. Fine-grained GitHub PATs should be repository-scoped and read-only, using only the permissions that match configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata. A future `token_command` could avoid plaintext token paths, but is not required for the current design.
 
 **Rate limits:**
 GitHub caps authenticated REST API requests at 5,000 req/hr for normal user tokens. Grove limits GitHub-backed API calls to 5 concurrent HTTP requests. Forgejo instance limits are admin-configurable. The concurrency model is per-provider.

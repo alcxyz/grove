@@ -227,17 +227,17 @@ func (g *GitHubProvider) checkSummary(repoFullName, sha string) string {
 		}
 	}
 
-	if data, err := g.apiGet(fmt.Sprintf("/repos/%s/commits/%s/check-runs?per_page=100", repoFullName, sha)); err == nil {
+	if data, err := g.apiGet(fmt.Sprintf("/repos/%s/actions/runs?head_sha=%s&per_page=100", repoFullName, sha)); err == nil {
 		var resp struct {
-			TotalCount int `json:"total_count"`
-			CheckRuns  []struct {
+			TotalCount   int `json:"total_count"`
+			WorkflowRuns []struct {
 				Status     string `json:"status"`
 				Conclusion string `json:"conclusion"`
-			} `json:"check_runs"`
+			} `json:"workflow_runs"`
 		}
 		if json.Unmarshal(data, &resp) == nil && resp.TotalCount > 0 {
 			hasSignal = true
-			for _, run := range resp.CheckRuns {
+			for _, run := range resp.WorkflowRuns {
 				if strings.ToLower(run.Status) != "completed" {
 					hasPending = true
 					continue

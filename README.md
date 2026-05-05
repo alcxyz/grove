@@ -79,7 +79,7 @@ yay -S grove-tui-bin
 
 Requires Go 1.22+. GitHub-backed and Forgejo-backed profiles use direct HTTP API calls. Configure `token_file` per remote, or set `GH_TOKEN` / `GITHUB_TOKEN` for GitHub. `gh` and `forgejo-cli` are not provider dependencies.
 
-For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions: Metadata, Pull requests, Issues, Actions, Commit statuses, Checks, and Contents when GitHub is the code remote for branch/commit metadata.
+For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions for the configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata.
 
 ```sh
 git clone git@github.com:alcxyz/grove.git
@@ -296,7 +296,7 @@ The **Dashboard** tab (tab 1) also shows a compact CI status icon (`✓` / `✗`
 | `CI`             | Latest CI run: `✓` success / `✗` failure / `●` running / `—` no data |
 | `●` (tab 4)      | Branch has an open PR                                                |
 | `∈` (tab 4)      | Branch is merged into the default branch                             |
-| `Checks` (tab 2) | PR status check rollup: `✓ pass` / `✗ fail` / `● pending` / `—` none |
+| PR checks (tab 2) | PR status rollup from Actions workflow runs and commit statuses: `✓ pass` / `✗ fail` / `● pending` / `—` none |
 
 ## External tools
 

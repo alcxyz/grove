@@ -37,10 +37,13 @@ func TestGitHubListPRsUsesRESTAPI(t *testing.T) {
 			}})
 		case "/repos/alcxyz/grove/commits/abc123/status":
 			writeJSON(t, w, map[string]any{"state": "success"})
-		case "/repos/alcxyz/grove/commits/abc123/check-runs":
+		case "/repos/alcxyz/grove/actions/runs":
+			if got := r.URL.Query().Get("head_sha"); got != "abc123" {
+				t.Errorf("head_sha query = %q, want abc123", got)
+			}
 			writeJSON(t, w, map[string]any{
 				"total_count": 1,
-				"check_runs": []map[string]any{{
+				"workflow_runs": []map[string]any{{
 					"status":     "completed",
 					"conclusion": "success",
 				}},

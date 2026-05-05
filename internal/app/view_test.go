@@ -39,6 +39,22 @@ func TestViewWithRepos(t *testing.T) {
 	}
 }
 
+func TestViewShowsDependencyWarnings(t *testing.T) {
+	m := newTestModel()
+	m.width = 120
+	m.height = 40
+	m.loading = false
+	m.depWarnings = []string{"gh not found on PATH"}
+
+	out := m.View()
+	if !strings.Contains(out, "Dependency warnings") || !strings.Contains(out, "gh not found on PATH") {
+		t.Error("View() should show dependency warnings on dashboard")
+	}
+	if !strings.Contains(out, "1 dependency warning") {
+		t.Error("View() should show dependency warning count in footer")
+	}
+}
+
 // TestViewAllTabs verifies that View() works on every tab without panicking.
 func TestViewAllTabs(t *testing.T) {
 	m := newTestModel()

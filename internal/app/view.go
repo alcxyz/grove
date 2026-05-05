@@ -136,6 +136,13 @@ func (m Model) infoBarParts() []string {
 	if !m.autoRefresh {
 		parts = append(parts, ui.DimStyle.Render("auto-refresh off"))
 	}
+	if len(m.depWarnings) > 0 {
+		label := "dependency warnings"
+		if len(m.depWarnings) == 1 {
+			label = "dependency warning"
+		}
+		parts = append(parts, ui.PendingStyle.Render(fmt.Sprintf("%d %s", len(m.depWarnings), label)))
+	}
 	parts = append(parts, ui.DimStyle.Render("? help"))
 	parts = append(parts, ui.DimStyle.Render(", config"))
 	parts = append(parts, ui.DimStyle.Render("v"+m.version))
@@ -286,6 +293,13 @@ func (m Model) View() string {
 		hlField, hlValue := m.highlightField, m.blockHighlightValue()
 		switch m.activeTab {
 		case tabDashboard:
+			if len(m.depWarnings) > 0 {
+				b.WriteString(ui.RenderDependencyWarnings(m.depWarnings, 3))
+				sh -= ui.DependencyWarningLines(m.depWarnings, 3)
+				if sh < 1 {
+					sh = 1
+				}
+			}
 			prCounts := map[string]int{}
 			for _, pr := range m.prs {
 				prCounts[repoBaseName(pr.Repo)]++

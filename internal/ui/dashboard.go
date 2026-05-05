@@ -644,6 +644,39 @@ func RenderErrors(errs []string) string {
 	return b.String()
 }
 
+func DependencyWarningLines(warnings []string, limit int) int {
+	if len(warnings) == 0 {
+		return 0
+	}
+	if limit <= 0 || limit > len(warnings) {
+		limit = len(warnings)
+	}
+	lines := 2 + limit
+	if len(warnings) > limit {
+		lines++
+	}
+	return lines
+}
+
+func RenderDependencyWarnings(warnings []string, limit int) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+	if limit <= 0 || limit > len(warnings) {
+		limit = len(warnings)
+	}
+	var b strings.Builder
+	b.WriteString(PendingStyle.Render("  Dependency warnings") + "\n")
+	for _, warning := range warnings[:limit] {
+		b.WriteString(DimStyle.Render("  • "+warning) + "\n")
+	}
+	if len(warnings) > limit {
+		b.WriteString(DimStyle.Render(fmt.Sprintf("  • %d more", len(warnings)-limit)) + "\n")
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
 // RenderAuthError renders a prominent banner for provider authentication
 // failures. kind is "github", "forgejo", "mixed", or "unknown".
 func RenderAuthError(kind string, errs []string) string {

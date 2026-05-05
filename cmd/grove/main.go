@@ -164,6 +164,10 @@ Config: ` + config.ConfigPath() + "\n")
 
 	cacheDir := config.CacheDir()
 	cacheKey := cfg.CacheKey()
+	depWarnings := app.DependencyWarnings(cfg)
+	if len(depWarnings) > 0 && bootstrapMsg == "" {
+		initStatus = fmt.Sprintf("%d dependency warning(s)", len(depWarnings))
+	}
 
 	// Pre-load cached data so the app opens instantly with last-known state.
 	var initPRs []model.PR
@@ -235,6 +239,7 @@ Config: ` + config.ConfigPath() + "\n")
 		IssuesLoadedAt:   initIssuesAt,
 		ActiveProfile:    initProfile,
 		Providers:        providers,
+		DepWarnings:      depWarnings,
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

@@ -56,6 +56,7 @@ type Options struct {
 	IssuesLoadedAt   time.Time
 	ActiveProfile    int
 	Providers        map[string]forge.Provider
+	DepWarnings      []string
 }
 
 // New creates a Model ready to be passed to tea.NewProgram.
@@ -88,6 +89,7 @@ func New(o Options) Model {
 		issuesLoadedAt:   o.IssuesLoadedAt,
 		activeProfile:    o.ActiveProfile,
 		providers:        o.Providers,
+		depWarnings:      o.DepWarnings,
 	}
 }
 
@@ -101,12 +103,13 @@ type Model struct {
 	runs     []model.WorkflowRun
 	issues   []model.Issue
 
-	activeTab tab
-	cursor    int
-	width     int
-	height    int
-	loading   bool
-	statusMsg string
+	activeTab   tab
+	cursor      int
+	width       int
+	height      int
+	loading     bool
+	statusMsg   string
+	depWarnings []string
 
 	// Vim-style navigation
 	prevKey      string

@@ -77,7 +77,7 @@ yay -S grove-tui-bin
 
 ### Build from source
 
-Requires Go 1.22+. GitHub-backed profiles also require the [gh](https://cli.github.com/) CLI authenticated with `gh auth login`. Forgejo-backed profiles use API tokens configured in `token_file`.
+Requires Go 1.22+. GitHub-backed profiles also require the [gh](https://cli.github.com/) CLI authenticated with `gh auth login`. Forgejo-backed profiles use direct HTTP API calls with `token_file`; `forgejo-cli` is not required.
 
 ```sh
 git clone git@github.com:alcxyz/grove.git

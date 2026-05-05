@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,33 +9,31 @@ import (
 	"github.com/alcxyz/grove/internal/config"
 )
 
-func withDependencyChecks(t *testing.T, lookPath func(string) (string, error), readFile func(string) ([]byte, error), ghAuthStatus func() error) {
+func withDependencyChecks(t *testing.T, lookPath func(string) (string, error), readFile func(string) ([]byte, error), getenv func(string) string) {
 	t.Helper()
 	oldLookPath := dependencyLookPath
 	oldReadFile := dependencyReadFile
-	oldGHAuthStatus := dependencyGHAuthStatus
+	oldGetenv := dependencyGetenv
 	dependencyLookPath = lookPath
 	dependencyReadFile = readFile
-	dependencyGHAuthStatus = ghAuthStatus
+	dependencyGetenv = getenv
 	t.Cleanup(func() {
 		dependencyLookPath = oldLookPath
 		dependencyReadFile = oldReadFile
-		dependencyGHAuthStatus = oldGHAuthStatus
+		dependencyGetenv = oldGetenv
 	})
 }
 
 func TestDependencyWarningsForgejoDoesNotRequireCLI(t *testing.T) {
 	withDependencyChecks(t,
 		func(name string) (string, error) {
-			switch name {
-			case "git":
+			if name == "git" {
 				return "/usr/bin/git", nil
-			default:
-				return "", exec.ErrNotFound
 			}
+			return "", exec.ErrNotFound
 		},
 		func(string) ([]byte, error) { return []byte("token\n"), nil },
-		func() error { return nil },
+		func(string) string { return "" },
 	)
 
 	cfg := config.Config{Profiles: []config.Profile{{
@@ -45,6 +42,31 @@ func TestDependencyWarningsForgejoDoesNotRequireCLI(t *testing.T) {
 		Forge:       "forgejo",
 		InstanceURL: "https://git.example.test",
 		TokenFile:   "/run/secrets/forgejo-token",
+	}}}
+
+	warnings := DependencyWarnings(cfg)
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+}
+
+func TestDependencyWarningsGitHubTokenFileDoesNotRequireEnvToken(t *testing.T) {
+	withDependencyChecks(t,
+		func(name string) (string, error) {
+			if name == "git" {
+				return "/usr/bin/git", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string) ([]byte, error) { return []byte("token\n"), nil },
+		func(string) string { return "" },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:      "test",
+		Owner:     "alcxyz",
+		Forge:     "github",
+		TokenFile: "/run/secrets/github-token",
 	}}}
 
 	warnings := DependencyWarnings(cfg)
@@ -62,7 +84,7 @@ func TestDependencyWarningsReportsProviderProblems(t *testing.T) {
 			return "", exec.ErrNotFound
 		},
 		func(string) ([]byte, error) { return nil, os.ErrNotExist },
-		func() error { return errors.New("not logged in") },
+		func(string) string { return "" },
 	)
 
 	cfg := config.Config{Profiles: []config.Profile{{
@@ -80,10 +102,13 @@ func TestDependencyWarningsReportsProviderProblems(t *testing.T) {
 	warnings := strings.Join(DependencyWarnings(cfg), "\n")
 	for _, want := range []string{
 		"token_file /missing-token cannot be read",
-		"gh not found on PATH",
+		"GitHub token not configured",
 	} {
 		if !strings.Contains(warnings, want) {
 			t.Fatalf("warnings missing %q: %s", want, warnings)
 		}
+	}
+	if strings.Contains(warnings, "gh not found") {
+		t.Fatalf("GitHub API provider should not require gh CLI: %s", warnings)
 	}
 }

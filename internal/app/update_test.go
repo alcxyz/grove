@@ -328,7 +328,7 @@ func TestAuthErrorKind(t *testing.T) {
 	}{
 		{
 			name: "github",
-			errs: []string{"repo [github]: not authenticated: run gh auth login"},
+			errs: []string{"repo [github]: not authenticated: github API returned 401"},
 			want: "github",
 		},
 		{
@@ -339,7 +339,7 @@ func TestAuthErrorKind(t *testing.T) {
 		{
 			name: "mixed",
 			errs: []string{
-				"repo-a [github]: not authenticated: run gh auth login",
+				"repo-a [github]: not authenticated: github API returned 401",
 				"repo-b [forgejo https://git.alc.xyz]: not authenticated: https://git.alc.xyz returned 401",
 			},
 			want: "mixed",

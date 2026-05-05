@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -401,6 +402,67 @@ func TestMergeRemoteClearsForgeSpecificFieldsWhenForgeChanges(t *testing.T) {
 	}
 	if got.InstanceURL != "" || got.TokenFile != "" || got.CloneProto != "" || got.SSHHost != "" {
 		t.Fatalf("forge-specific fields should be cleared when forge changes: %+v", got)
+	}
+}
+
+func TestNormaliseProfilesExpandsRemoteTokenFiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := Config{Profiles: []Profile{{
+		Name:      "test",
+		Owner:     "alcxyz",
+		TokenFile: "~/.tokens/code",
+		Social: Remote{
+			TokenFile: "~/.tokens/social",
+		},
+		CI: Remote{
+			TokenFile: "~/.tokens/ci",
+		},
+		Groups: []Group{{
+			Name: "forks",
+			Code: Remote{
+				TokenFile: "~/.tokens/group-code",
+			},
+			Social: Remote{
+				TokenFile: "~/.tokens/group-social",
+			},
+			CI: Remote{
+				TokenFile: "~/.tokens/group-ci",
+			},
+		}},
+		Repos: []RepoOverride{{
+			Name: "grove",
+			Code: Remote{
+				TokenFile: "~/.tokens/repo-code",
+			},
+			Social: Remote{
+				TokenFile: "~/.tokens/repo-social",
+			},
+			CI: Remote{
+				TokenFile: "~/.tokens/repo-ci",
+			},
+		}},
+	}}}
+
+	normaliseProfiles(&cfg, false)
+
+	profile := cfg.Profiles[0]
+	checks := map[string]string{
+		"profile":      profile.TokenFile,
+		"social":       profile.Social.TokenFile,
+		"ci":           profile.CI.TokenFile,
+		"group-code":   profile.Groups[0].Code.TokenFile,
+		"group-social": profile.Groups[0].Social.TokenFile,
+		"group-ci":     profile.Groups[0].CI.TokenFile,
+		"repo-code":    profile.Repos[0].Code.TokenFile,
+		"repo-social":  profile.Repos[0].Social.TokenFile,
+		"repo-ci":      profile.Repos[0].CI.TokenFile,
+	}
+	for name, got := range checks {
+		if !strings.HasPrefix(got, home) {
+			t.Fatalf("%s token_file was not expanded: %q", name, got)
+		}
 	}
 }
 

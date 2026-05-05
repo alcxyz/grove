@@ -2,7 +2,9 @@
 
 **Status:** Accepted
 **Date:** 2026-04-28
-**Applies to:** `internal/model/`, `internal/gh/`, `internal/cache/`, `internal/app/`, `internal/ui/`
+**Applies to:** `internal/model/`, `internal/forge/`, `internal/cache/`, `internal/app/`, `internal/ui/`
+
+**Revision 2026-05-05:** GitHub issue fetching now goes through the direct HTTP `GitHubProvider` in `internal/forge/`, not the retired `internal/gh` CLI wrapper. The issue model, cache, tab, and rendering decisions remain unchanged.
 
 ## Context
 
@@ -24,7 +26,7 @@ A new `Issue` struct in `internal/model/repo.go`:
 
 ### Fetching
 
-`gh issue list` per repo via `internal/gh/`, following the same semaphore-guarded pattern as `ListPRs`. Default: open issues only, limit 50. `gh issue list` already excludes pull requests from the result set, so no additional filtering is needed.
+`GitHubProvider.ListIssues` fetches open issues per repo via GitHub's REST API, following the same provider-level concurrency cap as PR fetching. Default: open issues only, limit 50. GitHub's issues API can return pull requests, so Grove filters responses with a `pull_request` key.
 
 ### Caching
 
@@ -49,14 +51,14 @@ Issues is added as `[6]` rather than inserted between existing tabs. This avoids
 
 **Embed issues into the PRs tab** — Issues and PRs are different workflows with different metadata (labels/milestones vs review status/checks). Mixing them would clutter the PR view without adding clarity.
 
-**Use GraphQL for issue fetching** — `gh issue list --json` already provides all needed fields in a single call and handles pagination. GraphQL would only help if we needed fields beyond what the CLI exposes, which we don't currently. Can revisit if needed.
+**Use GraphQL for issue fetching** — the REST API provides all needed fields and maps cleanly to Forgejo/Gitea-style issue APIs. GraphQL would only help if we needed fields beyond what REST exposes, which we don't currently. Can revisit if needed.
 
 **Show closed issues by default** — Closed issues accumulate fast and would dominate the list. Defaulting to open-only matches how the PRs tab works. A future enhancement could add a state toggle.
 
 ## Consequences
 
 - Tab bar gains a 6th entry. Addressed by wrapping tabs into a 2×3 grid with number-first labels and equal-width columns.
-- One additional `gh issue list` call per repo per refresh. With the semaphore cap of 5 and typical repo counts, this is within rate-limit budget but increases total refresh time proportionally.
+- One additional GitHub issue API call per repo per refresh. With the semaphore cap of 5 and typical repo counts, this is within rate-limit budget but increases total refresh time proportionally.
 - Cache directory gains one more JSON file (`issues.json`).
 - The dashboard table gains one more "Is" column. Addressed by the dynamic column width system (see ADR-005) which distributes all columns proportionally within the terminal width.
 - Label colors from GitHub are not used (terminal color mapping is unreliable). Labels render as plain text.

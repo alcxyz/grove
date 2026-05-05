@@ -2,11 +2,11 @@
 # On first run this file is written to $XDG_CONFIG_HOME/grove/config.yaml
 # (default: ~/.config/grove/config.yaml).
 
-# Named profiles — each has its own GitHub owner (org or username),
+# Named profiles — each has its own default forge owner (org or username),
 # one or more repo directories, prefix filters, and groups.
 # Switch between profiles with < / > in the dashboard.
 profiles:
-  # Personal profile: owner = your GitHub username enables PR/branch tracking.
+  # Personal profile: owner = your default forge username enables PR/branch tracking.
   # prefixes: [] matches ALL repos found under base_paths.
   # Groups can use match_path to group repos by their directory location.
   - name: Personal

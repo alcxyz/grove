@@ -77,7 +77,9 @@ yay -S grove-tui-bin
 
 ### Build from source
 
-Requires Go 1.22+. GitHub-backed profiles also require the [gh](https://cli.github.com/) CLI authenticated with `gh auth login`. Forgejo-backed profiles use direct HTTP API calls with `token_file`; `forgejo-cli` is not required.
+Requires Go 1.22+. GitHub-backed and Forgejo-backed profiles use direct HTTP API calls. Configure `token_file` per remote, or set `GH_TOKEN` / `GITHUB_TOKEN` for GitHub. `gh` and `forgejo-cli` are not provider dependencies.
+
+For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions: Metadata, Pull requests, Issues, Actions, Commit statuses, Checks, and Contents when GitHub is the code remote for branch/commit metadata.
 
 ```sh
 git clone git@github.com:alcxyz/grove.git
@@ -353,7 +355,7 @@ Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string
 
 ## Rate limiting
 
-GitHub API calls go through the `gh` CLI. Forgejo calls go through direct HTTP requests with token auth. GitHub-backed API calls are limited to **5 concurrent `gh` invocations** at a time (a buffered semaphore channel in `internal/gh`) to stay inside rate limits.
+GitHub and Forgejo calls use direct HTTP requests with token auth. GitHub-backed API calls are limited to **5 concurrent requests** at a time to stay inside rate limits.
 
 `grove clone` uses a separate semaphore capped at **8 concurrent clones**, since `git clone` is network-bound rather than API-bound.
 

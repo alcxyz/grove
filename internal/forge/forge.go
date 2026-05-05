@@ -39,7 +39,7 @@ type ProviderConfig struct {
 func NewProvider(cfg ProviderConfig) (Provider, error) {
 	switch cfg.Forge {
 	case "github", "":
-		return NewGitHubProvider(), nil
+		return NewGitHubProvider(cfg), nil
 	case "forgejo":
 		return NewForgejoProvider(cfg)
 	default:

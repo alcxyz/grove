@@ -211,18 +211,23 @@ func normaliseProfiles(cfg *Config, fillPrefixDefaults bool) {
 			p.BasePaths = append([]string{p.BasePath}, p.BasePaths...)
 			p.BasePath = ""
 		}
+		p.TokenFile = expandHome(p.TokenFile, home)
+		expandRemoteHome(&p.Social, home)
+		expandRemoteHome(&p.CI, home)
 		for j, path := range p.BasePaths {
-			if len(path) > 0 && path[0] == '~' {
-				p.BasePaths[j] = filepath.Join(home, path[1:])
-			}
+			p.BasePaths[j] = expandHome(path, home)
 		}
 		for j, g := range p.Groups {
-			if len(g.BasePath) > 0 && g.BasePath[0] == '~' {
-				p.Groups[j].BasePath = filepath.Join(home, g.BasePath[1:])
-			}
-			if len(g.MatchPath) > 0 && g.MatchPath[0] == '~' {
-				p.Groups[j].MatchPath = filepath.Join(home, g.MatchPath[1:])
-			}
+			p.Groups[j].BasePath = expandHome(g.BasePath, home)
+			p.Groups[j].MatchPath = expandHome(g.MatchPath, home)
+			expandRemoteHome(&p.Groups[j].Code, home)
+			expandRemoteHome(&p.Groups[j].Social, home)
+			expandRemoteHome(&p.Groups[j].CI, home)
+		}
+		for j := range p.Repos {
+			expandRemoteHome(&p.Repos[j].Code, home)
+			expandRemoteHome(&p.Repos[j].Social, home)
+			expandRemoteHome(&p.Repos[j].CI, home)
 		}
 		if fillPrefixDefaults && len(p.Prefixes) == 0 {
 			if len(cfg.Prefixes) > 0 {
@@ -235,6 +240,17 @@ func normaliseProfiles(cfg *Config, fillPrefixDefaults bool) {
 			p.Name = fmt.Sprintf("profile %d", i+1)
 		}
 	}
+}
+
+func expandHome(path, home string) string {
+	if len(path) > 0 && path[0] == '~' {
+		return filepath.Join(home, path[1:])
+	}
+	return path
+}
+
+func expandRemoteHome(remote *Remote, home string) {
+	remote.TokenFile = expandHome(remote.TokenFile, home)
 }
 
 // ResolveGroups returns the effective groups for the first profile (or derived

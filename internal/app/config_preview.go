@@ -147,6 +147,9 @@ func writeRemotePreview(b *strings.Builder, label string, r config.Remote, local
 	if r.TokenFile != "" {
 		fmt.Fprintf(b, "    token_file: %s\n", compactHome(r.TokenFile))
 	}
+	if r.AuthMode != "" {
+		fmt.Fprintf(b, "    auth_mode: %s\n", r.AuthMode)
+	}
 	if r.CloneProto != "" {
 		fmt.Fprintf(b, "    clone_proto: %s\n", r.CloneProto)
 	}
@@ -159,7 +162,7 @@ func writeRemotePreview(b *strings.Builder, label string, r config.Remote, local
 }
 
 func writeRemoteOverridePreview(b *strings.Builder, label string, r config.Remote) {
-	if r.Key() == "|||||" {
+	if r.Key() == "|||||||" {
 		return
 	}
 	parts := remoteOverrideParts(r)
@@ -185,6 +188,9 @@ func remoteOverrideParts(r config.Remote) []string {
 	}
 	if r.TokenFile != "" {
 		parts = append(parts, "token_file="+compactHome(r.TokenFile))
+	}
+	if r.AuthMode != "" {
+		parts = append(parts, "auth_mode="+r.AuthMode)
 	}
 	if r.CloneProto != "" {
 		parts = append(parts, "clone_proto="+r.CloneProto)

@@ -211,6 +211,7 @@ Config: ` + config.ConfigPath() + "\n")
 			Forge:       remote.Forge,
 			InstanceURL: remote.InstanceURL,
 			TokenFile:   remote.TokenFile,
+			AuthMode:    remote.AuthMode,
 			CloneProto:  remote.CloneProto,
 			SSHHost:     remote.SSHHost,
 		})

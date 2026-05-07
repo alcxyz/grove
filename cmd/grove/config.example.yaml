@@ -22,9 +22,11 @@ profiles:
     # social:
     #   owner: my-github-username
     #   forge: github
+    #   auth_mode: token # default; use "gh" to reuse gh auth login
     # ci:
     #   owner: my-github-username
     #   forge: github
+    #   auth_mode: token
     #
     # Per-repo overrides let one repo keep GitHub PRs/issues/CI while the
     # code hosting has moved to Forgejo:
@@ -59,6 +61,7 @@ profiles:
   # match_path: matches repo filesystem path (prefix). Either can trigger a match.
   - name: Work
     owner: my-org
+    # auth_mode: gh # GitHub-only: useful when org policy blocks PATs
     base_paths:
       - ~/dev/git/my-org
     prefixes:

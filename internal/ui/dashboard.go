@@ -685,7 +685,7 @@ func RenderAuthError(kind string, errs []string) string {
 	case "github":
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ GitHub API authentication required") + "\n\n")
-		b.WriteString(DimStyle.Render("  Configure token_file for GitHub remotes, or set GH_TOKEN / GITHUB_TOKEN, then press r to retry.") + "\n")
+		b.WriteString(DimStyle.Render("  Configure token_file or GH_TOKEN / GITHUB_TOKEN, or use auth_mode: gh with gh auth login, then press r to retry.") + "\n")
 	case "forgejo":
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ Forgejo authentication required") + "\n\n")
@@ -693,7 +693,7 @@ func RenderAuthError(kind string, errs []string) string {
 	case "mixed":
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ Multiple forge authentications failed") + "\n\n")
-		b.WriteString(DimStyle.Render("  Check GitHub token settings and Forgejo token_file settings, then press r to retry.") + "\n")
+		b.WriteString(DimStyle.Render("  Check GitHub token/gh settings and Forgejo token_file settings, then press r to retry.") + "\n")
 	default:
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ Forge authentication required") + "\n\n")

@@ -13,11 +13,15 @@ var (
 	dependencyLookPath = exec.LookPath
 	dependencyReadFile = os.ReadFile
 	dependencyGetenv   = os.Getenv
+	dependencyGHAuth   = func() error {
+		cmd := exec.Command("gh", "auth", "status", "-h", "github.com")
+		return cmd.Run()
+	}
 )
 
 // DependencyWarnings returns startup warnings for required provider tooling and
-// credentials. Forgejo and GitHub use direct HTTP token auth, so neither
-// forgejo-cli nor gh is a Grove provider dependency.
+// credentials. Forgejo uses direct HTTP token auth. GitHub can use direct
+// token auth or the gh CLI, depending on each resolved remote's auth_mode.
 func DependencyWarnings(cfg config.Config) []string {
 	var warnings []string
 	seen := map[string]struct{}{}
@@ -34,19 +38,35 @@ func DependencyWarnings(cfg config.Config) []string {
 	}
 
 	needsGitHubEnvToken := false
+	needsGitHubCLIAuth := false
 	for _, remote := range cfg.AllRemotes() {
 		if remote.Owner == "" {
 			continue
 		}
 		switch remote.EffectiveForge() {
 		case "github":
-			if remote.TokenFile == "" {
-				needsGitHubEnvToken = true
-			} else {
-				checkGitHubRemoteDependency(remote, add)
+			switch strings.ToLower(remote.EffectiveAuthMode()) {
+			case "gh":
+				needsGitHubCLIAuth = true
+			case "token":
+				if remote.TokenFile == "" {
+					needsGitHubEnvToken = true
+				} else {
+					checkGitHubRemoteDependency(remote, add)
+				}
+			default:
+				add(fmt.Sprintf("%s unsupported auth_mode %q; use token or gh", dependencyRemoteLabel(remote), remote.AuthMode))
 			}
 		case "forgejo":
 			checkForgejoRemoteDependency(remote, add)
+		}
+	}
+
+	if needsGitHubCLIAuth {
+		if _, err := dependencyLookPath("gh"); err != nil {
+			add("gh not found on PATH; GitHub remotes with auth_mode: gh will fail")
+		} else if err := dependencyGHAuth(); err != nil {
+			add("gh is not authenticated for github.com; run gh auth login")
 		}
 	}
 

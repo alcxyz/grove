@@ -30,6 +30,7 @@ type ProviderConfig struct {
 	Forge       string // "github", "forgejo"
 	InstanceURL string // base URL for non-GitHub forges
 	TokenFile   string // path to file containing API token
+	AuthMode    string // GitHub auth mode: "token" or "gh"
 	CloneProto  string // "https" or "ssh"
 	SSHHost     string // optional SSH clone host when it differs from InstanceURL host
 }

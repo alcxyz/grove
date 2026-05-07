@@ -77,9 +77,11 @@ yay -S grove-tui-bin
 
 ### Build from source
 
-Requires Go 1.22+. GitHub-backed and Forgejo-backed profiles use direct HTTP API calls. Configure `token_file` per remote, or set `GH_TOKEN` / `GITHUB_TOKEN` for GitHub. `gh` and `forgejo-cli` are not provider dependencies.
+Requires Go 1.22+. Forgejo-backed profiles use direct HTTP API calls with `token_file`. GitHub-backed profiles support `auth_mode: token` (default) with `token_file`, `GH_TOKEN`, or `GITHUB_TOKEN`, and `auth_mode: gh` for environments where an authenticated `gh` CLI is available but PATs are blocked.
 
 For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions for the configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata.
+
+Use `auth_mode: gh` for GitHub organizations that do not allow PATs. In that mode Grove shells out to `gh api` for PRs, issues, branches, CI, and repo enumeration, and `gh repo clone` for GitHub clones.
 
 ```sh
 git clone git@github.com:alcxyz/grove.git
@@ -160,6 +162,7 @@ Groups support two matching strategies: `match` matches against the repo name (p
 Remote resolution is concern-specific:
 
 - top-level `owner` / `forge` / `instance_url` / `token_file` / `clone_proto` define the default code-hosting remote
+- `auth_mode` controls GitHub authentication: `token` (default) or `gh`
 - `social` overrides PR + issue sourcing
 - `ci` overrides workflow / pipeline sourcing
 - a group may override `code`, `social`, and `ci` for every repo it matches

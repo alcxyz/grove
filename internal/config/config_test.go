@@ -392,6 +392,7 @@ func TestMergeRemoteClearsForgeSpecificFieldsWhenForgeChanges(t *testing.T) {
 		Forge:       "forgejo",
 		InstanceURL: "https://git.alc.xyz",
 		TokenFile:   "/tmp/forgejo-token",
+		AuthMode:    "gh",
 		CloneProto:  "ssh",
 		SSHHost:     "ssh-git.alc.xyz",
 	}
@@ -400,7 +401,7 @@ func TestMergeRemoteClearsForgeSpecificFieldsWhenForgeChanges(t *testing.T) {
 	if got.EffectiveForge() != "github" {
 		t.Fatalf("expected github remote, got %+v", got)
 	}
-	if got.InstanceURL != "" || got.TokenFile != "" || got.CloneProto != "" || got.SSHHost != "" {
+	if got.InstanceURL != "" || got.TokenFile != "" || got.AuthMode != "" || got.CloneProto != "" || got.SSHHost != "" {
 		t.Fatalf("forge-specific fields should be cleared when forge changes: %+v", got)
 	}
 }

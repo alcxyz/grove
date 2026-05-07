@@ -27,7 +27,7 @@ ADR-009 later split configured remotes into **code**, **social**, and **CI** con
 Add a `type` field to profiles: `local` (default, current behaviour) and `remote`.
 
 **Remote profiles:**
-- List repos via the profile's resolved **code** remote `Provider`, using its `owner`, `forge`, `instance_url`, `token_file`, `clone_proto`, and `ssh_host`, filtered by `prefixes`.
+- List repos via the profile's resolved **code** remote `Provider`, using its `owner`, `forge`, `instance_url`, `token_file`, `auth_mode`, `clone_proto`, and `ssh_host`, filtered by `prefixes`.
 - Show a dashboard with API-derived columns: description, language, visibility, stars/forks, last pushed, archived status.
 - `enter` opens a read-only detail view with full repo metadata (description, topics, license, default branch, issue/PR counts).
 - PRs, CI, and Issues tabs may work via the resolved **social** and **CI** remotes when a matching local/remote repo name can be resolved. They are best-effort context, not a prerequisite for remote browsing.

@@ -27,6 +27,7 @@ type Remote struct {
 	Forge       string `yaml:"forge"`        // "github" (default), "forgejo"
 	InstanceURL string `yaml:"instance_url"` // base URL for non-GitHub forges
 	TokenFile   string `yaml:"token_file"`   // path to file containing API token
+	AuthMode    string `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
 	CloneProto  string `yaml:"clone_proto"`  // "https" (default) or "ssh"
 	SSHHost     string `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
 }
@@ -46,6 +47,7 @@ type Profile struct {
 	Forge       string         `yaml:"forge"`        // "github" (default), "forgejo"
 	InstanceURL string         `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
 	TokenFile   string         `yaml:"token_file"`   // path to file containing API token
+	AuthMode    string         `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
 	CloneProto  string         `yaml:"clone_proto"`  // "https" (default) or "ssh"
 	SSHHost     string         `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
 	BasePaths   []string       `yaml:"base_paths"`
@@ -385,6 +387,7 @@ func (r Remote) Key() string {
 		r.EffectiveForge(),
 		r.InstanceURL,
 		r.TokenFile,
+		r.AuthMode,
 		r.CloneProto,
 		r.SSHHost,
 	}, "|")
@@ -411,6 +414,14 @@ func (r Remote) EffectiveForge() string {
 	return r.Forge
 }
 
+// EffectiveAuthMode returns the GitHub auth mode after applying defaults.
+func (r Remote) EffectiveAuthMode() string {
+	if r.AuthMode == "" {
+		return "token"
+	}
+	return r.AuthMode
+}
+
 func mergeRemote(base, override Remote) Remote {
 	if override.Owner != "" {
 		base.Owner = override.Owner
@@ -422,6 +433,7 @@ func mergeRemote(base, override Remote) Remote {
 		if base.EffectiveForge() != override.EffectiveForge() {
 			base.InstanceURL = ""
 			base.TokenFile = ""
+			base.AuthMode = ""
 			base.CloneProto = ""
 			base.SSHHost = ""
 		}
@@ -432,6 +444,9 @@ func mergeRemote(base, override Remote) Remote {
 	}
 	if override.TokenFile != "" {
 		base.TokenFile = override.TokenFile
+	}
+	if override.AuthMode != "" {
+		base.AuthMode = override.AuthMode
 	}
 	if override.CloneProto != "" {
 		base.CloneProto = override.CloneProto
@@ -458,6 +473,7 @@ func (p Profile) codeDefaults() Remote {
 		Forge:       p.Forge,
 		InstanceURL: p.InstanceURL,
 		TokenFile:   p.TokenFile,
+		AuthMode:    p.AuthMode,
 		CloneProto:  p.CloneProto,
 		SSHHost:     p.SSHHost,
 	}

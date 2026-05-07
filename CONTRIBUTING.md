@@ -2,7 +2,7 @@
 
 ## Development setup
 
-Prerequisites: Go 1.26+. GitHub-backed profiles require the [`gh` CLI](https://cli.github.com/); Forgejo-backed profiles use token auth via `token_file`.
+Prerequisites: Go 1.26+. GitHub-backed profiles use `auth_mode: token` by default, or the [`gh` CLI](https://cli.github.com/) when configured with `auth_mode: gh`. Forgejo-backed profiles use token auth via `token_file`.
 
 ```bash
 git clone https://github.com/alcxyz/grove.git

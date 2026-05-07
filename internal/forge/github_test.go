@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -206,6 +207,90 @@ func TestGitHubCloneURLUsesConfiguredSSHHost(t *testing.T) {
 	want := "git@ssh.github.example:alcxyz/grove.git"
 	if got != want {
 		t.Fatalf("cloneURL() = %q, want %q", got, want)
+	}
+}
+
+func TestGitHubGHAuthModeUsesGHAPI(t *testing.T) {
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	script := `#!/bin/sh
+if [ "$1" != "api" ]; then
+  echo "unexpected command: $*" >&2
+  exit 1
+fi
+case "$2" in
+  /repos/alcxyz/grove/issues*)
+    printf '[{"number":8,"title":"API via gh","user":{"login":"alc"},"state":"open","created_at":"2026-05-01T12:00:00Z","updated_at":"2026-05-05T12:00:00Z","html_url":"https://github.com/alcxyz/grove/issues/8"}]'
+    ;;
+  *)
+    echo "unexpected path: $2" >&2
+    exit 1
+    ;;
+esac
+`
+	if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	provider := NewGitHubProvider(ProviderConfig{AuthMode: "gh"})
+	issues, err := provider.ListIssues("alcxyz/grove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(issues) != 1 || issues[0].Title != "API via gh" {
+		t.Fatalf("unexpected issues: %+v", issues)
+	}
+}
+
+func TestGitHubGHAuthModeWrapsAuthFailures(t *testing.T) {
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	script := `#!/bin/sh
+echo "gh: To get started with GitHub CLI, run: gh auth login" >&2
+exit 1
+`
+	if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	provider := NewGitHubProvider(ProviderConfig{AuthMode: "gh"})
+	_, err := provider.ListIssues("alcxyz/grove")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), ErrNotAuthenticated.Error()) {
+		t.Fatalf("expected auth error, got %v", err)
+	}
+}
+
+func TestGitHubGHAuthModeClonesWithGHRepoClone(t *testing.T) {
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	recordPath := filepath.Join(dir, "args")
+	script := `#!/bin/sh
+printf '%s\n' "$*" > "` + recordPath + `"
+exit 0
+`
+	if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	provider := NewGitHubProvider(ProviderConfig{AuthMode: "gh"})
+	if err := provider.CloneRepo("alcxyz", "grove", filepath.Join(dir, "grove")); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.TrimSpace(string(data))
+	if !strings.HasPrefix(got, "repo clone alcxyz/grove ") || !strings.HasSuffix(got, " -- --quiet") {
+		t.Fatalf("unexpected gh args: %q", got)
 	}
 }
 

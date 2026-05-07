@@ -32,6 +32,7 @@ func Run(cfg config.Config) {
 			Forge:       codeRemote.Forge,
 			InstanceURL: codeRemote.InstanceURL,
 			TokenFile:   codeRemote.TokenFile,
+			AuthMode:    codeRemote.AuthMode,
 			CloneProto:  codeRemote.CloneProto,
 			SSHHost:     codeRemote.SSHHost,
 		})

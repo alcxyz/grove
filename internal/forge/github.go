@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ var githubAPISem = make(chan struct{}, 5)
 type GitHubProvider struct {
 	apiURL     string
 	tokenFile  string
+	authMode   string
 	cloneProto string
 	sshHost    string
 
@@ -33,9 +35,14 @@ func NewGitHubProvider(cfg ProviderConfig) *GitHubProvider {
 	if proto == "" {
 		proto = "https"
 	}
+	authMode := strings.ToLower(cfg.AuthMode)
+	if authMode == "" {
+		authMode = "token"
+	}
 	return &GitHubProvider{
 		apiURL:     "https://api.github.com",
 		tokenFile:  cfg.TokenFile,
+		authMode:   authMode,
 		cloneProto: proto,
 		sshHost:    cfg.SSHHost,
 	}
@@ -62,6 +69,9 @@ func (g *GitHubProvider) loadToken() (string, error) {
 }
 
 func (g *GitHubProvider) apiGet(path string) ([]byte, error) {
+	if g.authMode == "gh" {
+		return g.ghAPIGet(path)
+	}
 	req, err := http.NewRequest(http.MethodGet, g.apiURL+path, nil)
 	if err != nil {
 		return nil, err
@@ -98,6 +108,37 @@ func (g *GitHubProvider) apiDo(req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("github API %s: %d%s", req.URL.Path, resp.StatusCode, githubAPIMessage(body))
 	}
 	return body, nil
+}
+
+func (g *GitHubProvider) ghAPIGet(path string) ([]byte, error) {
+	githubAPISem <- struct{}{}
+	defer func() { <-githubAPISem }()
+	cmd := exec.Command("gh", "api", path)
+	out, err := cmd.Output()
+	if err == nil {
+		return out, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return nil, githubCLIError(path, exitErr.Stderr)
+	}
+	return nil, err
+}
+
+func githubCLIError(path string, stderr []byte) error {
+	msg := strings.TrimSpace(string(stderr))
+	if msg == "" {
+		msg = "gh api failed"
+	}
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "not logged") ||
+		strings.Contains(lower, "auth login") ||
+		strings.Contains(lower, "authentication") ||
+		strings.Contains(lower, "requires auth") ||
+		strings.Contains(lower, "saml") {
+		return fmt.Errorf("%w: gh api %s: %s", ErrNotAuthenticated, path, msg)
+	}
+	return fmt.Errorf("gh api %s: %s", path, msg)
 }
 
 func githubAPIMessage(body []byte) string {
@@ -526,6 +567,9 @@ func (g *GitHubProvider) listReposEndpoint(path string) ([]string, error) {
 
 func (g *GitHubProvider) CloneRepo(owner, name, targetDir string) error {
 	cmd := exec.Command("git", "clone", "--quiet", g.cloneURL(owner, name), targetDir)
+	if g.authMode == "gh" {
+		cmd = exec.Command("gh", "repo", "clone", owner+"/"+name, targetDir, "--", "--quiet")
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

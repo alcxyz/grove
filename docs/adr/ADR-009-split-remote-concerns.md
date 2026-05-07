@@ -33,7 +33,7 @@ Split remote configuration into three concerns:
 - **Social**: pull requests and issues
 - **CI**: workflow / pipeline runs
 
-The top-level profile fields (`owner`, `forge`, `instance_url`, `token_file`, `clone_proto`) remain the default **code** remote.
+The top-level profile fields (`owner`, `forge`, `instance_url`, `token_file`, `auth_mode`, `clone_proto`) remain the default **code** remote.
 
 Profiles gain:
 

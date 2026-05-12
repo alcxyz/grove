@@ -17,6 +17,10 @@ var (
 		cmd := exec.Command("gh", "auth", "status", "-h", "github.com")
 		return cmd.Run()
 	}
+	dependencyAzureDevOps = func() error {
+		cmd := exec.Command("az", "repos", "--help")
+		return cmd.Run()
+	}
 )
 
 // DependencyWarnings returns startup warnings for required provider tooling and
@@ -39,6 +43,7 @@ func DependencyWarnings(cfg config.Config) []string {
 
 	needsGitHubEnvToken := false
 	needsGitHubCLIAuth := false
+	needsAzureCLI := false
 	for _, remote := range cfg.AllRemotes() {
 		if remote.Owner == "" {
 			continue
@@ -59,6 +64,11 @@ func DependencyWarnings(cfg config.Config) []string {
 			}
 		case "forgejo":
 			checkForgejoRemoteDependency(remote, add)
+		case "azuredevops":
+			needsAzureCLI = true
+			if strings.TrimSpace(remote.Project) == "" {
+				add(fmt.Sprintf("%s missing project", dependencyRemoteLabel(remote)))
+			}
 		}
 	}
 
@@ -72,6 +82,13 @@ func DependencyWarnings(cfg config.Config) []string {
 
 	if needsGitHubEnvToken && !dependencyGitHubEnvTokenConfigured() {
 		add("GitHub token not configured; public API calls may work, but private repos and rate limits may fail")
+	}
+	if needsAzureCLI {
+		if _, err := dependencyLookPath("az"); err != nil {
+			add("az not found on PATH; Azure DevOps remotes use Azure CLI authentication and will fail")
+		} else if err := dependencyAzureDevOps(); err != nil {
+			add("az repos unavailable; install or enable the azure-devops Azure CLI extension")
+		}
 	}
 
 	return warnings

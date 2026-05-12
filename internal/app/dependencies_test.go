@@ -10,20 +10,27 @@ import (
 )
 
 func withDependencyChecks(t *testing.T, lookPath func(string) (string, error), readFile func(string) ([]byte, error), getenv func(string) string, ghAuth func() error) {
+	withDependencyChecksAndAzure(t, lookPath, readFile, getenv, ghAuth, func() error { return nil })
+}
+
+func withDependencyChecksAndAzure(t *testing.T, lookPath func(string) (string, error), readFile func(string) ([]byte, error), getenv func(string) string, ghAuth func() error, azDevOps func() error) {
 	t.Helper()
 	oldLookPath := dependencyLookPath
 	oldReadFile := dependencyReadFile
 	oldGetenv := dependencyGetenv
 	oldGHAuth := dependencyGHAuth
+	oldAzureDevOps := dependencyAzureDevOps
 	dependencyLookPath = lookPath
 	dependencyReadFile = readFile
 	dependencyGetenv = getenv
 	dependencyGHAuth = ghAuth
+	dependencyAzureDevOps = azDevOps
 	t.Cleanup(func() {
 		dependencyLookPath = oldLookPath
 		dependencyReadFile = oldReadFile
 		dependencyGetenv = oldGetenv
 		dependencyGHAuth = oldGHAuth
+		dependencyAzureDevOps = oldAzureDevOps
 	})
 }
 
@@ -175,5 +182,101 @@ func TestDependencyWarningsGitHubGHAuthModeReportsMissingAuth(t *testing.T) {
 	}
 	if strings.Contains(warnings, "GitHub token not configured") {
 		t.Fatalf("auth_mode gh should not require token auth: %s", warnings)
+	}
+}
+
+func TestDependencyWarningsAzureDevOpsRequiresAZAndProject(t *testing.T) {
+	withDependencyChecksAndAzure(t,
+		func(name string) (string, error) {
+			if name == "git" {
+				return "/usr/bin/git", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+		func() error { return nil },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:  "ado",
+		Owner: "acme",
+		Forge: "azuredevops",
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	for _, want := range []string{
+		"missing project",
+		"az not found on PATH",
+	} {
+		if !strings.Contains(warnings, want) {
+			t.Fatalf("warnings missing %q: %s", want, warnings)
+		}
+	}
+	if strings.Contains(warnings, "GitHub token not configured") {
+		t.Fatalf("Azure DevOps should not require GitHub token auth: %s", warnings)
+	}
+}
+
+func TestDependencyWarningsAzureDevOpsWithAZDoesNotRequireTokenFile(t *testing.T) {
+	withDependencyChecksAndAzure(t,
+		func(name string) (string, error) {
+			switch name {
+			case "git":
+				return "/usr/bin/git", nil
+			case "az":
+				return "/usr/bin/az", nil
+			default:
+				return "", exec.ErrNotFound
+			}
+		},
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+		func() error { return nil },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:    "ado",
+		Owner:   "acme",
+		Forge:   "azuredevops",
+		Project: "Core",
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	if warnings != "" {
+		t.Fatalf("expected no warnings, got %s", warnings)
+	}
+}
+
+func TestDependencyWarningsAzureDevOpsReportsMissingExtension(t *testing.T) {
+	withDependencyChecksAndAzure(t,
+		func(name string) (string, error) {
+			switch name {
+			case "git":
+				return "/usr/bin/git", nil
+			case "az":
+				return "/usr/bin/az", nil
+			default:
+				return "", exec.ErrNotFound
+			}
+		},
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+		func() error { return exec.ErrNotFound },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:    "ado",
+		Owner:   "acme",
+		Forge:   "azuredevops",
+		Project: "Core",
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	if !strings.Contains(warnings, "az repos unavailable") {
+		t.Fatalf("warnings missing Azure DevOps extension dependency: %s", warnings)
 	}
 }

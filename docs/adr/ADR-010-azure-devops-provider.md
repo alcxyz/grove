@@ -1,7 +1,8 @@
 # ADR-010: Azure DevOps provider support
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-05-03
+**Revision 2026-05-12:** Initial implementation uses Azure CLI authentication only.
 **Applies to:** `internal/forge/`, `internal/config/config.go`, `internal/app/commands.go`, `internal/clone/`
 
 ## Context
@@ -16,8 +17,8 @@ Azure DevOps is not just another GitHub-like forge:
 - Azure Repos is the code-hosting concern.
 - Azure Boards work items are issue-like but not identical to GitHub/Forgejo issues.
 - Azure Pipelines builds are CI-like but are modeled differently from GitHub Actions and Forgejo Actions.
-- Authentication is commonly PAT-based, and REST APIs require an explicit `api-version`.
-- Clone URLs are returned by the Git repositories API and may be HTTPS or SSH depending on organization policy.
+- Authentication is handled through the Azure DevOps CLI for the initial provider.
+- Clone URLs are returned by Azure DevOps metadata and may be HTTPS or SSH depending on organization policy.
 
 This intersects with ADR-003 remote profiles. Remote discovery will need richer repo
 metadata than the current `Provider.ListRepos` method returns, and Azure DevOps is
@@ -26,8 +27,11 @@ more than a simple `owner/name` string.
 
 ## Decision
 
-Add Azure DevOps as a provider named `azuredevops`, but do it after the provider
-capabilities and remote-discovery metadata shape are clarified.
+Add Azure DevOps as a provider named `azuredevops`. The first implementation is
+intentionally Azure CLI-only: grove shells out to the `az` DevOps extension and
+does not manage Azure DevOps PAT files directly. Authentication is delegated to
+`az devops login`, configured Azure CLI credentials, or whatever credential
+source the Azure DevOps CLI supports.
 
 Azure DevOps config should extend the existing remote block model rather than
 introducing a parallel config tree:
@@ -39,7 +43,6 @@ profiles:
     forge: azuredevops
     instance_url: https://dev.azure.com/my-organization
     project: MyProject
-    token_file: ~/.config/azure-devops/pat
     clone_proto: https
 ```
 
@@ -52,9 +55,13 @@ Initial provider scope:
 - List repositories in an organization/project.
 - List pull requests for a repository.
 - List branches for a repository.
-- List recent builds/pipeline runs for a repository where Azure DevOps exposes a stable mapping.
 - Clone using provider-returned clone URLs where possible.
-- Build browser URLs for repo, branch, commit, PR, build, and work item targets.
+- Build browser URLs for repo, branch, and commit targets.
+
+Deferred provider scope:
+
+- List recent builds/pipeline runs for a repository where Azure DevOps exposes a stable mapping.
+- Build browser URLs for PR, build, and work item targets when the CLI returns stable links.
 
 Issue/work-item support should be cautious:
 
@@ -91,9 +98,9 @@ instead of adding two incompatible extensions.
 ## Alternatives Considered
 
 **Implement Azure DevOps immediately with the current Provider interface** --
-possible for already-cloned repos, but likely to be refactored once ADR-003 adds
-remote repo metadata. This is acceptable only if Azure support is urgent and
-explicitly scoped to local repos.
+accepted for an initial CLI-only local-repo provider. This gives usable PR,
+branch, URL, and clone support without adding direct Azure DevOps PAT handling.
+It may still be refactored once ADR-003 adds richer remote repo metadata.
 
 **Wait until ADR-003 is implemented first** -- cleaner because remote discovery
 will define the richer provider contract. The tradeoff is delaying Azure support
@@ -105,15 +112,15 @@ reason about.
 
 ## Consequences
 
-- Config likely gains `project` on `Remote` / profile remote defaults.
+- Config gains `project` on `Remote` / profile remote defaults.
 - Cache keys must include `project`.
 - URL parsing and repo identity need to handle `organization/project/repo`, not only `owner/repo`.
 - Work items should not be treated as exact GitHub issue equivalents without
   explicit mapping decisions.
-- ADR-003 should be implemented with provider capabilities so Azure DevOps can
+- ADR-003 should still be implemented with provider capabilities so Azure DevOps can
   participate without special-casing the TUI.
-- Tests need provider-level fixtures because most Azure DevOps behavior cannot be
-  validated through a public unauthenticated target.
+- Tests use mocked `az` command fixtures because most Azure DevOps behavior
+  cannot be validated through a public unauthenticated target.
 
 ## References
 

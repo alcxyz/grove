@@ -221,6 +221,24 @@ func TestCacheKey_ChangesOnRemoteRepoNameChange(t *testing.T) {
 	}
 }
 
+func TestCacheKey_ChangesOnRemoteProjectChange(t *testing.T) {
+	c1 := Config{Profiles: []Profile{{
+		Name:    "ado",
+		Owner:   "acme",
+		Forge:   "azuredevops",
+		Project: "Core",
+	}}}
+	c2 := Config{Profiles: []Profile{{
+		Name:    "ado",
+		Owner:   "acme",
+		Forge:   "azuredevops",
+		Project: "Platform",
+	}}}
+	if c1.CacheKey() == c2.CacheKey() {
+		t.Error("cache keys should differ when an Azure DevOps project changes")
+	}
+}
+
 func TestProfileRemoteResolution(t *testing.T) {
 	p := Profile{
 		Name:        "alcxyz",
@@ -391,6 +409,7 @@ func TestMergeRemoteClearsForgeSpecificFieldsWhenForgeChanges(t *testing.T) {
 		Owner:       "alcxyz",
 		Forge:       "forgejo",
 		InstanceURL: "https://git.alc.xyz",
+		Project:     "Core",
 		TokenFile:   "/tmp/forgejo-token",
 		AuthMode:    "gh",
 		CloneProto:  "ssh",
@@ -401,8 +420,32 @@ func TestMergeRemoteClearsForgeSpecificFieldsWhenForgeChanges(t *testing.T) {
 	if got.EffectiveForge() != "github" {
 		t.Fatalf("expected github remote, got %+v", got)
 	}
-	if got.InstanceURL != "" || got.TokenFile != "" || got.AuthMode != "" || got.CloneProto != "" || got.SSHHost != "" {
+	if got.InstanceURL != "" || got.Project != "" || got.TokenFile != "" || got.AuthMode != "" || got.CloneProto != "" || got.SSHHost != "" {
 		t.Fatalf("forge-specific fields should be cleared when forge changes: %+v", got)
+	}
+}
+
+func TestProfileAzureDevOpsProjectResolution(t *testing.T) {
+	p := Profile{
+		Name:    "work",
+		Owner:   "acme",
+		Forge:   "azuredevops",
+		Project: "Core",
+		Repos: []RepoOverride{{
+			Name: "service-api",
+			Social: Remote{
+				Project: "Platform",
+			},
+		}},
+	}
+
+	code := p.CodeRemote("service-api", "")
+	if code.Project != "Core" {
+		t.Fatalf("unexpected code project: %+v", code)
+	}
+	social := p.SocialRemote("service-api", "")
+	if social.Project != "Platform" {
+		t.Fatalf("unexpected social project override: %+v", social)
 	}
 }
 

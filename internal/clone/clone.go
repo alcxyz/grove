@@ -31,6 +31,7 @@ func Run(cfg config.Config) {
 		prov, err := forge.NewProvider(forge.ProviderConfig{
 			Forge:       codeRemote.Forge,
 			InstanceURL: codeRemote.InstanceURL,
+			Project:     codeRemote.Project,
 			TokenFile:   codeRemote.TokenFile,
 			AuthMode:    codeRemote.AuthMode,
 			CloneProto:  codeRemote.CloneProto,

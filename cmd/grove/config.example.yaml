@@ -79,6 +79,17 @@ profiles:
         match: infra-
         # no base_path → falls back to base_paths[0]
 
+  # Azure DevOps profile: uses Azure CLI authentication (`az devops login` or
+  # existing Azure CLI credentials) instead of grove-managed token files.
+  - name: Azure DevOps
+    owner: my-organization
+    forge: azuredevops
+    instance_url: https://dev.azure.com/my-organization
+    project: MyProject
+    base_paths:
+      - ~/dev/git/azure
+    prefixes: []
+
 # How often (in seconds) the dashboard auto-refreshes in the background.
 refresh_secs: 300
 

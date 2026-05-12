@@ -27,8 +27,9 @@ type Provider interface {
 
 // ProviderConfig holds the fields needed to construct a Provider.
 type ProviderConfig struct {
-	Forge       string // "github", "forgejo"
+	Forge       string // "github", "forgejo", "azuredevops"
 	InstanceURL string // base URL for non-GitHub forges
+	Project     string // Azure DevOps project for azuredevops
 	TokenFile   string // path to file containing API token
 	AuthMode    string // GitHub auth mode: "token" or "gh"
 	CloneProto  string // "https" or "ssh"
@@ -43,6 +44,8 @@ func NewProvider(cfg ProviderConfig) (Provider, error) {
 		return NewGitHubProvider(cfg), nil
 	case "forgejo":
 		return NewForgejoProvider(cfg)
+	case "azuredevops":
+		return NewAzureDevOpsProvider(cfg)
 	default:
 		return nil, fmt.Errorf("unknown forge: %q", cfg.Forge)
 	}

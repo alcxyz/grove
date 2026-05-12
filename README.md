@@ -1,6 +1,6 @@
 # grove
 
-TUI for multi-repo git forge monitoring across GitHub and Forgejo. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
+TUI for multi-repo git forge monitoring across GitHub, Forgejo, and Azure DevOps. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
 
 ```
                {o,o}
@@ -77,11 +77,13 @@ yay -S grove-tui-bin
 
 ### Build from source
 
-Requires Go 1.22+. Forgejo-backed profiles use direct HTTP API calls with `token_file`. GitHub-backed profiles support `auth_mode: token` (default) with `token_file`, `GH_TOKEN`, or `GITHUB_TOKEN`, and `auth_mode: gh` for environments where an authenticated `gh` CLI is available but PATs are blocked.
+Requires Go 1.22+. Forgejo-backed profiles use direct HTTP API calls with `token_file`. GitHub-backed profiles support `auth_mode: token` (default) with `token_file`, `GH_TOKEN`, or `GITHUB_TOKEN`, and `auth_mode: gh` for environments where an authenticated `gh` CLI is available but PATs are blocked. Azure DevOps-backed profiles use the Azure CLI DevOps extension (`az repos ...`) and require `project` in config.
 
 For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions for the configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata.
 
 Use `auth_mode: gh` for GitHub organizations that do not allow PATs. In that mode Grove shells out to `gh api` for PRs, issues, branches, CI, and repo enumeration, and `gh repo clone` for GitHub clones.
+
+For Azure DevOps, authenticate outside grove with `az devops login` or your normal configured Azure CLI credentials. Grove does not read Azure DevOps token files directly.
 
 ```sh
 git clone git@github.com:alcxyz/grove.git
@@ -153,6 +155,15 @@ profiles:
           repo: annaetattoo.github.io
           forge: github
 
+  - name: Azure DevOps
+    owner: my-organization
+    forge: azuredevops
+    instance_url: https://dev.azure.com/my-organization
+    project: MyProject
+    base_paths:
+      - ~/dev/git/azure
+    prefixes: []
+
 refresh_secs: 300
 screensaver_secs: 300
 ```
@@ -163,6 +174,7 @@ Remote resolution is concern-specific:
 
 - top-level `owner` / `forge` / `instance_url` / `token_file` / `clone_proto` define the default code-hosting remote
 - `auth_mode` controls GitHub authentication: `token` (default) or `gh`
+- `project` is required for `azuredevops` remotes; Azure DevOps uses Azure CLI authentication (`az devops login` / configured `az`) instead of grove-managed token files
 - `social` overrides PR + issue sourcing
 - `ci` overrides workflow / pipeline sourcing
 - a group may override `code`, `social`, and `ci` for every repo it matches

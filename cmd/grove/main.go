@@ -210,6 +210,7 @@ Config: ` + config.ConfigPath() + "\n")
 		prov, err := forge.NewProvider(forge.ProviderConfig{
 			Forge:       remote.Forge,
 			InstanceURL: remote.InstanceURL,
+			Project:     remote.Project,
 			TokenFile:   remote.TokenFile,
 			AuthMode:    remote.AuthMode,
 			CloneProto:  remote.CloneProto,

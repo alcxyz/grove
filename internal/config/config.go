@@ -24,8 +24,9 @@ type Group struct {
 type Remote struct {
 	Owner       string `yaml:"owner"`        // org or username
 	Repo        string `yaml:"repo"`         // optional remote repo name; defaults to local repo name
-	Forge       string `yaml:"forge"`        // "github" (default), "forgejo"
+	Forge       string `yaml:"forge"`        // "github" (default), "forgejo", "azuredevops"
 	InstanceURL string `yaml:"instance_url"` // base URL for non-GitHub forges
+	Project     string `yaml:"project"`      // Azure DevOps project for azuredevops remotes
 	TokenFile   string `yaml:"token_file"`   // path to file containing API token
 	AuthMode    string `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
 	CloneProto  string `yaml:"clone_proto"`  // "https" (default) or "ssh"
@@ -44,8 +45,9 @@ type RepoOverride struct {
 type Profile struct {
 	Name        string         `yaml:"name"`
 	Owner       string         `yaml:"owner"`        // org or username; "" = no forge API
-	Forge       string         `yaml:"forge"`        // "github" (default), "forgejo"
+	Forge       string         `yaml:"forge"`        // "github" (default), "forgejo", "azuredevops"
 	InstanceURL string         `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
+	Project     string         `yaml:"project"`      // Azure DevOps project for azuredevops profiles
 	TokenFile   string         `yaml:"token_file"`   // path to file containing API token
 	AuthMode    string         `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
 	CloneProto  string         `yaml:"clone_proto"`  // "https" (default) or "ssh"
@@ -386,6 +388,7 @@ func (r Remote) Key() string {
 		r.Repo,
 		r.EffectiveForge(),
 		r.InstanceURL,
+		r.Project,
 		r.TokenFile,
 		r.AuthMode,
 		r.CloneProto,
@@ -432,6 +435,7 @@ func mergeRemote(base, override Remote) Remote {
 	if override.Forge != "" {
 		if base.EffectiveForge() != override.EffectiveForge() {
 			base.InstanceURL = ""
+			base.Project = ""
 			base.TokenFile = ""
 			base.AuthMode = ""
 			base.CloneProto = ""
@@ -441,6 +445,9 @@ func mergeRemote(base, override Remote) Remote {
 	}
 	if override.InstanceURL != "" {
 		base.InstanceURL = override.InstanceURL
+	}
+	if override.Project != "" {
+		base.Project = override.Project
 	}
 	if override.TokenFile != "" {
 		base.TokenFile = override.TokenFile
@@ -472,6 +479,7 @@ func (p Profile) codeDefaults() Remote {
 		Owner:       p.Owner,
 		Forge:       p.Forge,
 		InstanceURL: p.InstanceURL,
+		Project:     p.Project,
 		TokenFile:   p.TokenFile,
 		AuthMode:    p.AuthMode,
 		CloneProto:  p.CloneProto,

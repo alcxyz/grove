@@ -60,14 +60,22 @@ brew install grove
 ### Nix
 
 ```sh
-nix profile install github:alcxyz/grove
+nix profile install github:alcxyz/grove/main
 ```
 
 Or in a flake:
 
 ```nix
-inputs.grove.url = "github:alcxyz/grove";
+inputs.grove.url = "github:alcxyz/grove/main";
 ```
+
+For an unreleased development build, point at the branch explicitly:
+
+```sh
+nix profile install github:alcxyz/grove/dev
+```
+
+Development branch builds report a non-release version such as `0.9.2-dev`.
 
 ### AUR (Arch Linux)
 
@@ -385,10 +393,11 @@ Existing repos (detected by the presence of a `.git` directory) are skipped. Up 
 
 Releases are automated. To publish a new version:
 
-1. Bump the `VERSION` file
+1. Bump the `VERSION` file on `dev` to a plain release version like `0.9.2`
 2. Open and merge the GitHub PR from `dev` to `main`
 3. Wait for GitHub `main` CI to finish
 4. Fast-forward the Forgejo mirror to the exact GitHub `main` commit
+5. Bump `dev` to the next non-release version like `0.9.3-dev`
 
 CI runs tests, creates a git tag from `VERSION`, and triggers goreleaser which builds binaries and publishes to GitHub Releases, Homebrew, and AUR.
 

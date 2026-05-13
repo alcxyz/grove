@@ -64,6 +64,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Validate release version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          VERSION="$(cat VERSION)"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::main releases require VERSION to be plain semver, got $VERSION"
+            exit 1
+          fi
+
       - name: GoReleaser snapshot
         uses: goreleaser/goreleaser-action@v7
         with:

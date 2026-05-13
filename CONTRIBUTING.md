@@ -83,12 +83,15 @@ Use conventional-ish prefixes to keep history scannable:
 
 Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Actions. The `VERSION` file is the single source of truth.
 
+`main` and release tags use plain `x.y.z` versions. Long-lived development branches use non-release versions such as `0.9.2-dev`, so branch-based Nix builds and `grove --version` do not present themselves as released builds.
+
 To cut a release:
 
-1. Bump the `VERSION` file on `dev`
+1. Bump the `VERSION` file on `dev` to a plain release version like `0.9.2`
 2. Merge `dev -> main` on the integration authority
 3. Create or push the release tag from the integration authority or a trusted local clone
 4. Push the trusted tag to GitHub if GitHub Releases/Homebrew/AUR are used as distribution surfaces
+5. Bump `dev` to the next non-release version like `0.9.3-dev`
 
 This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).
 

@@ -60,14 +60,22 @@ brew install grove
 ### Nix
 
 ```sh
-nix profile install github:alcxyz/grove
+nix profile install github:alcxyz/grove/main
 ```
 
 Or in a flake:
 
 ```nix
-inputs.grove.url = "github:alcxyz/grove";
+inputs.grove.url = "github:alcxyz/grove/main";
 ```
+
+For an unreleased development build, point at the branch explicitly:
+
+```sh
+nix profile install github:alcxyz/grove/dev
+```
+
+Development branch builds report a non-release version such as `0.9.2-dev`.
 
 ### AUR (Arch Linux)
 
@@ -402,10 +410,11 @@ Existing repos (detected by the presence of a `.git` directory) are skipped. Up 
 
 Releases are automated. To publish a new version:
 
-1. Bump the `VERSION` file
+1. Bump the `VERSION` file to a plain release version like `0.9.2`
 2. Merge `dev -> main` on the repository's integration authority
 3. Create or push the release tag from the authority or a trusted local clone
 4. Push the trusted history and tags to GitHub if GitHub Releases/Homebrew/AUR are used
+5. Bump `dev` to the next non-release version like `0.9.3-dev`
 
 CI runs tests and goreleaser builds binaries for GitHub Releases, Homebrew, and AUR.
 

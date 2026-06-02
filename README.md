@@ -85,11 +85,13 @@ yay -S grove-tui-bin
 
 ### Build from source
 
-Requires Go 1.22+. Forgejo-backed profiles use direct HTTP API calls with `token_file`. GitHub-backed profiles support `auth_mode: token` (default) with `token_file`, `GH_TOKEN`, or `GITHUB_TOKEN`, and `auth_mode: gh` for environments where an authenticated `gh` CLI is available but PATs are blocked. Azure DevOps-backed profiles use the Azure CLI DevOps extension (`az repos ...`) and require `project` in config.
+Requires Go 1.22+. Forgejo-backed profiles support `auth_mode: token` (default) with `token_file`, and `auth_mode: tea` for environments where an authenticated `tea` CLI is preferred. GitHub-backed profiles support `auth_mode: token` (default) with `token_file`, `GH_TOKEN`, or `GITHUB_TOKEN`, and `auth_mode: gh` for environments where an authenticated `gh` CLI is available but PATs are blocked. Azure DevOps-backed profiles use the Azure CLI DevOps extension (`az repos ...`) and require `project` in config.
 
 For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions for the configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata.
 
 Use `auth_mode: gh` for GitHub organizations that do not allow PATs. In that mode Grove shells out to `gh api` for PRs, issues, branches, CI, and repo enumeration, and `gh repo clone` for GitHub clones.
+
+Use `auth_mode: tea` for Forgejo/Gitea instances when you want Grove to reuse `tea` CLI authentication. In that mode Grove shells out to `tea api` for PRs, issues, branches, CI, and repo enumeration, and `tea clone` for Forgejo clones. Configure the login first with `tea logins add`.
 
 For Azure DevOps, authenticate outside grove with `az devops login` or your normal configured Azure CLI credentials. Grove does not read Azure DevOps token files directly.
 
@@ -189,7 +191,7 @@ Groups support two matching strategies: `match` matches against the repo name (p
 Remote resolution is concern-specific:
 
 - top-level `owner` / `forge` / `instance_url` / `token_file` / `clone_proto` define the default code-hosting remote
-- `auth_mode` controls GitHub authentication: `token` (default) or `gh`
+- `auth_mode` controls provider authentication: `token` (default), `gh` for GitHub CLI auth, or `tea` for Forgejo/Gitea CLI auth
 - `project` is required for `azuredevops` remotes; Azure DevOps uses Azure CLI authentication (`az devops login` / configured `az`) instead of grove-managed token files
 - `social` overrides PR + issue sourcing
 - `ci` overrides workflow / pipeline sourcing

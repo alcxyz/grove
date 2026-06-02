@@ -14,22 +14,29 @@ func withDependencyChecks(t *testing.T, lookPath func(string) (string, error), r
 }
 
 func withDependencyChecksAndAzure(t *testing.T, lookPath func(string) (string, error), readFile func(string) ([]byte, error), getenv func(string) string, ghAuth func() error, azDevOps func() error) {
+	withDependencyChecksAll(t, lookPath, readFile, getenv, ghAuth, func() ([]dependencyTeaLogin, error) { return nil, nil }, azDevOps)
+}
+
+func withDependencyChecksAll(t *testing.T, lookPath func(string) (string, error), readFile func(string) ([]byte, error), getenv func(string) string, ghAuth func() error, teaLogins func() ([]dependencyTeaLogin, error), azDevOps func() error) {
 	t.Helper()
 	oldLookPath := dependencyLookPath
 	oldReadFile := dependencyReadFile
 	oldGetenv := dependencyGetenv
 	oldGHAuth := dependencyGHAuth
+	oldTeaLogins := dependencyTeaLogins
 	oldAzureDevOps := dependencyAzureDevOps
 	dependencyLookPath = lookPath
 	dependencyReadFile = readFile
 	dependencyGetenv = getenv
 	dependencyGHAuth = ghAuth
+	dependencyTeaLogins = teaLogins
 	dependencyAzureDevOps = azDevOps
 	t.Cleanup(func() {
 		dependencyLookPath = oldLookPath
 		dependencyReadFile = oldReadFile
 		dependencyGetenv = oldGetenv
 		dependencyGHAuth = oldGHAuth
+		dependencyTeaLogins = oldTeaLogins
 		dependencyAzureDevOps = oldAzureDevOps
 	})
 }
@@ -58,6 +65,104 @@ func TestDependencyWarningsForgejoDoesNotRequireCLI(t *testing.T) {
 	warnings := DependencyWarnings(cfg)
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+}
+
+func TestDependencyWarningsForgejoTeaAuthModeUsesCLI(t *testing.T) {
+	withDependencyChecksAll(t,
+		func(name string) (string, error) {
+			switch name {
+			case "git":
+				return "/usr/bin/git", nil
+			case "tea":
+				return "/usr/bin/tea", nil
+			default:
+				return "", exec.ErrNotFound
+			}
+		},
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+		func() ([]dependencyTeaLogin, error) {
+			return []dependencyTeaLogin{{Name: "git.example", URL: "https://git.example.test"}}, nil
+		},
+		func() error { return nil },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:        "test",
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.example.test",
+		AuthMode:    "tea",
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	if warnings != "" {
+		t.Fatalf("expected no warnings, got %s", warnings)
+	}
+}
+
+func TestDependencyWarningsForgejoTeaAuthModeReportsMissingLogin(t *testing.T) {
+	withDependencyChecksAll(t,
+		func(name string) (string, error) {
+			switch name {
+			case "git":
+				return "/usr/bin/git", nil
+			case "tea":
+				return "/usr/bin/tea", nil
+			default:
+				return "", exec.ErrNotFound
+			}
+		},
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+		func() ([]dependencyTeaLogin, error) { return nil, nil },
+		func() error { return nil },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:        "test",
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.example.test",
+		AuthMode:    "tea",
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	if !strings.Contains(warnings, "tea is not logged in") {
+		t.Fatalf("warnings missing tea login dependency: %s", warnings)
+	}
+	if strings.Contains(warnings, "token_file") {
+		t.Fatalf("auth_mode tea should not require token_file: %s", warnings)
+	}
+}
+
+func TestDependencyWarningsForgejoReportsUnsupportedAuthMode(t *testing.T) {
+	withDependencyChecks(t,
+		func(name string) (string, error) {
+			if name == "git" {
+				return "/usr/bin/git", nil
+			}
+			return "", exec.ErrNotFound
+		},
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:        "test",
+		Owner:       "alcxyz",
+		Forge:       "forgejo",
+		InstanceURL: "https://git.example.test",
+		AuthMode:    "fj",
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	if !strings.Contains(warnings, "unsupported auth_mode") || !strings.Contains(warnings, "use token or tea") {
+		t.Fatalf("warnings missing unsupported Forgejo auth_mode: %s", warnings)
 	}
 }
 

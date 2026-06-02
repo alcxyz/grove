@@ -28,7 +28,7 @@ type Remote struct {
 	InstanceURL string `yaml:"instance_url"` // base URL for non-GitHub forges
 	Project     string `yaml:"project"`      // Azure DevOps project for azuredevops remotes
 	TokenFile   string `yaml:"token_file"`   // path to file containing API token
-	AuthMode    string `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
+	AuthMode    string `yaml:"auth_mode"`    // auth mode: "token" (default), "gh" for GitHub, "tea" for Forgejo
 	CloneProto  string `yaml:"clone_proto"`  // "https" (default) or "ssh"
 	SSHHost     string `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
 }
@@ -49,7 +49,7 @@ type Profile struct {
 	InstanceURL  string         `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
 	Project      string         `yaml:"project"`      // Azure DevOps project for azuredevops profiles
 	TokenFile    string         `yaml:"token_file"`   // path to file containing API token
-	AuthMode     string         `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
+	AuthMode     string         `yaml:"auth_mode"`    // auth mode: "token" (default), "gh" for GitHub, "tea" for Forgejo
 	CloneProto   string         `yaml:"clone_proto"`  // "https" (default) or "ssh"
 	SSHHost      string         `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
 	BasePaths    []string       `yaml:"base_paths"`

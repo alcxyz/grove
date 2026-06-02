@@ -31,7 +31,7 @@ type ProviderConfig struct {
 	InstanceURL string // base URL for non-GitHub forges
 	Project     string // Azure DevOps project for azuredevops
 	TokenFile   string // path to file containing API token
-	AuthMode    string // GitHub auth mode: "token" or "gh"
+	AuthMode    string // provider auth mode: "token", "gh" for GitHub, or "tea" for Forgejo
 	CloneProto  string // "https" or "ssh"
 	SSHHost     string // optional SSH clone host when it differs from InstanceURL host
 }

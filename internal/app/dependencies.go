@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,15 +18,33 @@ var (
 		cmd := exec.Command("gh", "auth", "status", "-h", "github.com")
 		return cmd.Run()
 	}
+	dependencyTeaLogins = func() ([]dependencyTeaLogin, error) {
+		cmd := exec.Command("tea", "logins", "list", "--output", "json")
+		out, err := cmd.Output()
+		if err != nil {
+			return nil, err
+		}
+		var logins []dependencyTeaLogin
+		if err := json.Unmarshal(out, &logins); err != nil {
+			return nil, err
+		}
+		return logins, nil
+	}
 	dependencyAzureDevOps = func() error {
 		cmd := exec.Command("az", "repos", "--help")
 		return cmd.Run()
 	}
 )
 
+type dependencyTeaLogin struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 // DependencyWarnings returns startup warnings for required provider tooling and
-// credentials. Forgejo uses direct HTTP token auth. GitHub can use direct
-// token auth or the gh CLI, depending on each resolved remote's auth_mode.
+// credentials. GitHub can use direct token auth or the gh CLI. Forgejo can use
+// direct token auth or the tea CLI, depending on each resolved remote's
+// auth_mode.
 func DependencyWarnings(cfg config.Config) []string {
 	var warnings []string
 	seen := map[string]struct{}{}
@@ -43,6 +62,8 @@ func DependencyWarnings(cfg config.Config) []string {
 
 	needsGitHubEnvToken := false
 	needsGitHubCLIAuth := false
+	needsForgejoTeaAuth := false
+	forgejoTeaURLs := map[string]struct{}{}
 	needsAzureCLI := false
 	for _, remote := range cfg.AllRemotes() {
 		if remote.Owner == "" {
@@ -63,7 +84,19 @@ func DependencyWarnings(cfg config.Config) []string {
 				add(fmt.Sprintf("%s unsupported auth_mode %q; use token or gh", dependencyRemoteLabel(remote), remote.AuthMode))
 			}
 		case "forgejo":
-			checkForgejoRemoteDependency(remote, add)
+			switch strings.ToLower(remote.EffectiveAuthMode()) {
+			case "tea":
+				needsForgejoTeaAuth = true
+				if remote.InstanceURL == "" {
+					add(fmt.Sprintf("%s missing instance_url", dependencyRemoteLabel(remote)))
+				} else {
+					forgejoTeaURLs[normaliseDependencyURL(remote.InstanceURL)] = struct{}{}
+				}
+			case "token":
+				checkForgejoRemoteDependency(remote, add)
+			default:
+				add(fmt.Sprintf("%s unsupported auth_mode %q; use token or tea", dependencyRemoteLabel(remote), remote.AuthMode))
+			}
 		case "azuredevops":
 			needsAzureCLI = true
 			if strings.TrimSpace(remote.Project) == "" {
@@ -77,6 +110,13 @@ func DependencyWarnings(cfg config.Config) []string {
 			add("gh not found on PATH; GitHub remotes with auth_mode: gh will fail")
 		} else if err := dependencyGHAuth(); err != nil {
 			add("gh is not authenticated for github.com; run gh auth login")
+		}
+	}
+	if needsForgejoTeaAuth {
+		if _, err := dependencyLookPath("tea"); err != nil {
+			add("tea not found on PATH; Forgejo remotes with auth_mode: tea will fail")
+		} else {
+			checkForgejoTeaDependency(forgejoTeaURLs, add)
 		}
 	}
 
@@ -131,6 +171,33 @@ func checkForgejoRemoteDependency(remote config.Remote, add func(string)) {
 	if strings.TrimSpace(string(data)) == "" {
 		add(fmt.Sprintf("%s token_file %s is empty", label, remote.TokenFile))
 	}
+}
+
+func checkForgejoTeaDependency(requiredURLs map[string]struct{}, add func(string)) {
+	logins, err := dependencyTeaLogins()
+	if err != nil {
+		add(fmt.Sprintf("tea login status unavailable; run tea logins add: %v", err))
+		return
+	}
+	if len(logins) == 0 {
+		add("tea is not logged in to any Forgejo/Gitea instance; run tea logins add")
+		return
+	}
+	available := make(map[string]struct{}, len(logins))
+	for _, login := range logins {
+		if login.URL != "" {
+			available[normaliseDependencyURL(login.URL)] = struct{}{}
+		}
+	}
+	for url := range requiredURLs {
+		if _, ok := available[url]; !ok {
+			add(fmt.Sprintf("tea has no login for %s; run tea logins add", url))
+		}
+	}
+}
+
+func normaliseDependencyURL(url string) string {
+	return strings.TrimRight(strings.ToLower(strings.TrimSpace(url)), "/")
 }
 
 func dependencyRemoteLabel(remote config.Remote) string {

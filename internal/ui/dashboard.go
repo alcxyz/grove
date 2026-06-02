@@ -694,11 +694,11 @@ func RenderAuthError(kind string, errs []string) string {
 	case "forgejo":
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ Forgejo authentication required") + "\n\n")
-		b.WriteString(DimStyle.Render("  Check the profile token_file, token permissions, and instance_url, then press r to retry.") + "\n")
+		b.WriteString(DimStyle.Render("  Check token_file/token permissions, or use auth_mode: tea with tea logins add, then press r to retry.") + "\n")
 	case "mixed":
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ Multiple forge authentications failed") + "\n\n")
-		b.WriteString(DimStyle.Render("  Check GitHub token/gh settings and Forgejo token_file settings, then press r to retry.") + "\n")
+		b.WriteString(DimStyle.Render("  Check GitHub token/gh settings and Forgejo token/tea settings, then press r to retry.") + "\n")
 	default:
 		b.WriteString("\n")
 		b.WriteString(DirtyStyle.Render("  ✗ Forge authentication required") + "\n\n")

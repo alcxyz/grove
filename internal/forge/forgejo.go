@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 type ForgejoProvider struct {
 	baseURL    string // e.g. "https://git.alc.xyz"
 	tokenFile  string
+	authMode   string
 	cloneProto string // "https" or "ssh"
 	sshHost    string
 
@@ -33,9 +35,14 @@ func NewForgejoProvider(cfg ProviderConfig) (*ForgejoProvider, error) {
 	if proto == "" {
 		proto = "https"
 	}
+	authMode := strings.ToLower(cfg.AuthMode)
+	if authMode == "" {
+		authMode = "token"
+	}
 	return &ForgejoProvider{
 		baseURL:    strings.TrimRight(cfg.InstanceURL, "/"),
 		tokenFile:  cfg.TokenFile,
+		authMode:   authMode,
 		cloneProto: proto,
 		sshHost:    cfg.SSHHost,
 	}, nil
@@ -56,6 +63,9 @@ func (f *ForgejoProvider) loadToken() string {
 }
 
 func (f *ForgejoProvider) apiGet(path string) ([]byte, error) {
+	if f.authMode == "tea" {
+		return f.teaAPIGet(path)
+	}
 	url := f.baseURL + "/api/v1" + path
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -79,6 +89,36 @@ func (f *ForgejoProvider) apiGet(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %d", url, resp.StatusCode)
 	}
 	return io.ReadAll(resp.Body)
+}
+
+func (f *ForgejoProvider) teaAPIGet(path string) ([]byte, error) {
+	cmd := exec.Command("tea", "api", f.baseURL+"/api/v1"+path)
+	out, err := cmd.Output()
+	if err == nil {
+		return out, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return nil, forgejoTeaError(path, exitErr.Stderr)
+	}
+	return nil, err
+}
+
+func forgejoTeaError(path string, stderr []byte) error {
+	msg := strings.TrimSpace(string(stderr))
+	if msg == "" {
+		msg = "tea api failed"
+	}
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "no available login") ||
+		strings.Contains(lower, "login name") ||
+		strings.Contains(lower, "not logged") ||
+		strings.Contains(lower, "authentication") ||
+		strings.Contains(lower, "unauthorized") ||
+		strings.Contains(lower, "forbidden") {
+		return fmt.Errorf("%w: tea api %s: %s", ErrNotAuthenticated, path, msg)
+	}
+	return fmt.Errorf("tea api %s: %s", path, msg)
 }
 
 func (f *ForgejoProvider) apiGetPaginated(pathFmt string) ([]json.RawMessage, error) {
@@ -330,8 +370,10 @@ func (f *ForgejoProvider) ListRepos(owner string, prefixes []string) ([]string, 
 }
 
 func (f *ForgejoProvider) CloneRepo(owner, name, targetDir string) error {
-	cloneURL := f.cloneURL(owner, name)
-	cmd := exec.Command("git", "clone", "--quiet", cloneURL, targetDir)
+	cmd := exec.Command("git", "clone", "--quiet", f.cloneURL(owner, name), targetDir)
+	if f.authMode == "tea" {
+		cmd = exec.Command("tea", "clone", f.cloneURL(owner, name), targetDir)
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))

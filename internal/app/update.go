@@ -444,7 +444,7 @@ func (m Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showDiff = false
 	case "o":
 		if c, ok := m.commitAtCursor(); ok {
-			if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
+			if r, ok := m.repoByRow(c.Repo, c.Profile, c.RepoPath); ok && r.Owner != "" {
 				if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 					remote := profile.CodeRemote(r.Name, r.Path)
 					if prov := providerForRemote(m.providers, remote); prov != nil {
@@ -876,13 +876,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabPRs:
 			if pr, ok := m.prAtCursor(); ok {
-				if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
+				if repo, ok := m.repoByRow(pr.Repo, pr.Profile, pr.RepoPath); ok {
 					return openDetail(repo)
 				}
 			}
 		case tabBranches:
 			if br, ok := m.branchAtCursor(); ok {
-				if repo, ok := m.repoByName(repoBaseName(br.Repo)); ok {
+				if repo, ok := m.repoByRow(br.Repo, br.Profile, br.RepoPath); ok {
 					return openDetail(repo)
 				}
 			}
@@ -897,13 +897,13 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabCI:
 			if r, ok := m.runAtCursor(); ok {
-				if repo, ok := m.repoByName(repoBaseName(r.Repo)); ok {
+				if repo, ok := m.repoByRow(r.Repo, r.Profile, r.RepoPath); ok {
 					return openDetail(repo)
 				}
 			}
 		case tabIssues:
 			if iss, ok := m.issueAtCursor(); ok {
-				if repo, ok := m.repoByName(repoBaseName(iss.Repo)); ok {
+				if repo, ok := m.repoByRow(iss.Repo, iss.Profile, iss.RepoPath); ok {
 					return openDetail(repo)
 				}
 			}
@@ -1051,7 +1051,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.activeTab {
 		case tabPRs:
 			if pr, ok := m.prAtCursor(); ok {
-				if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
+				if repo, ok := m.repoByRow(pr.Repo, pr.Profile, pr.RepoPath); ok {
 					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
 						if profile.SocialRemote(repo.Name, repo.Path).EffectiveForge() == "github" {
 							if path := repo.Path; path != "" {
@@ -1074,7 +1074,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "nothing selected"
 		case tabCI:
 			if r, ok := m.runAtCursor(); ok {
-				if repoPath := m.repoPathFor(repoBaseName(r.Repo)); repoPath != "" {
+				if repoPath := m.repoPathForRow(r.Repo, r.Profile, r.RepoPath); repoPath != "" {
 					if wf := workflowFilePath(repoPath, r); wf != "" {
 						return m, launchEditorAt(wf)
 					}
@@ -1092,7 +1092,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "nothing selected"
 		case tabIssues:
 			if iss, ok := m.issueAtCursor(); ok {
-				if repo, ok := m.repoByName(repoBaseName(iss.Repo)); ok {
+				if repo, ok := m.repoByRow(iss.Repo, iss.Profile, iss.RepoPath); ok {
 					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
 						if profile.SocialRemote(repo.Name, repo.Path).EffectiveForge() == "github" {
 							if path := repo.Path; path != "" {
@@ -1160,11 +1160,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tabBranches:
 			if br, ok := m.branchAtCursor(); ok {
 				if profile, ok := profileByName(m.cfg.Profiles, br.Profile); ok {
-					_, name, _ := strings.Cut(br.Repo, "/")
-					repoPath := ""
-					if repo, ok := m.repoByName(name); ok {
-						repoPath = repo.Path
-					}
+					name := localRepoName(br.Repo, br.RepoPath)
+					repoPath := br.RepoPath
 					remote := profile.CodeRemote(name, repoPath)
 					if prov := providerForRemote(m.providers, remote); prov != nil {
 						_ = ui.OpenURL(prov.BranchURL(remote.Owner, remote.RepoName(name), br.Name))
@@ -1175,7 +1172,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabActivity:
 			if c, ok := m.commitAtCursor(); ok {
-				if r, ok := m.repoByName(c.Repo); ok && r.Owner != "" {
+				if r, ok := m.repoByRow(c.Repo, c.Profile, c.RepoPath); ok && r.Owner != "" {
 					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 						remote := profile.CodeRemote(r.Name, r.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
@@ -1347,13 +1344,13 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					}
 				case tabPRs:
 					if pr, ok := m.prAtCursor(); ok {
-						if repo, ok := m.repoByName(repoBaseName(pr.Repo)); ok {
+						if repo, ok := m.repoByRow(pr.Repo, pr.Profile, pr.RepoPath); ok {
 							return dblOpenDetail(repo)
 						}
 					}
 				case tabBranches:
 					if br, ok := m.branchAtCursor(); ok {
-						if repo, ok := m.repoByName(repoBaseName(br.Repo)); ok {
+						if repo, ok := m.repoByRow(br.Repo, br.Profile, br.RepoPath); ok {
 							return dblOpenDetail(repo)
 						}
 					}
@@ -1368,13 +1365,13 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 					}
 				case tabCI:
 					if r, ok := m.runAtCursor(); ok {
-						if repo, ok := m.repoByName(repoBaseName(r.Repo)); ok {
+						if repo, ok := m.repoByRow(r.Repo, r.Profile, r.RepoPath); ok {
 							return dblOpenDetail(repo)
 						}
 					}
 				case tabIssues:
 					if iss, ok := m.issueAtCursor(); ok {
-						if repo, ok := m.repoByName(repoBaseName(iss.Repo)); ok {
+						if repo, ok := m.repoByRow(iss.Repo, iss.Profile, iss.RepoPath); ok {
 							return dblOpenDetail(repo)
 						}
 					}

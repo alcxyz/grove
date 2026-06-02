@@ -496,6 +496,24 @@ func TestUpdateDetailConfigPreviewUsesRepo(t *testing.T) {
 	}
 }
 
+func TestRepoByRowUsesPathAndProfileBeforeBareName(t *testing.T) {
+	m := newTestModel()
+	m.repos = []model.Repo{
+		{Name: "shared", Path: "/tmp/forgejo/shared", Profile: "forgejo"},
+		{Name: "shared", Path: "/tmp/github/shared", Profile: "github"},
+	}
+
+	if got, ok := m.repoByRow("alcxyz/shared", "github", "/tmp/github/shared"); !ok || got.Profile != "github" {
+		t.Fatalf("repoByRow with path = (%+v, %v), want github repo", got, ok)
+	}
+	if got, ok := m.repoByRow("alcxyz/shared", "github", ""); !ok || got.Profile != "github" {
+		t.Fatalf("repoByRow with profile = (%+v, %v), want github repo", got, ok)
+	}
+	if got, ok := m.repoByRow("alcxyz/shared", "missing", ""); !ok || got.Profile != "forgejo" {
+		t.Fatalf("repoByRow fallback = (%+v, %v), want first bare-name match", got, ok)
+	}
+}
+
 // ── Splash overlay ───────────────────────────────────────────────────────
 
 func TestUpdateSplashOverlay(t *testing.T) {

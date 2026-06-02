@@ -85,6 +85,9 @@ func (m Model) renderRepoConfigPreview(repo model.Repo) string {
 func writeProfilePreview(b *strings.Builder, p config.Profile) {
 	fmt.Fprintf(b, "\nProfile: %s\n", p.Name)
 	fmt.Fprintf(b, "Base paths: %s\n", joinOrNone(p.BasePaths))
+	fmt.Fprintf(b, "Repo paths: %s\n", joinOrNone(p.RepoPaths))
+	fmt.Fprintf(b, "Exclude paths: %s\n", joinOrNone(p.ExcludePaths))
+	fmt.Fprintf(b, "Exclude repos: %s\n", joinOrNone(p.ExcludeRepos))
 	fmt.Fprintf(b, "Prefixes: %s\n", joinOrNone(p.Prefixes))
 
 	b.WriteString("\nDefault remotes\n")

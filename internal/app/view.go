@@ -86,7 +86,7 @@ func (m Model) infoBarParts() []string {
 		branches := m.filteredBranches()
 		repos := map[string]struct{}{}
 		for _, br := range branches {
-			repos[br.Repo] = struct{}{}
+			repos[repoDataKey(br.Profile, localRepoName(br.Repo, br.RepoPath))] = struct{}{}
 		}
 		parts = append(parts,
 			fmt.Sprintf("%d branches", len(branches)),
@@ -107,7 +107,7 @@ func (m Model) infoBarParts() []string {
 		repos := map[string]struct{}{}
 		failed := 0
 		for _, r := range runs {
-			repos[repoBaseName(r.Repo)] = struct{}{}
+			repos[repoDataKey(r.Profile, localRepoName(r.Repo, r.RepoPath))] = struct{}{}
 			if r.Conclusion == "failure" || r.Conclusion == "timed_out" || r.Conclusion == "startup_failure" {
 				failed++
 			}
@@ -123,7 +123,7 @@ func (m Model) infoBarParts() []string {
 		issues := m.filteredIssues()
 		repos := map[string]struct{}{}
 		for _, iss := range issues {
-			repos[repoBaseName(iss.Repo)] = struct{}{}
+			repos[repoDataKey(iss.Profile, localRepoName(iss.Repo, iss.RepoPath))] = struct{}{}
 		}
 		parts = append(parts,
 			fmt.Sprintf("%d issues", len(issues)),
@@ -302,22 +302,22 @@ func (m Model) View() string {
 			}
 			prCounts := map[string]int{}
 			for _, pr := range m.prs {
-				prCounts[repoBaseName(pr.Repo)]++
+				prCounts[repoDataKey(pr.Profile, localRepoName(pr.Repo, pr.RepoPath))]++
 			}
 			branchCounts := map[string]int{}
 			for _, br := range m.branches {
-				branchCounts[repoBaseName(br.Repo)]++
+				branchCounts[repoDataKey(br.Profile, localRepoName(br.Repo, br.RepoPath))]++
 			}
 			issueCounts := map[string]int{}
 			for _, iss := range m.issues {
-				issueCounts[repoBaseName(iss.Repo)]++
+				issueCounts[repoDataKey(iss.Profile, localRepoName(iss.Repo, iss.RepoPath))]++
 			}
 			// Latest CI run per repo (runs are sorted newest-first)
 			ciStatus := map[string]string{}
 			for _, r := range m.runs {
-				name := repoBaseName(r.Repo)
-				if _, seen := ciStatus[name]; !seen {
-					ciStatus[name] = ui.CIStatusIcon(r.Status, r.Conclusion)
+				key := repoDataKey(r.Profile, localRepoName(r.Repo, r.RepoPath))
+				if _, seen := ciStatus[key]; !seen {
+					ciStatus[key] = ui.CIStatusIcon(r.Status, r.Conclusion)
 				}
 			}
 			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, sh, prCounts, branchCounts, issueCounts, ciStatus, hlField, hlValue))

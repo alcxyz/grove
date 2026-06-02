@@ -3,7 +3,55 @@ package app
 import (
 	"testing"
 	"time"
+
+	"github.com/alcxyz/grove/internal/model"
 )
+
+func TestRepoDerivedMapsUseProfileScopedLocalIdentity(t *testing.T) {
+	m := Model{
+		prs: []model.PR{
+			{Repo: "alcxyz/shared", RepoPath: "/tmp/github/shared", Profile: "github"},
+		},
+		branches: []model.BranchInfo{
+			{Repo: "alcxyz/shared", RepoPath: "/tmp/github/shared", Profile: "github"},
+		},
+		runs: []model.WorkflowRun{
+			{Repo: "alcxyz/shared", RepoPath: "/tmp/github/shared", Profile: "github", Status: "completed", Conclusion: "success"},
+			{Repo: "alcxyz/shared", RepoPath: "/tmp/forgejo/shared", Profile: "forgejo", Status: "completed", Conclusion: "failure"},
+		},
+	}
+
+	githubKey := repoDataKey("github", "shared")
+	forgejoKey := repoDataKey("forgejo", "shared")
+
+	if got := m.repoPRCounts()[githubKey]; got != 1 {
+		t.Fatalf("github PR count = %d, want 1", got)
+	}
+	if got := m.repoPRCounts()[forgejoKey]; got != 0 {
+		t.Fatalf("forgejo PR count = %d, want 0", got)
+	}
+	if got := m.repoBranchCounts()[githubKey]; got != 1 {
+		t.Fatalf("github branch count = %d, want 1", got)
+	}
+	if got := m.repoBranchCounts()[forgejoKey]; got != 0 {
+		t.Fatalf("forgejo branch count = %d, want 0", got)
+	}
+	if got := m.repoLatestCI()[githubKey]; got != "success" {
+		t.Fatalf("github CI = %q, want success", got)
+	}
+	if got := m.repoLatestCI()[forgejoKey]; got != "failure" {
+		t.Fatalf("forgejo CI = %q, want failure", got)
+	}
+}
+
+func TestLocalRepoNamePrefersRepoPathForRemoteOverrides(t *testing.T) {
+	if got := localRepoName("alcxyz/madideal", "/tmp/sites/madideal.bak"); got != "madideal.bak" {
+		t.Fatalf("localRepoName with path = %q, want madideal.bak", got)
+	}
+	if got := localRepoName("alcxyz/madideal", ""); got != "madideal" {
+		t.Fatalf("localRepoName without path = %q, want madideal", got)
+	}
+}
 
 // ── repoBaseName ──────────────────────────────────────────────────────────
 

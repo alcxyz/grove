@@ -15,6 +15,12 @@ profiles:
       - ~/dev/git/personal
       - ~/projects
       - ~/nix
+    repo_paths:
+      - ~/somewhere/special-repo
+    exclude_paths:
+      - ~/projects/github-only
+    exclude_repos:
+      - archived-repo
     prefixes: []   # empty = no filtering, all local repos are shown
     # Optional split-remote defaults:
     # code/browse uses the profile's top-level owner/forge fields.

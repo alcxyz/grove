@@ -26,6 +26,20 @@ import (
 func discoverRepoPaths(profile config.Profile) []string {
 	seen := map[string]struct{}{}
 	var paths []string
+	add := func(full string) {
+		name := filepath.Base(full)
+		if profile.ExcludesRepo(name, full) {
+			return
+		}
+		if _, err := os.Stat(filepath.Join(full, ".git")); err != nil {
+			return
+		}
+		if _, dup := seen[full]; dup {
+			return
+		}
+		seen[full] = struct{}{}
+		paths = append(paths, full)
+	}
 	for _, base := range profile.BasePaths {
 		entries, err := os.ReadDir(base)
 		if err != nil {
@@ -48,15 +62,11 @@ func discoverRepoPaths(profile config.Profile) []string {
 				continue
 			}
 			full := filepath.Join(base, name)
-			if _, err := os.Stat(filepath.Join(full, ".git")); err != nil {
-				continue
-			}
-			if _, dup := seen[full]; dup {
-				continue
-			}
-			seen[full] = struct{}{}
-			paths = append(paths, full)
+			add(full)
 		}
+	}
+	for _, path := range profile.RepoPaths {
+		add(path)
 	}
 	sort.Strings(paths)
 	return paths
@@ -84,6 +94,10 @@ func remoteLabel(remote config.Remote) string {
 }
 
 func formatRemoteError(repoName string, remote config.Remote, err error) string {
+	remoteName := remote.RepoName(repoName)
+	if remoteName != repoName {
+		return fmt.Sprintf("%s -> %s/%s [%s]: %v", repoName, remote.Owner, remoteName, remoteLabel(remote), err)
+	}
 	return fmt.Sprintf("%s [%s]: %v", repoName, remoteLabel(remote), err)
 }
 
@@ -166,6 +180,7 @@ func loadPRs(profiles []config.Profile, providers map[string]forge.Provider) tea
 						for i := range prs {
 							prs[i].Profile = profile.Name
 							prs[i].Repo = localRepoFull
+							prs[i].RepoPath = path
 						}
 						allPRs = append(allPRs, prs...)
 					}
@@ -232,6 +247,7 @@ func loadBranches(profiles []config.Profile, providers map[string]forge.Provider
 					for i := range branches {
 						branches[i].Profile = profile.Name
 						branches[i].Repo = localRepoFull
+						branches[i].RepoPath = path
 					}
 					mu.Lock()
 					allBranches = append(allBranches, branches...)
@@ -339,6 +355,7 @@ func loadRuns(profiles []config.Profile, providers map[string]forge.Provider) te
 						for i := range runs {
 							runs[i].Profile = profile.Name
 							runs[i].Repo = localRepoFull
+							runs[i].RepoPath = path
 						}
 						allRuns = append(allRuns, runs...)
 					}
@@ -387,6 +404,7 @@ func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) 
 						for i := range issues {
 							issues[i].Profile = profile.Name
 							issues[i].Repo = localRepoFull
+							issues[i].RepoPath = path
 						}
 						allIssues = append(allIssues, issues...)
 					}
@@ -431,6 +449,7 @@ func loadDetail(repo model.Repo, profile config.Profile, providers map[string]fo
 					for i := range prs {
 						prs[i].Profile = profile.Name
 						prs[i].Repo = localRepoFull
+						prs[i].RepoPath = repo.Path
 					}
 				}
 			}
@@ -445,6 +464,7 @@ func loadDetail(repo model.Repo, profile config.Profile, providers map[string]fo
 					for i := range issues {
 						issues[i].Profile = profile.Name
 						issues[i].Repo = localRepoFull
+						issues[i].RepoPath = repo.Path
 					}
 				}
 			}

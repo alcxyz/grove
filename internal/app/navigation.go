@@ -1,6 +1,7 @@
 package app
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -68,6 +69,146 @@ func (m Model) profileOrder() func(string) int {
 		}
 		return 9999
 	}
+}
+
+func setPRGroupStarts(groups []ui.PRGroup) []ui.PRGroup {
+	start := 0
+	for i := range groups {
+		groups[i].StartIdx = start
+		start += len(groups[i].PRs)
+	}
+	return groups
+}
+
+func profilePRGroups(prs []model.PR, order func(string) int) []ui.PRGroup {
+	var groups []ui.PRGroup
+	idx := map[string]int{}
+	for _, pr := range prs {
+		name := pr.Profile
+		gi, ok := idx[name]
+		if !ok {
+			gi = len(groups)
+			idx[name] = gi
+			groups = append(groups, ui.PRGroup{Name: name})
+		}
+		groups[gi].PRs = append(groups[gi].PRs, pr)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return order(groups[i].Name) < order(groups[j].Name)
+	})
+	return setPRGroupStarts(groups)
+}
+
+func setBranchGroupStarts(groups []ui.BranchGroup) []ui.BranchGroup {
+	start := 0
+	for i := range groups {
+		groups[i].StartIdx = start
+		start += len(groups[i].Branches)
+	}
+	return groups
+}
+
+func profileBranchGroups(branches []model.BranchInfo, order func(string) int) []ui.BranchGroup {
+	var groups []ui.BranchGroup
+	idx := map[string]int{}
+	for _, br := range branches {
+		name := br.Profile
+		gi, ok := idx[name]
+		if !ok {
+			gi = len(groups)
+			idx[name] = gi
+			groups = append(groups, ui.BranchGroup{Name: name})
+		}
+		groups[gi].Branches = append(groups[gi].Branches, br)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return order(groups[i].Name) < order(groups[j].Name)
+	})
+	return setBranchGroupStarts(groups)
+}
+
+func setCIGroupStarts(groups []ui.CIGroup) []ui.CIGroup {
+	start := 0
+	for i := range groups {
+		groups[i].StartIdx = start
+		start += len(groups[i].Runs)
+	}
+	return groups
+}
+
+func profileCIGroups(runs []model.WorkflowRun, order func(string) int) []ui.CIGroup {
+	var groups []ui.CIGroup
+	idx := map[string]int{}
+	for _, run := range runs {
+		name := run.Profile
+		gi, ok := idx[name]
+		if !ok {
+			gi = len(groups)
+			idx[name] = gi
+			groups = append(groups, ui.CIGroup{Name: name})
+		}
+		groups[gi].Runs = append(groups[gi].Runs, run)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return order(groups[i].Name) < order(groups[j].Name)
+	})
+	return setCIGroupStarts(groups)
+}
+
+func setIssueGroupStarts(groups []ui.IssueGroup) []ui.IssueGroup {
+	start := 0
+	for i := range groups {
+		groups[i].StartIdx = start
+		start += len(groups[i].Issues)
+	}
+	return groups
+}
+
+func profileIssueGroups(issues []model.Issue, order func(string) int) []ui.IssueGroup {
+	var groups []ui.IssueGroup
+	idx := map[string]int{}
+	for _, issue := range issues {
+		name := issue.Profile
+		gi, ok := idx[name]
+		if !ok {
+			gi = len(groups)
+			idx[name] = gi
+			groups = append(groups, ui.IssueGroup{Name: name})
+		}
+		groups[gi].Issues = append(groups[gi].Issues, issue)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return order(groups[i].Name) < order(groups[j].Name)
+	})
+	return setIssueGroupStarts(groups)
+}
+
+func setCommitGroupStarts(groups []ui.CommitGroup) []ui.CommitGroup {
+	start := 0
+	for i := range groups {
+		groups[i].StartIdx = start
+		start += len(groups[i].Commits)
+	}
+	return groups
+}
+
+func profileCommitGroups(commits []model.Commit, order func(string) int) []ui.CommitGroup {
+	var groups []ui.CommitGroup
+	idx := map[string]int{}
+	for _, commit := range commits {
+		name := commit.Profile
+		gi, ok := idx[name]
+		if !ok {
+			gi = len(groups)
+			idx[name] = gi
+			groups = append(groups, ui.CommitGroup{Name: name})
+		}
+		groups[gi].Commits = append(groups[gi].Commits, commit)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return order(groups[i].Name) < order(groups[j].Name)
+	})
+	return setCommitGroupStarts(groups)
 }
 
 // profileAtX returns the profile index (0..N-1 for profiles, N for "All") for a
@@ -332,7 +473,7 @@ func tabAtXY(x, row, width int) int {
 func (m Model) repoPathLookup() map[string]string {
 	lk := make(map[string]string, len(m.repos))
 	for _, r := range m.repos {
-		lk[r.Name] = r.Path
+		lk[modelRepoKey(r)] = r.Path
 	}
 	return lk
 }
@@ -342,7 +483,7 @@ func (m Model) repoPathLookup() map[string]string {
 func (m Model) groupForFunc(p config.Profile) func(string) string {
 	paths := m.repoPathLookup()
 	return func(name string) string {
-		return p.GroupFor(name, paths[name])
+		return p.GroupFor(name, paths[repoDataKey(p.Name, name)])
 	}
 }
 
@@ -376,19 +517,7 @@ func (m Model) groupedPRs() []ui.PRGroup {
 		return []ui.PRGroup{{Name: "", PRs: prs, StartIdx: 0}}
 	}
 	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
-		// "All" mode: group by profile name
-		lookup := make(map[string]string, len(m.prs))
-		for _, pr := range m.prs {
-			lookup[repoBaseName(pr.Repo)] = pr.Profile
-		}
-		po := m.profileOrder()
-		return ui.BuildPRGroups(prs,
-			func(name string) string {
-				if p, ok := lookup[repoBaseName(name)]; ok {
-					return p
-				}
-				return "other"
-			}, po)
+		return profilePRGroups(prs, m.profileOrder())
 	}
 	p := m.activeProfileObj()
 	return ui.BuildPRGroups(prs, m.groupForFunc(p), p.GroupOrder)
@@ -400,19 +529,7 @@ func (m Model) groupedBranches() []ui.BranchGroup {
 		return []ui.BranchGroup{{Name: "", Branches: branches, StartIdx: 0}}
 	}
 	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
-		// "All" mode: group by profile name
-		lookup := make(map[string]string, len(m.branches))
-		for _, br := range m.branches {
-			lookup[repoBaseName(br.Repo)] = br.Profile
-		}
-		po := m.profileOrder()
-		return ui.BuildBranchGroups(branches,
-			func(name string) string {
-				if p, ok := lookup[repoBaseName(name)]; ok {
-					return p
-				}
-				return "other"
-			}, po)
+		return profileBranchGroups(branches, m.profileOrder())
 	}
 	p := m.activeProfileObj()
 	return ui.BuildBranchGroups(branches, m.groupForFunc(p), p.GroupOrder)
@@ -424,18 +541,7 @@ func (m Model) groupedRuns() []ui.CIGroup {
 		return []ui.CIGroup{{Name: "", Runs: runs, StartIdx: 0}}
 	}
 	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
-		lookup := make(map[string]string, len(m.runs))
-		for _, r := range m.runs {
-			lookup[repoBaseName(r.Repo)] = r.Profile
-		}
-		po := m.profileOrder()
-		return ui.BuildCIGroups(runs,
-			func(name string) string {
-				if p, ok := lookup[name]; ok {
-					return p
-				}
-				return "other"
-			}, po)
+		return profileCIGroups(runs, m.profileOrder())
 	}
 	p := m.activeProfileObj()
 	return ui.BuildCIGroups(runs, m.groupForFunc(p), p.GroupOrder)
@@ -447,18 +553,7 @@ func (m Model) groupedIssues() []ui.IssueGroup {
 		return []ui.IssueGroup{{Name: "", Issues: issues, StartIdx: 0}}
 	}
 	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
-		lookup := make(map[string]string, len(m.issues))
-		for _, iss := range m.issues {
-			lookup[repoBaseName(iss.Repo)] = iss.Profile
-		}
-		po := m.profileOrder()
-		return ui.BuildIssueGroups(issues,
-			func(name string) string {
-				if p, ok := lookup[repoBaseName(name)]; ok {
-					return p
-				}
-				return "other"
-			}, po)
+		return profileIssueGroups(issues, m.profileOrder())
 	}
 	p := m.activeProfileObj()
 	return ui.BuildIssueGroups(issues, m.groupForFunc(p), p.GroupOrder)
@@ -470,19 +565,7 @@ func (m Model) groupedActivity() []ui.CommitGroup {
 		return []ui.CommitGroup{{Name: "", Commits: commits, StartIdx: 0}}
 	}
 	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
-		// "All" mode: group by profile name
-		lookup := make(map[string]string, len(m.activity))
-		for _, c := range m.activity {
-			lookup[c.Repo] = c.Profile
-		}
-		po := m.profileOrder()
-		return ui.BuildCommitGroups(commits,
-			func(name string) string {
-				if p, ok := lookup[name]; ok {
-					return p
-				}
-				return "other"
-			}, po)
+		return profileCommitGroups(commits, m.profileOrder())
 	}
 	p := m.activeProfileObj()
 	return ui.BuildCommitGroups(commits, m.groupForFunc(p), p.GroupOrder)
@@ -502,19 +585,19 @@ func (m Model) blockHighlightValue() string {
 		}
 		ciConclusion := map[string]string{}
 		for _, r := range m.runs {
-			name := repoBaseName(r.Repo)
-			if _, seen := ciConclusion[name]; !seen {
+			key := repoDataKey(r.Profile, localRepoName(r.Repo, r.RepoPath))
+			if _, seen := ciConclusion[key]; !seen {
 				if r.Status != "completed" {
-					ciConclusion[name] = "running"
+					ciConclusion[key] = "running"
 				} else {
-					ciConclusion[name] = r.Conclusion
+					ciConclusion[key] = r.Conclusion
 				}
 			}
 		}
 		for _, g := range m.groupedRepos() {
 			for _, r := range g.Repos {
 				if flat == m.cursor {
-					s := ciConclusion[r.Name]
+					s := ciConclusion[modelRepoKey(r)]
 					if s == "" {
 						s = "—"
 					}
@@ -528,7 +611,7 @@ func (m Model) blockHighlightValue() string {
 			for _, pr := range g.PRs {
 				if flat == m.cursor {
 					if m.highlightField == "repo" {
-						return repoBaseName(pr.Repo)
+						return localRepoName(pr.Repo, pr.RepoPath)
 					}
 					return cyclePrefix(pr.Title)
 				}
@@ -540,7 +623,7 @@ func (m Model) blockHighlightValue() string {
 			for _, br := range g.Branches {
 				if flat == m.cursor {
 					if m.highlightField == "repo" {
-						return repoBaseName(br.Repo)
+						return localRepoName(br.Repo, br.RepoPath)
 					}
 					return cyclePrefix(br.Name)
 				}
@@ -564,7 +647,7 @@ func (m Model) blockHighlightValue() string {
 			for _, r := range g.Runs {
 				if flat == m.cursor {
 					if m.highlightField == "repo" {
-						return repoBaseName(r.Repo)
+						return localRepoName(r.Repo, r.RepoPath)
 					}
 					return cyclePrefix(r.WorkflowName)
 				}
@@ -576,7 +659,7 @@ func (m Model) blockHighlightValue() string {
 			for _, iss := range g.Issues {
 				if flat == m.cursor {
 					if m.highlightField == "repo" {
-						return repoBaseName(iss.Repo)
+						return localRepoName(iss.Repo, iss.RepoPath)
 					}
 					return cyclePrefix(iss.Title)
 				}
@@ -607,7 +690,7 @@ func (m *Model) jumpRepo(dir int) {
 		last := ""
 		for _, g := range m.groupedPRs() {
 			for j, pr := range g.PRs {
-				if name := repoBaseName(pr.Repo); name != last {
+				if name := localRepoName(pr.Repo, pr.RepoPath); name != last {
 					starts = append(starts, g.StartIdx+j)
 					last = name
 				}
@@ -617,7 +700,7 @@ func (m *Model) jumpRepo(dir int) {
 		last := ""
 		for _, g := range m.groupedBranches() {
 			for j, br := range g.Branches {
-				if name := repoBaseName(br.Repo); name != last {
+				if name := localRepoName(br.Repo, br.RepoPath); name != last {
 					starts = append(starts, g.StartIdx+j)
 					last = name
 				}
@@ -637,7 +720,7 @@ func (m *Model) jumpRepo(dir int) {
 		last := ""
 		for _, g := range m.groupedRuns() {
 			for j, r := range g.Runs {
-				if name := repoBaseName(r.Repo); name != last {
+				if name := localRepoName(r.Repo, r.RepoPath); name != last {
 					starts = append(starts, g.StartIdx+j)
 					last = name
 				}
@@ -647,7 +730,7 @@ func (m *Model) jumpRepo(dir int) {
 		last := ""
 		for _, g := range m.groupedIssues() {
 			for j, iss := range g.Issues {
-				if name := repoBaseName(iss.Repo); name != last {
+				if name := localRepoName(iss.Repo, iss.RepoPath); name != last {
 					starts = append(starts, g.StartIdx+j)
 					last = name
 				}
@@ -667,19 +750,19 @@ func (m *Model) jumpSubject(dir int) {
 		// Build a CI-conclusion lookup (runs are sorted newest-first).
 		ciConclusion := map[string]string{}
 		for _, r := range m.runs {
-			name := repoBaseName(r.Repo)
-			if _, seen := ciConclusion[name]; !seen {
+			key := repoDataKey(r.Profile, localRepoName(r.Repo, r.RepoPath))
+			if _, seen := ciConclusion[key]; !seen {
 				if r.Status != "completed" {
-					ciConclusion[name] = "running"
+					ciConclusion[key] = "running"
 				} else {
-					ciConclusion[name] = r.Conclusion
+					ciConclusion[key] = r.Conclusion
 				}
 			}
 		}
 		last := ""
 		for _, g := range m.groupedRepos() {
 			for j, r := range g.Repos {
-				status := ciConclusion[r.Name]
+				status := ciConclusion[modelRepoKey(r)]
 				if status == "" {
 					status = "—"
 				}
@@ -795,7 +878,7 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 		for _, g := range m.groupedPRs() {
 			for _, pr := range g.PRs {
 				if flat == idx {
-					return m.repoByName(repoBaseName(pr.Repo))
+					return m.repoByRow(pr.Repo, pr.Profile, pr.RepoPath)
 				}
 				flat++
 			}
@@ -804,7 +887,7 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 		for _, g := range m.groupedBranches() {
 			for _, br := range g.Branches {
 				if flat == idx {
-					return m.repoByName(repoBaseName(br.Repo))
+					return m.repoByRow(br.Repo, br.Profile, br.RepoPath)
 				}
 				flat++
 			}
@@ -813,7 +896,7 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 		for _, g := range m.groupedActivity() {
 			for _, c := range g.Commits {
 				if flat == idx {
-					return m.repoByName(c.Repo)
+					return m.repoByRow(c.Repo, c.Profile, c.RepoPath)
 				}
 				flat++
 			}
@@ -822,7 +905,7 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 		for _, g := range m.groupedRuns() {
 			for _, r := range g.Runs {
 				if flat == idx {
-					return m.repoByName(repoBaseName(r.Repo))
+					return m.repoByRow(r.Repo, r.Profile, r.RepoPath)
 				}
 				flat++
 			}
@@ -831,7 +914,7 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 		for _, g := range m.groupedIssues() {
 			for _, iss := range g.Issues {
 				if flat == idx {
-					return m.repoByName(repoBaseName(iss.Repo))
+					return m.repoByRow(iss.Repo, iss.Profile, iss.RepoPath)
 				}
 				flat++
 			}
@@ -860,6 +943,38 @@ func (m Model) repoByName(baseName string) (model.Repo, bool) {
 	return model.Repo{}, false
 }
 
+func (m Model) repoByRow(repo, profile, repoPath string) (model.Repo, bool) {
+	if repoPath != "" {
+		for _, r := range m.repos {
+			if r.Path == repoPath {
+				return r, true
+			}
+		}
+	}
+	name := localRepoName(repo, repoPath)
+	for _, r := range m.repos {
+		if r.Name == name && (profile == "" || r.Profile == profile) {
+			return r, true
+		}
+	}
+	return m.repoByName(name)
+}
+
+func (m Model) repoPathForRow(repo, profile, repoPath string) string {
+	if r, ok := m.repoByRow(repo, profile, repoPath); ok {
+		return r.Path
+	}
+	return ""
+}
+
+func rowMatchesRepo(repo, profile, repoPath string, r model.Repo) bool {
+	if repoPath != "" {
+		return repoPath == r.Path
+	}
+	name := localRepoName(repo, repoPath)
+	return name == r.Name && (profile == "" || profile == r.Profile)
+}
+
 // repoPathAtCursor returns the local path for the currently selected item by
 // walking the grouped structure. This is necessary because BuildGroups sorts
 // groups and reassigns StartIdx in group order, so m.cursor is an index into
@@ -880,7 +995,7 @@ func (m Model) repoPathAtCursor() string {
 		for _, g := range m.groupedPRs() {
 			for _, pr := range g.PRs {
 				if flat == m.cursor {
-					return m.repoPathFor(repoBaseName(pr.Repo))
+					return m.repoPathForRow(pr.Repo, pr.Profile, pr.RepoPath)
 				}
 				flat++
 			}
@@ -889,7 +1004,7 @@ func (m Model) repoPathAtCursor() string {
 		for _, g := range m.groupedBranches() {
 			for _, br := range g.Branches {
 				if flat == m.cursor {
-					return m.repoPathFor(repoBaseName(br.Repo))
+					return m.repoPathForRow(br.Repo, br.Profile, br.RepoPath)
 				}
 				flat++
 			}
@@ -907,7 +1022,7 @@ func (m Model) repoPathAtCursor() string {
 		for _, g := range m.groupedRuns() {
 			for _, r := range g.Runs {
 				if flat == m.cursor {
-					return m.repoPathFor(repoBaseName(r.Repo))
+					return m.repoPathForRow(r.Repo, r.Profile, r.RepoPath)
 				}
 				flat++
 			}
@@ -916,7 +1031,7 @@ func (m Model) repoPathAtCursor() string {
 		for _, g := range m.groupedIssues() {
 			for _, iss := range g.Issues {
 				if flat == m.cursor {
-					return m.repoPathFor(repoBaseName(iss.Repo))
+					return m.repoPathForRow(iss.Repo, iss.Profile, iss.RepoPath)
 				}
 				flat++
 			}
@@ -1042,14 +1157,13 @@ func (m Model) detailSectionStarts() []int {
 
 	// Count remote branches and CI runs for the repo currently shown in detail.
 	var remoteCount, ciCount int
-	repoName := m.detailRepo.Name
 	for _, br := range m.branches {
-		if repoBaseName(br.Repo) == repoName {
+		if rowMatchesRepo(br.Repo, br.Profile, br.RepoPath, m.detailRepo) {
 			remoteCount++
 		}
 	}
 	for _, r := range m.runs {
-		if repoBaseName(r.Repo) == repoName {
+		if rowMatchesRepo(r.Repo, r.Profile, r.RepoPath, m.detailRepo) {
 			ciCount++
 		}
 	}
@@ -1087,7 +1201,7 @@ func (m Model) detailRemoteBranches() []model.BranchInfo {
 	}
 	var out []model.BranchInfo
 	for _, br := range m.branches {
-		if repoBaseName(br.Repo) == name {
+		if rowMatchesRepo(br.Repo, br.Profile, br.RepoPath, m.detailRepo) {
 			out = append(out, br)
 		}
 	}
@@ -1103,7 +1217,7 @@ func (m Model) detailCIRuns() []model.WorkflowRun {
 	}
 	var out []model.WorkflowRun
 	for _, r := range m.runs {
-		if repoBaseName(r.Repo) == name {
+		if rowMatchesRepo(r.Repo, r.Profile, r.RepoPath, m.detailRepo) {
 			out = append(out, r)
 		}
 	}

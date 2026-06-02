@@ -127,6 +127,12 @@ profiles:
     base_paths:
       - ~/dev/git/personal
       - ~/nix
+    repo_paths:
+      - ~/elsewhere/one-off-repo
+    exclude_paths:
+      - ~/dev/git/personal/github-only
+    exclude_repos:
+      - archived-repo
     prefixes: [] # all git repos in base_paths are scanned
     social:
       owner: my-github-username
@@ -177,6 +183,8 @@ screensaver_secs: 300
 ```
 
 Groups support two matching strategies: `match` matches against the repo name (prefix or substring), and `match_path` matches against the repo's filesystem path (prefix). Both can be used on the same group — either matching puts the repo in that group. First matching group wins; unmatched repos go to "other".
+
+`base_paths` scan immediate child directories for git repositories. `repo_paths` adds exact repository directories, which is useful for one-off repos that belong to a profile but live inside another profile's directory tree. `exclude_paths` and `exclude_repos` omit nested directories or specific local repo names from a profile.
 
 Remote resolution is concern-specific:
 

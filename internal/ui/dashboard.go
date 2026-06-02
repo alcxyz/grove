@@ -267,6 +267,10 @@ func renderRepoRow(r model.Repo, selected bool, prCount, branchCount, issueCount
 	return row
 }
 
+func repoMetricKey(r model.Repo) string {
+	return r.Profile + "\x00" + r.Name
+}
+
 func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts, issueCounts map[string]int, ciStatus map[string]string, hlField, hlValue string) string {
 	// indent(2) + status(8) + sync(10) + pr(4) + br(4) + is(4) + ci(4) = 36 fixed
 	fixedW := 2 + 8 + 10 + 4 + 4 + 4 + 4
@@ -296,7 +300,8 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 			sw.writeLine(groupHeader(g.Name, width))
 		}
 		for _, r := range g.Repos {
-			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[r.Name], branchCounts[r.Name], issueCounts[r.Name], ciStatus[r.Name], hlField, hlValue, nameW, branchW, authorW, agoW))
+			key := repoMetricKey(r)
+			sw.writeLine(renderRepoRow(r, flatIdx == cursor, prCounts[key], branchCounts[key], issueCounts[key], ciStatus[key], hlField, hlValue, nameW, branchW, authorW, agoW))
 			flatIdx++
 		}
 	}

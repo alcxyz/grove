@@ -17,6 +17,7 @@ type Repo struct {
 
 type PR struct {
 	Repo           string
+	RepoPath       string
 	Number         int
 	Title          string
 	Author         string
@@ -31,6 +32,7 @@ type PR struct {
 
 type BranchInfo struct {
 	Repo       string
+	RepoPath   string
 	Name       string
 	IsDefault  bool
 	IsMerged   bool
@@ -58,6 +60,7 @@ type RepoStats struct {
 
 type WorkflowRun struct {
 	Repo         string // "owner/name"
+	RepoPath     string
 	WorkflowName string
 	WorkflowFile string // relative path, e.g. ".github/workflows/ci.yml"
 	Branch       string
@@ -74,6 +77,7 @@ type WorkflowRun struct {
 
 type Issue struct {
 	Repo      string
+	RepoPath  string
 	Number    int
 	Title     string
 	Author    string

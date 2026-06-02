@@ -61,11 +61,12 @@ func cloneProfile(profile config.Profile, owner string, provider forge.Provider)
 	}
 	fmt.Printf("  %d matching repos\n", len(names))
 
-	searchPaths := allSearchPaths(profile)
-
 	var toClone []string
 	for _, name := range names {
-		if !repoExistsInAny(searchPaths, name) {
+		if profile.ExcludesRepo(name, "") {
+			continue
+		}
+		if !repoExistsInProfile(profile, name) {
 			toClone = append(toClone, name)
 		}
 	}
@@ -169,13 +170,16 @@ func allSearchPaths(profile config.Profile) []string {
 	seen := make(map[string]bool)
 	var paths []string
 	for _, p := range profile.BasePaths {
+		if profile.ExcludesRepo("", p) {
+			continue
+		}
 		if !seen[p] {
 			seen[p] = true
 			paths = append(paths, p)
 		}
 	}
 	for _, g := range profile.Groups {
-		if g.BasePath != "" && !seen[g.BasePath] {
+		if g.BasePath != "" && !profile.ExcludesRepo("", g.BasePath) && !seen[g.BasePath] {
 			seen[g.BasePath] = true
 			paths = append(paths, g.BasePath)
 		}
@@ -189,6 +193,20 @@ func repoExistsInAny(basePaths []string, name string) bool {
 	for _, base := range basePaths {
 		if _, err := os.Stat(filepath.Join(base, name, ".git")); err == nil {
 			return true
+		}
+	}
+	return false
+}
+
+func repoExistsInProfile(profile config.Profile, name string) bool {
+	if repoExistsInAny(allSearchPaths(profile), name) {
+		return true
+	}
+	for _, path := range profile.RepoPaths {
+		if filepath.Base(path) == name {
+			if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+				return true
+			}
 		}
 	}
 	return false

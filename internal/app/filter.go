@@ -1,6 +1,7 @@
 package app
 
 import (
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,21 @@ func repoBaseName(full string) string {
 		return full[i+1:]
 	}
 	return full
+}
+
+func localRepoName(repo, repoPath string) string {
+	if repoPath != "" {
+		return filepath.Base(repoPath)
+	}
+	return repoBaseName(repo)
+}
+
+func repoDataKey(profile, repoName string) string {
+	return profile + "\x00" + repoName
+}
+
+func modelRepoKey(r model.Repo) string {
+	return repoDataKey(r.Profile, r.Name)
 }
 
 // cyclePrefix extracts the grouping key for subject-field cycling.
@@ -47,32 +63,32 @@ func normalizeCI(status, conclusion string) string {
 	}
 }
 
-// repoPRCounts returns a map of repo base-name → open PR count derived from m.prs.
+// repoPRCounts returns open PR counts keyed by profile + local repo name.
 func (m Model) repoPRCounts() map[string]int {
 	counts := map[string]int{}
 	for _, pr := range m.prs {
-		counts[repoBaseName(pr.Repo)]++
+		counts[repoDataKey(pr.Profile, localRepoName(pr.Repo, pr.RepoPath))]++
 	}
 	return counts
 }
 
-// repoBranchCounts returns a map of repo base-name → remote branch count derived from m.branches.
+// repoBranchCounts returns remote branch counts keyed by profile + local repo name.
 func (m Model) repoBranchCounts() map[string]int {
 	counts := map[string]int{}
 	for _, br := range m.branches {
-		counts[repoBaseName(br.Repo)]++
+		counts[repoDataKey(br.Profile, localRepoName(br.Repo, br.RepoPath))]++
 	}
 	return counts
 }
 
-// repoLatestCI returns a map of repo base-name → normalised CI conclusion
-// (runs are assumed newest-first so the first entry per repo wins).
+// repoLatestCI returns the latest normalised CI conclusion keyed by profile +
+// local repo name (runs are assumed newest-first so the first entry per repo wins).
 func (m Model) repoLatestCI() map[string]string {
 	ci := map[string]string{}
 	for _, r := range m.runs {
-		name := repoBaseName(r.Repo)
-		if _, seen := ci[name]; !seen {
-			ci[name] = normalizeCI(r.Status, r.Conclusion)
+		key := repoDataKey(r.Profile, localRepoName(r.Repo, r.RepoPath))
+		if _, seen := ci[key]; !seen {
+			ci[key] = normalizeCI(r.Status, r.Conclusion)
 		}
 	}
 	return ci
@@ -331,7 +347,7 @@ func (m Model) filteredRepos() []model.Repo {
 		}
 		if prCounts != nil {
 			bucket := "no PRs"
-			if prCounts[r.Name] > 0 {
+			if prCounts[modelRepoKey(r)] > 0 {
 				bucket = "has PRs"
 			}
 			if !m.cycleMatch("prcount", bucket) {
@@ -340,7 +356,7 @@ func (m Model) filteredRepos() []model.Repo {
 		}
 		if brCounts != nil {
 			bucket := "no branches"
-			if brCounts[r.Name] > 0 {
+			if brCounts[modelRepoKey(r)] > 0 {
 				bucket = "has branches"
 			}
 			if !m.cycleMatch("brcount", bucket) {
@@ -348,7 +364,7 @@ func (m Model) filteredRepos() []model.Repo {
 			}
 		}
 		if ciMap != nil {
-			if !m.cycleMatch("ci", ciMap[r.Name]) {
+			if !m.cycleMatch("ci", ciMap[modelRepoKey(r)]) {
 				continue
 			}
 		}
@@ -361,22 +377,22 @@ func (m Model) filteredRepos() []model.Repo {
 		pc := m.repoPRCounts()
 		sort.SliceStable(out, func(i, j int) bool {
 			if asc {
-				return pc[out[i].Name] < pc[out[j].Name]
+				return pc[modelRepoKey(out[i])] < pc[modelRepoKey(out[j])]
 			}
-			return pc[out[i].Name] > pc[out[j].Name]
+			return pc[modelRepoKey(out[i])] > pc[modelRepoKey(out[j])]
 		})
 	case "brcount":
 		bc := m.repoBranchCounts()
 		sort.SliceStable(out, func(i, j int) bool {
 			if asc {
-				return bc[out[i].Name] < bc[out[j].Name]
+				return bc[modelRepoKey(out[i])] < bc[modelRepoKey(out[j])]
 			}
-			return bc[out[i].Name] > bc[out[j].Name]
+			return bc[modelRepoKey(out[i])] > bc[modelRepoKey(out[j])]
 		})
 	case "ci":
 		cm := m.repoLatestCI()
 		sort.SliceStable(out, func(i, j int) bool {
-			ci, cj := cm[out[i].Name], cm[out[j].Name]
+			ci, cj := cm[modelRepoKey(out[i])], cm[modelRepoKey(out[j])]
 			if asc {
 				return ci < cj
 			}
@@ -420,7 +436,7 @@ func (m Model) filteredPRs() []model.PR {
 		if !m.cycleMatch("subject", pr.Title) {
 			continue
 		}
-		if !m.cycleMatch("repo", repoBaseName(pr.Repo)) {
+		if !m.cycleMatch("repo", localRepoName(pr.Repo, pr.RepoPath)) {
 			continue
 		}
 		if !m.cycleMatchDate(pr.UpdatedAt) {
@@ -470,7 +486,7 @@ func (m Model) filteredBranches() []model.BranchInfo {
 		if !m.cycleMatch("subject", br.Name) {
 			continue
 		}
-		if !m.cycleMatch("repo", repoBaseName(br.Repo)) {
+		if !m.cycleMatch("repo", localRepoName(br.Repo, br.RepoPath)) {
 			continue
 		}
 		if !m.cycleMatch("author", br.Author) {
@@ -533,7 +549,7 @@ func (m Model) filteredRuns() []model.WorkflowRun {
 			continue
 		}
 		if q != "" {
-			if !strings.Contains(strings.ToLower(repoBaseName(r.Repo)), q) &&
+			if !strings.Contains(strings.ToLower(localRepoName(r.Repo, r.RepoPath)), q) &&
 				!strings.Contains(strings.ToLower(r.WorkflowName), q) &&
 				!strings.Contains(strings.ToLower(r.Branch), q) &&
 				!strings.Contains(strings.ToLower(r.Conclusion), q) {
@@ -543,7 +559,7 @@ func (m Model) filteredRuns() []model.WorkflowRun {
 		if !m.cycleMatch("subject", r.WorkflowName) {
 			continue
 		}
-		if !m.cycleMatch("repo", repoBaseName(r.Repo)) {
+		if !m.cycleMatch("repo", localRepoName(r.Repo, r.RepoPath)) {
 			continue
 		}
 		if !m.cycleMatchDate(r.UpdatedAt) {
@@ -670,7 +686,7 @@ func (m Model) filteredIssues() []model.Issue {
 		if !m.cycleMatch("subject", iss.Title) {
 			continue
 		}
-		if !m.cycleMatch("repo", repoBaseName(iss.Repo)) {
+		if !m.cycleMatch("repo", localRepoName(iss.Repo, iss.RepoPath)) {
 			continue
 		}
 		if !m.cycleMatchDate(iss.UpdatedAt) {
@@ -795,7 +811,7 @@ func (m Model) collectCycleValues(field string) []string {
 			seenNone, seenAny := false, false
 			for _, r := range m.repos {
 				if match(r.Name, r.Branch, r.LastAuthor) {
-					if pc[r.Name] == 0 {
+					if pc[modelRepoKey(r)] == 0 {
 						seenNone = true
 					} else {
 						seenAny = true
@@ -814,7 +830,7 @@ func (m Model) collectCycleValues(field string) []string {
 			seenNone, seenAny := false, false
 			for _, r := range m.repos {
 				if match(r.Name, r.Branch, r.LastAuthor) {
-					if bc[r.Name] == 0 {
+					if bc[modelRepoKey(r)] == 0 {
 						seenNone = true
 					} else {
 						seenAny = true
@@ -832,7 +848,7 @@ func (m Model) collectCycleValues(field string) []string {
 			cm := m.repoLatestCI()
 			for _, r := range m.repos {
 				if match(r.Name, r.Branch, r.LastAuthor) {
-					add(cm[r.Name])
+					add(cm[modelRepoKey(r)])
 				}
 			}
 		default:
@@ -849,7 +865,7 @@ func (m Model) collectCycleValues(field string) []string {
 			case "subject":
 				add(cyclePrefix(pr.Title))
 			case "repo":
-				add(repoBaseName(pr.Repo))
+				add(localRepoName(pr.Repo, pr.RepoPath))
 			case "review":
 				add(pr.ReviewDecision)
 			case "checks":
@@ -869,7 +885,7 @@ func (m Model) collectCycleValues(field string) []string {
 				case "subject":
 					add(cyclePrefix(br.Name))
 				case "repo":
-					add(repoBaseName(br.Repo))
+					add(localRepoName(br.Repo, br.RepoPath))
 				}
 			}
 		case "prcount":
@@ -930,14 +946,14 @@ func (m Model) collectCycleValues(field string) []string {
 		}
 	case tabCI:
 		for _, r := range m.runs {
-			if !match(repoBaseName(r.Repo), r.WorkflowName, r.Branch, r.Conclusion) {
+			if !match(localRepoName(r.Repo, r.RepoPath), r.WorkflowName, r.Branch, r.Conclusion) {
 				continue
 			}
 			switch field {
 			case "subject":
 				add(cyclePrefix(r.WorkflowName))
 			case "repo":
-				add(repoBaseName(r.Repo))
+				add(localRepoName(r.Repo, r.RepoPath))
 			case "ci":
 				add(normalizeCI(r.Status, r.Conclusion))
 			case "branch":
@@ -956,7 +972,7 @@ func (m Model) collectCycleValues(field string) []string {
 			case "subject":
 				add(cyclePrefix(iss.Title))
 			case "repo":
-				add(repoBaseName(iss.Repo))
+				add(localRepoName(iss.Repo, iss.RepoPath))
 			}
 		}
 	}

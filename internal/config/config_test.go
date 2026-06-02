@@ -104,6 +104,26 @@ func TestGroupFor_MatchPathAndMatchMixed(t *testing.T) {
 	}
 }
 
+func TestProfileExcludesRepo(t *testing.T) {
+	p := Profile{
+		ExcludePaths: []string{"/home/user/src/tools/dms-plugins"},
+		ExcludeRepos: []string{"grove.bak"},
+	}
+
+	if !p.ExcludesRepo("DankAIUsage", "/home/user/src/tools/dms-plugins/DankAIUsage") {
+		t.Fatal("expected nested excluded path to be excluded")
+	}
+	if !p.ExcludesRepo("dms-plugins", "/home/user/src/tools/dms-plugins") {
+		t.Fatal("expected exact excluded path to be excluded")
+	}
+	if !p.ExcludesRepo("grove.bak", "/home/user/src/apps/grove.bak") {
+		t.Fatal("expected excluded repo name to be excluded")
+	}
+	if p.ExcludesRepo("forge-tidy", "/home/user/src/tools/forge-tidy") {
+		t.Fatal("unexpected exclusion for sibling path")
+	}
+}
+
 // ── Profile.GroupOrder ────────────────────────────────────────────────────
 
 func TestGroupOrder(t *testing.T) {
@@ -218,6 +238,36 @@ func TestCacheKey_ChangesOnRemoteRepoNameChange(t *testing.T) {
 	}}}
 	if c1.CacheKey() == c2.CacheKey() {
 		t.Error("cache keys should differ when a remote repo name override changes")
+	}
+}
+
+func TestCacheKey_ChangesOnProfileExcludesChange(t *testing.T) {
+	c1 := Config{Profiles: []Profile{{
+		Owner:        "org",
+		ExcludePaths: []string{"/tmp/github-only"},
+		ExcludeRepos: []string{"archived"},
+	}}}
+	c2 := Config{Profiles: []Profile{{
+		Owner:        "org",
+		ExcludePaths: []string{"/tmp/other"},
+		ExcludeRepos: []string{"archived"},
+	}}}
+	if c1.CacheKey() == c2.CacheKey() {
+		t.Error("cache keys should differ when profile excludes change")
+	}
+}
+
+func TestCacheKey_ChangesOnProfileRepoPathsChange(t *testing.T) {
+	c1 := Config{Profiles: []Profile{{
+		Owner:     "org",
+		RepoPaths: []string{"/tmp/grove"},
+	}}}
+	c2 := Config{Profiles: []Profile{{
+		Owner:     "org",
+		RepoPaths: []string{"/tmp/canopy"},
+	}}}
+	if c1.CacheKey() == c2.CacheKey() {
+		t.Error("cache keys should differ when profile repo paths change")
 	}
 }
 
@@ -454,9 +504,11 @@ func TestNormaliseProfilesExpandsRemoteTokenFiles(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	cfg := Config{Profiles: []Profile{{
-		Name:      "test",
-		Owner:     "alcxyz",
-		TokenFile: "~/.tokens/code",
+		Name:         "test",
+		Owner:        "alcxyz",
+		TokenFile:    "~/.tokens/code",
+		RepoPaths:    []string{"~/src/apps/grove"},
+		ExcludePaths: []string{"~/src/tools/dms-plugins"},
 		Social: Remote{
 			TokenFile: "~/.tokens/social",
 		},
@@ -502,6 +554,8 @@ func TestNormaliseProfilesExpandsRemoteTokenFiles(t *testing.T) {
 		"repo-code":    profile.Repos[0].Code.TokenFile,
 		"repo-social":  profile.Repos[0].Social.TokenFile,
 		"repo-ci":      profile.Repos[0].CI.TokenFile,
+		"repo-path":    profile.RepoPaths[0],
+		"exclude-path": profile.ExcludePaths[0],
 	}
 	for name, got := range checks {
 		if !strings.HasPrefix(got, home) {

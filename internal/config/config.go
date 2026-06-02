@@ -43,22 +43,25 @@ type RepoOverride struct {
 
 // Profile holds per-profile configuration.
 type Profile struct {
-	Name        string         `yaml:"name"`
-	Owner       string         `yaml:"owner"`        // org or username; "" = no forge API
-	Forge       string         `yaml:"forge"`        // "github" (default), "forgejo", "azuredevops"
-	InstanceURL string         `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
-	Project     string         `yaml:"project"`      // Azure DevOps project for azuredevops profiles
-	TokenFile   string         `yaml:"token_file"`   // path to file containing API token
-	AuthMode    string         `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
-	CloneProto  string         `yaml:"clone_proto"`  // "https" (default) or "ssh"
-	SSHHost     string         `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
-	BasePaths   []string       `yaml:"base_paths"`
-	BasePath    string         `yaml:"base_path"` // legacy; merged into BasePaths on load
-	Prefixes    []string       `yaml:"prefixes"`
-	Groups      []Group        `yaml:"groups"`
-	Social      Remote         `yaml:"social"`
-	CI          Remote         `yaml:"ci"`
-	Repos       []RepoOverride `yaml:"repos"`
+	Name         string         `yaml:"name"`
+	Owner        string         `yaml:"owner"`        // org or username; "" = no forge API
+	Forge        string         `yaml:"forge"`        // "github" (default), "forgejo", "azuredevops"
+	InstanceURL  string         `yaml:"instance_url"` // base URL for non-GitHub forges, e.g. "https://git.alc.xyz"
+	Project      string         `yaml:"project"`      // Azure DevOps project for azuredevops profiles
+	TokenFile    string         `yaml:"token_file"`   // path to file containing API token
+	AuthMode     string         `yaml:"auth_mode"`    // GitHub auth mode: "token" (default) or "gh"
+	CloneProto   string         `yaml:"clone_proto"`  // "https" (default) or "ssh"
+	SSHHost      string         `yaml:"ssh_host"`     // optional SSH clone host when it differs from instance_url host
+	BasePaths    []string       `yaml:"base_paths"`
+	BasePath     string         `yaml:"base_path"` // legacy; merged into BasePaths on load
+	RepoPaths    []string       `yaml:"repo_paths"`
+	ExcludePaths []string       `yaml:"exclude_paths"`
+	ExcludeRepos []string       `yaml:"exclude_repos"`
+	Prefixes     []string       `yaml:"prefixes"`
+	Groups       []Group        `yaml:"groups"`
+	Social       Remote         `yaml:"social"`
+	CI           Remote         `yaml:"ci"`
+	Repos        []RepoOverride `yaml:"repos"`
 }
 
 type Config struct {
@@ -221,6 +224,12 @@ func normaliseProfiles(cfg *Config, fillPrefixDefaults bool) {
 		for j, path := range p.BasePaths {
 			p.BasePaths[j] = expandHome(path, home)
 		}
+		for j, path := range p.RepoPaths {
+			p.RepoPaths[j] = expandHome(path, home)
+		}
+		for j, path := range p.ExcludePaths {
+			p.ExcludePaths[j] = expandHome(path, home)
+		}
 		for j, g := range p.Groups {
 			p.Groups[j].BasePath = expandHome(g.BasePath, home)
 			p.Groups[j].MatchPath = expandHome(g.MatchPath, home)
@@ -305,6 +314,12 @@ func (c Config) CacheKey() string {
 }
 
 func (p Profile) cacheKeyPart(prefixes string) string {
+	repoPaths := append([]string(nil), p.RepoPaths...)
+	sort.Strings(repoPaths)
+	excludePaths := append([]string(nil), p.ExcludePaths...)
+	sort.Strings(excludePaths)
+	excludeRepos := append([]string(nil), p.ExcludeRepos...)
+	sort.Strings(excludeRepos)
 	var groupParts []string
 	for _, g := range p.Groups {
 		groupParts = append(groupParts, strings.Join([]string{
@@ -333,6 +348,9 @@ func (p Profile) cacheKeyPart(prefixes string) string {
 		p.Social.Key(),
 		p.CI.Key(),
 		prefixes,
+		strings.Join(repoPaths, ","),
+		strings.Join(excludePaths, ","),
+		strings.Join(excludeRepos, ","),
 		strings.Join(groupParts, ","),
 		strings.Join(repoParts, ","),
 	}, "|")
@@ -369,6 +387,30 @@ func (p Profile) GroupFor(repoName, repoPath string) string {
 		}
 	}
 	return "other"
+}
+
+// ExcludesRepo returns true when a repo should be omitted from this profile.
+func (p Profile) ExcludesRepo(repoName, repoPath string) bool {
+	for _, name := range p.ExcludeRepos {
+		if name == repoName {
+			return true
+		}
+	}
+	for _, path := range p.ExcludePaths {
+		if pathWithin(repoPath, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathWithin(path, prefix string) bool {
+	if path == "" || prefix == "" {
+		return false
+	}
+	path = filepath.Clean(path)
+	prefix = filepath.Clean(prefix)
+	return path == prefix || strings.HasPrefix(path, prefix+string(os.PathSeparator))
 }
 
 // GroupOrder returns the position of a group name in the configured groups

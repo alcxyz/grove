@@ -116,6 +116,49 @@ func TestRenderCI_SingleRun(t *testing.T) {
 	}
 }
 
+func TestRenderCIShowsUngroupedTotalRunCount(t *testing.T) {
+	groups := []CIGroup{{
+		Name: "",
+		Runs: []model.WorkflowRun{
+			{Repo: "acme/api", WorkflowName: "ci", Status: "completed", Conclusion: "success"},
+			{Repo: "acme/web", WorkflowName: "ci", Status: "completed", Conclusion: "success"},
+		},
+		StartIdx: 0,
+	}}
+
+	out := RenderCI(groups, 0, 120, 0, 40, "", "")
+	plain := stripANSI(out)
+	if !strings.Contains(plain, "2 runs") {
+		t.Fatalf("expected total run count in output, got: %q", plain)
+	}
+}
+
+func TestRenderCIShowsGroupedTotalRunCount(t *testing.T) {
+	groups := []CIGroup{
+		{
+			Name: "GitHub",
+			Runs: []model.WorkflowRun{
+				{Repo: "acme/api", WorkflowName: "ci", Status: "completed", Conclusion: "success"},
+			},
+			StartIdx: 0,
+		},
+		{
+			Name: "Forgejo",
+			Runs: []model.WorkflowRun{
+				{Repo: "acme/web", WorkflowName: "ci", Status: "completed", Conclusion: "success"},
+				{Repo: "acme/ops", WorkflowName: "deploy", Status: "completed", Conclusion: "success"},
+			},
+			StartIdx: 1,
+		},
+	}
+
+	out := RenderCI(groups, 0, 120, 0, 40, "", "")
+	plain := stripANSI(out)
+	if !strings.Contains(plain, "3 runs") {
+		t.Fatalf("expected grouped total run count in output, got: %q", plain)
+	}
+}
+
 // ── BuildCIGroups ─────────────────────────────────────────────────────────
 
 func TestBuildCIGroups(t *testing.T) {

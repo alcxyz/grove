@@ -127,6 +127,33 @@ func groupHeader(name string, width int) string {
 		DimStyle.Render(strings.Repeat("─", max(0, width-4-len(name))))
 }
 
+func countLabel(total int, singular, plural string) string {
+	noun := plural
+	if total == 1 {
+		noun = singular
+	}
+	return fmt.Sprintf("%d %s", total, noun)
+}
+
+func listHeaderContentWidth(width, total int, singular, plural string) int {
+	labelW := lipgloss.Width(countLabel(total, singular, plural))
+	reserve := labelW + 2
+	if width <= reserve+30 {
+		return width
+	}
+	return width - reserve
+}
+
+func renderListHeader(header string, width, total int, singular, plural string) string {
+	label := countLabel(total, singular, plural)
+	labelW := lipgloss.Width(label)
+	gap := width - lipgloss.Width(header) - labelW
+	if gap < 2 {
+		return HeaderStyle.Render(header)
+	}
+	return HeaderStyle.Render(header+strings.Repeat(" ", gap)) + DimStyle.Render(label)
+}
+
 // scrollWriter helps render only visible lines within [offset, offset+maxLines).
 type scrollWriter struct {
 	b      strings.Builder
@@ -272,9 +299,15 @@ func repoMetricKey(r model.Repo) string {
 }
 
 func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines int, prCounts, branchCounts, issueCounts map[string]int, ciStatus map[string]string, hlField, hlValue string) string {
+	total := 0
+	for _, g := range groups {
+		total += len(g.Repos)
+	}
+	contentW := listHeaderContentWidth(width, total, "repo", "repos")
+
 	// indent(2) + status(8) + sync(10) + pr(4) + br(4) + is(4) + ci(4) = 36 fixed
 	fixedW := 2 + 8 + 10 + 4 + 4 + 4 + 4
-	cols := flexCols(width-fixedW, []colSpec{
+	cols := flexCols(contentW-fixedW, []colSpec{
 		{Min: 16, Weight: 3}, // name
 		{Min: 8, Weight: 1},  // branch
 		{Min: 8, Weight: 1},  // author
@@ -287,7 +320,7 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 		cell("Repository", nameW) + cell("Branch", branchW) + cell("Status", 8) +
 		cell("Sync", 10) + cell("PR", 4) + cell("Br", 4) + cell("Is", 4) + cell("CI", 4) +
 		cell("Author", authorW) + cell("Last Commit", agoW)
-	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString(renderListHeader(header, width, total, "repo", "repos"))
 	b.WriteString("\n")
 
 	sw := newScrollWriter(scrollOffset, maxLines)
@@ -368,10 +401,11 @@ func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlFie
 	if total == 0 {
 		return DimStyle.Render("\n  No CI run data found.\n")
 	}
+	contentW := listHeaderContentWidth(width, total, "run", "runs")
 
 	// indent(2) + status(18) + event(12) = 32 fixed
 	fixedW := 2 + 18 + 12
-	cols := flexCols(width-fixedW, []colSpec{
+	cols := flexCols(contentW-fixedW, []colSpec{
 		{Min: 16, Weight: 2}, // repo
 		{Min: 12, Weight: 2}, // workflow
 		{Min: 8, Weight: 1},  // branch
@@ -383,7 +417,7 @@ func RenderCI(groups []CIGroup, cursor, width, scrollOffset, maxLines int, hlFie
 	header := "  " +
 		cell("Repository", repoW) + cell("Workflow", wfW) + cell("Branch", branchW) +
 		cell("Status", 18) + cell("Event", 12) + cell("When", agoW)
-	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString(renderListHeader(header, width, total, "run", "runs"))
 	b.WriteString("\n")
 
 	sw := newScrollWriter(scrollOffset, maxLines)
@@ -462,10 +496,11 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 	if total == 0 {
 		return DimStyle.Render("\n  No open pull requests found.\n")
 	}
+	contentW := listHeaderContentWidth(width, total, "PR", "PRs")
 
 	// indent(2) + PR#(7) + review(14) + checks(12) = 35 fixed
 	fixedW := 2 + 7 + 14 + 12
-	cols := flexCols(width-fixedW, []colSpec{
+	cols := flexCols(contentW-fixedW, []colSpec{
 		{Min: 16, Weight: 2}, // repo
 		{Min: 16, Weight: 3}, // title
 		{Min: 8, Weight: 1},  // author
@@ -477,7 +512,7 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 	header := "  " +
 		cell("Repository", repoW) + cell("PR#", 7) + cell("Title", titleW) +
 		cell("Author", authorW) + cell("Review", 14) + cell("Checks", 12) + cell("Updated", agoW)
-	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString(renderListHeader(header, width, total, "PR", "PRs"))
 	b.WriteString("\n")
 
 	sw := newScrollWriter(scrollOffset, maxLines)
@@ -508,10 +543,11 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 	if total == 0 {
 		return DimStyle.Render("\n  No branches found.\n")
 	}
+	contentW := listHeaderContentWidth(width, total, "branch", "branches")
 
 	// indent(2) + PR(3) + merged(2) = 7 fixed
 	fixedW := 2 + 3 + 2
-	cols := flexCols(width-fixedW, []colSpec{
+	cols := flexCols(contentW-fixedW, []colSpec{
 		{Min: 16, Weight: 2}, // repo
 		{Min: 16, Weight: 2}, // branch
 		{Min: 10, Weight: 1}, // author
@@ -521,7 +557,7 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 
 	var b strings.Builder
 	header := "  " + cell("Repository", repoW) + cell("Branch", branchW) + cell("PR", 3) + cell("∈", 2) + cell("Author", authorW) + cell("When", agoW)
-	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString(renderListHeader(header, width, total, "branch", "branches"))
 	b.WriteString("\n")
 
 	sw := newScrollWriter(scrollOffset, maxLines)
@@ -587,10 +623,11 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 	if total == 0 {
 		return DimStyle.Render("\n  No recent activity.\n")
 	}
+	contentW := listHeaderContentWidth(width, total, "commit", "commits")
 
 	// indent(2) + hash(9) = 11 fixed
 	fixedW := 2 + 9
-	cols := flexCols(width-fixedW, []colSpec{
+	cols := flexCols(contentW-fixedW, []colSpec{
 		{Min: 14, Weight: 2}, // repo
 		{Min: 20, Weight: 5}, // message
 		{Min: 10, Weight: 1}, // author
@@ -602,7 +639,7 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 	header := "  " +
 		cell("Repository", repoW) + cell("Hash", 9) +
 		cell("Message", msgW) + cell("Author", authorW) + cell("When", agoW)
-	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString(renderListHeader(header, width, total, "commit", "commits"))
 	b.WriteString("\n")
 
 	sw := newScrollWriter(scrollOffset, maxLines)
@@ -754,10 +791,11 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 	if total == 0 {
 		return DimStyle.Render("\n  No open issues found.\n")
 	}
+	contentW := listHeaderContentWidth(width, total, "issue", "issues")
 
 	// indent(2) + #(7) = 9 fixed
 	fixedW := 2 + 7
-	cols := flexCols(width-fixedW, []colSpec{
+	cols := flexCols(contentW-fixedW, []colSpec{
 		{Min: 14, Weight: 2}, // repo
 		{Min: 16, Weight: 3}, // title
 		{Min: 8, Weight: 1},  // author
@@ -774,7 +812,7 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 		cell("Repository", repoW) + cell("#", 7) + cell("Title", titleW) +
 		cell("Author", authorW) + cell("Labels", labelsW) + cell("Assignee", assigneesW) +
 		cell("Milestone", milestoneW) + cell("Updated", agoW)
-	b.WriteString(HeaderStyle.Render(header))
+	b.WriteString(renderListHeader(header, width, total, "issue", "issues"))
 	b.WriteString("\n")
 
 	sw := newScrollWriter(scrollOffset, maxLines)

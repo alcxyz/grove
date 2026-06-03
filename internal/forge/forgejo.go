@@ -284,7 +284,7 @@ func (f *ForgejoProvider) ListBranches(repoFullName string) ([]model.BranchInfo,
 }
 
 func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.WorkflowRun, error) {
-	path := fmt.Sprintf("/repos/%s/actions/runs", repoFullName)
+	path := fmt.Sprintf("/repos/%s/actions/tasks?limit=20", repoFullName)
 	data, err := f.apiGet(path)
 	if err != nil {
 		// Actions may not be enabled — return nil, not error.
@@ -295,40 +295,73 @@ func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.Workflo
 		WorkflowRuns []struct {
 			ID         int64     `json:"id"`
 			Status     string    `json:"status"`
-			Conclusion string    `json:"conclusion"`
 			HeadBranch string    `json:"head_branch"`
 			Event      string    `json:"event"`
 			Name       string    `json:"name"`
 			RunNumber  int       `json:"run_number"`
 			CreatedAt  time.Time `json:"created_at"`
 			UpdatedAt  time.Time `json:"updated_at"`
+			StartedAt  time.Time `json:"run_started_at"`
+			URL        string    `json:"url"`
 			HTMLURL    string    `json:"html_url"`
 			Path       string    `json:"path"`
+			WorkflowID string    `json:"workflow_id"`
+			Title      string    `json:"display_title"`
 		} `json:"workflow_runs"`
 	}
 	if err := json.Unmarshal(data, &resp); err != nil {
-		// Might be an older Forgejo without Actions — not an error.
-		return nil, nil
+		return nil, fmt.Errorf("parse workflow tasks for %s: %w", repoFullName, err)
 	}
 
 	runs := make([]model.WorkflowRun, len(resp.WorkflowRuns))
 	for i, r := range resp.WorkflowRuns {
+		status, conclusion := forgejoWorkflowStatus(r.Status)
+		name := r.Name
+		if name == "" {
+			name = r.Title
+		}
+		path := r.Path
+		if path == "" {
+			path = r.WorkflowID
+		}
+		startedAt := r.StartedAt
+		if startedAt.IsZero() {
+			startedAt = r.CreatedAt
+		}
+		url := r.URL
+		if url == "" {
+			url = r.HTMLURL
+		}
 		runs[i] = model.WorkflowRun{
 			Repo:         repoFullName,
-			WorkflowName: r.Name,
-			WorkflowFile: r.Path,
+			WorkflowName: name,
+			WorkflowFile: path,
 			Branch:       r.HeadBranch,
 			Event:        r.Event,
-			Status:       r.Status,
-			Conclusion:   r.Conclusion,
+			Status:       status,
+			Conclusion:   conclusion,
 			RunID:        r.ID,
 			Number:       r.RunNumber,
-			StartedAt:    r.CreatedAt,
+			StartedAt:    startedAt,
 			UpdatedAt:    r.UpdatedAt,
-			URL:          r.HTMLURL,
+			URL:          url,
 		}
 	}
 	return runs, nil
+}
+
+func forgejoWorkflowStatus(status string) (string, string) {
+	normalized := strings.ToLower(status)
+	switch normalized {
+	case "success", "failure", "cancelled", "skipped", "timed_out", "startup_failure":
+		return "completed", normalized
+	case "running":
+		return "in_progress", ""
+	case "waiting", "pending", "blocked", "queued":
+		return "queued", ""
+	default:
+		return normalized, ""
+	}
 }
 
 func (f *ForgejoProvider) ListRepos(owner string, prefixes []string) ([]string, error) {

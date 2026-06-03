@@ -192,7 +192,7 @@ func TestForgejoListWorkflowRunsUsesTasksEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	requestURI := <-requestURIs
-	if requestURI != "/api/v1/repos/alcxyz/grove/actions/tasks?limit=20" {
+	if requestURI != "/api/v1/repos/alcxyz/grove/actions/tasks?page=1&limit=20" {
 		t.Fatalf("unexpected request URI %q", requestURI)
 	}
 	if len(runs) != 1 {

@@ -284,7 +284,7 @@ func (f *ForgejoProvider) ListBranches(repoFullName string) ([]model.BranchInfo,
 }
 
 func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.WorkflowRun, error) {
-	path := fmt.Sprintf("/repos/%s/actions/tasks?limit=20", repoFullName)
+	path := fmt.Sprintf("/repos/%s/actions/tasks?page=1&limit=20", repoFullName)
 	data, err := f.apiGet(path)
 	if err != nil {
 		// Actions may not be enabled — return nil, not error.

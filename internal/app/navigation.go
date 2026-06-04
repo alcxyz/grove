@@ -923,16 +923,6 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 	return model.Repo{}, false
 }
 
-// repoPathFor returns the local filesystem path for a repo matched by base name.
-func (m Model) repoPathFor(baseName string) string {
-	for _, r := range m.repos {
-		if r.Name == baseName {
-			return r.Path
-		}
-	}
-	return ""
-}
-
 // repoByName returns the full Repo struct matched by base name.
 func (m Model) repoByName(baseName string) (model.Repo, bool) {
 	for _, r := range m.repos {

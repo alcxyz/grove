@@ -72,7 +72,7 @@ func TestGroupFor_MatchPath(t *testing.T) {
 	}{
 		{"nix-config", "/home/user/nix/nix-config", "nix"},
 		{"nix-secrets", "/home/user/nix/nix-secrets", "nix"},
-		{"leantime-tidy", "/home/user/gitops/leantime-tidy", "gitops"},
+		{"hedgedoc", "/home/user/gitops/hedgedoc", "gitops"},
 		{"alcxyz.github.io", "/home/user/dev/alcxyz.github.io", "pages"},
 		{"grove", "/home/user/dev/grove", "other"},
 	}

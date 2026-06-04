@@ -145,6 +145,65 @@ func TestGitHubListIssuesFiltersPullRequests(t *testing.T) {
 	}
 }
 
+func TestGitHubListMilestonesUsesRESTAPI(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/alcxyz/grove/milestones" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("state"); got != "open" {
+			t.Errorf("state query = %q, want open", got)
+		}
+		if got := r.URL.Query().Get("per_page"); got != "100" {
+			t.Errorf("per_page query = %q, want 100", got)
+		}
+		if got := r.URL.Query().Get("page"); got != "1" {
+			t.Errorf("page query = %q, want 1", got)
+		}
+		writeJSON(t, w, []map[string]any{{
+			"number":        4,
+			"title":         "v1.0",
+			"description":   "Release train",
+			"state":         "open",
+			"open_issues":   2,
+			"closed_issues": 3,
+			"due_on":        "2026-06-30T00:00:00Z",
+			"created_at":    "2026-06-01T12:00:00Z",
+			"updated_at":    "2026-06-05T12:00:00Z",
+			"closed_at":     nil,
+			"html_url":      "https://github.com/alcxyz/grove/milestone/4",
+		}})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+
+	milestones, err := provider.ListMilestones("alcxyz/grove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(milestones) != 1 {
+		t.Fatalf("len(milestones) = %d, want 1", len(milestones))
+	}
+	ms := milestones[0]
+	if ms.Repo != "alcxyz/grove" || ms.Number != 4 || ms.Title != "v1.0" || ms.State != "open" {
+		t.Fatalf("unexpected milestone: %+v", ms)
+	}
+	if ms.OpenIssues != 2 || ms.ClosedIssues != 3 {
+		t.Fatalf("issue counts = (%d, %d), want (2, 3)", ms.OpenIssues, ms.ClosedIssues)
+	}
+	if ms.DueOn == nil || !ms.DueOn.Equal(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("DueOn = %v, want 2026-06-30", ms.DueOn)
+	}
+	if ms.URL != "https://github.com/alcxyz/grove/milestone/4" {
+		t.Fatalf("URL = %q", ms.URL)
+	}
+}
+
 func TestGitHubListWorkflowRunsUsesWorkflowPathFallback(t *testing.T) {
 	t.Setenv("GH_TOKEN", "env-token")
 	t.Setenv("GITHUB_TOKEN", "")

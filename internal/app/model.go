@@ -17,9 +17,12 @@ const (
 	tabBranches
 	tabActivity
 	tabIssues
+	tabMilestones
 )
 
-var tabNames = []string{"1 Dashboard", "2 Pull Requests", "3 CI Runs", "4 Branches", "5 Activity", "6 Issues"}
+const tabCount = int(tabMilestones) + 1
+
+var tabNames = []string{"1 Dashboard", "2 Pull Requests", "3 CI Runs", "4 Branches", "5 Activity", "6 Issues", "7 Milestones"}
 
 type sortOrder int
 
@@ -38,70 +41,75 @@ type tabSortState struct {
 
 // Options holds the parameters needed to create a new Model.
 type Options struct {
-	Cfg              config.Config
-	Version          string
-	StatusMsg        string
-	LogPath          string
-	CacheDir         string
-	CacheKey         string
-	PRs              []model.PR
-	PRsLoadedAt      time.Time
-	Branches         []model.BranchInfo
-	BranchesLoadedAt time.Time
-	Activity         []model.Commit
-	ActivityLoadedAt time.Time
-	Runs             []model.WorkflowRun
-	RunsLoadedAt     time.Time
-	Issues           []model.Issue
-	IssuesLoadedAt   time.Time
-	ActiveProfile    int
-	Providers        map[string]forge.Provider
-	DepWarnings      []string
+	Cfg                config.Config
+	Version            string
+	StatusMsg          string
+	LogPath            string
+	CacheDir           string
+	CacheKey           string
+	PRs                []model.PR
+	PRsLoadedAt        time.Time
+	Branches           []model.BranchInfo
+	BranchesLoadedAt   time.Time
+	Activity           []model.Commit
+	ActivityLoadedAt   time.Time
+	Runs               []model.WorkflowRun
+	RunsLoadedAt       time.Time
+	Issues             []model.Issue
+	IssuesLoadedAt     time.Time
+	Milestones         []model.Milestone
+	MilestonesLoadedAt time.Time
+	ActiveProfile      int
+	Providers          map[string]forge.Provider
+	DepWarnings        []string
 }
 
 // New creates a Model ready to be passed to tea.NewProgram.
 func New(o Options) Model {
 	return Model{
-		cfg:              o.Cfg,
-		version:          o.Version,
-		statusMsg:        o.StatusMsg,
-		loading:          true,
-		scrollOffset:     map[tab]int{},
-		tabSort:          map[tab]tabSortState{},
-		cycleIdx:         -1,
-		logPath:          o.LogPath,
-		grouped:          true,
-		autoRefresh:      true,
-		lastActivity:     time.Now(),
-		ssDX:             1,
-		ssDY:             1,
-		cacheDir:         o.CacheDir,
-		cacheKey:         o.CacheKey,
-		prs:              o.PRs,
-		prsLoadedAt:      o.PRsLoadedAt,
-		branches:         o.Branches,
-		branchesLoadedAt: o.BranchesLoadedAt,
-		activity:         o.Activity,
-		activityLoadedAt: o.ActivityLoadedAt,
-		runs:             o.Runs,
-		runsLoadedAt:     o.RunsLoadedAt,
-		issues:           o.Issues,
-		issuesLoadedAt:   o.IssuesLoadedAt,
-		activeProfile:    o.ActiveProfile,
-		providers:        o.Providers,
-		depWarnings:      o.DepWarnings,
+		cfg:                o.Cfg,
+		version:            o.Version,
+		statusMsg:          o.StatusMsg,
+		loading:            true,
+		scrollOffset:       map[tab]int{},
+		tabSort:            map[tab]tabSortState{},
+		cycleIdx:           -1,
+		logPath:            o.LogPath,
+		grouped:            true,
+		autoRefresh:        true,
+		lastActivity:       time.Now(),
+		ssDX:               1,
+		ssDY:               1,
+		cacheDir:           o.CacheDir,
+		cacheKey:           o.CacheKey,
+		prs:                o.PRs,
+		prsLoadedAt:        o.PRsLoadedAt,
+		branches:           o.Branches,
+		branchesLoadedAt:   o.BranchesLoadedAt,
+		activity:           o.Activity,
+		activityLoadedAt:   o.ActivityLoadedAt,
+		runs:               o.Runs,
+		runsLoadedAt:       o.RunsLoadedAt,
+		issues:             o.Issues,
+		issuesLoadedAt:     o.IssuesLoadedAt,
+		milestones:         o.Milestones,
+		milestonesLoadedAt: o.MilestonesLoadedAt,
+		activeProfile:      o.ActiveProfile,
+		providers:          o.Providers,
+		depWarnings:        o.DepWarnings,
 	}
 }
 
 type Model struct {
-	cfg      config.Config
-	version  string
-	repos    []model.Repo
-	prs      []model.PR
-	branches []model.BranchInfo
-	activity []model.Commit
-	runs     []model.WorkflowRun
-	issues   []model.Issue
+	cfg        config.Config
+	version    string
+	repos      []model.Repo
+	prs        []model.PR
+	branches   []model.BranchInfo
+	activity   []model.Commit
+	runs       []model.WorkflowRun
+	issues     []model.Issue
+	milestones []model.Milestone
 
 	activeTab   tab
 	cursor      int
@@ -116,11 +124,12 @@ type Model struct {
 	scrollOffset map[tab]int
 
 	// Cache timestamps — avoid unnecessary refetches on tab switch
-	prsLoadedAt      time.Time
-	branchesLoadedAt time.Time
-	activityLoadedAt time.Time
-	runsLoadedAt     time.Time
-	issuesLoadedAt   time.Time
+	prsLoadedAt        time.Time
+	branchesLoadedAt   time.Time
+	activityLoadedAt   time.Time
+	runsLoadedAt       time.Time
+	issuesLoadedAt     time.Time
+	milestonesLoadedAt time.Time
 
 	// Load errors — shown in view when a tab has no data
 	errLog   []string
@@ -248,6 +257,11 @@ type runsLoadedMsg struct {
 type issuesLoadedMsg struct {
 	issues []model.Issue
 	errors []string
+}
+
+type milestonesLoadedMsg struct {
+	milestones []model.Milestone
+	errors     []string
 }
 
 // detailSect identifies which section of the detail pane an item belongs to.

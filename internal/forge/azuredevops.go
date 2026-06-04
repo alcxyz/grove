@@ -94,6 +94,12 @@ func (a *AzureDevOpsProvider) ListIssues(repoFullName string) ([]model.Issue, er
 	return nil, nil
 }
 
+func (a *AzureDevOpsProvider) ListMilestones(repoFullName string) ([]model.Milestone, error) {
+	// Azure DevOps iterations are project-scoped Azure Boards concepts, not
+	// repository milestones. Keep this empty until grove models work items.
+	return nil, nil
+}
+
 func (a *AzureDevOpsProvider) ListBranches(repoFullName string) ([]model.BranchInfo, error) {
 	owner, repo := splitRepoFullName(repoFullName)
 	repoMeta, err := a.repoMetadata(owner, repo)

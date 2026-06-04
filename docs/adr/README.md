@@ -11,3 +11,4 @@
 | [ADR-009](ADR-009-split-remote-concerns.md) | Split remote concerns per profile, group, and repo | config, app, clone |
 | [ADR-010](ADR-010-azure-devops-provider.md) | Azure DevOps provider support | forge, config, app, clone |
 | [ADR-011](ADR-011-split-host-integration-authority.md) | Explicit integration authority and public intake mirrors | workflow, release |
+| [ADR-012](ADR-012-milestones-tab.md) | First-class Milestones tab | model, forge, cache, app, ui |

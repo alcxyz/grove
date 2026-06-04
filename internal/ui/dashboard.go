@@ -833,6 +833,129 @@ func RenderIssues(groups []IssueGroup, cursor, width, scrollOffset, maxLines int
 	return b.String()
 }
 
+// ── Milestone row ─────────────────────────────────────────────────────────
+
+func formatMilestoneState(state string) string {
+	switch strings.ToLower(state) {
+	case "closed":
+		return CleanStyle.Render("closed")
+	case "open", "":
+		return PendingStyle.Render("open")
+	default:
+		return DimStyle.Render(state)
+	}
+}
+
+func formatMilestoneProgress(openIssues, closedIssues int) string {
+	total := openIssues + closedIssues
+	if total == 0 {
+		return DimStyle.Render("—")
+	}
+	percent := closedIssues * 100 / total
+	s := fmt.Sprintf("%d%%", percent)
+	if percent == 100 {
+		return CleanStyle.Render(s)
+	}
+	if percent >= 50 {
+		return ReviewStyle.Render(s)
+	}
+	return PendingStyle.Render(s)
+}
+
+func formatMilestoneDue(due *time.Time, state string) string {
+	if due == nil || due.IsZero() {
+		return DimStyle.Render("—")
+	}
+	label := due.Format("2006-01-02")
+	if strings.EqualFold(state, "closed") {
+		return DimStyle.Render(label)
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if due.Before(today) {
+		return FailStyle.Render(label)
+	}
+	return DimStyle.Render(label)
+}
+
+func renderMilestoneRow(ms model.Milestone, selected bool, hlField, hlValue string, repoW, titleW, stateW, progressW, openW, closedW, dueW, agoW int) string {
+	repo := truncate(repoShortName(ms.Repo), repoW-2)
+	title := truncate(ms.Title, titleW-2)
+	state := formatMilestoneState(ms.State)
+	progress := formatMilestoneProgress(ms.OpenIssues, ms.ClosedIssues)
+	openCount := issueHeat(ms.OpenIssues)
+	closedCount := DimStyle.Render(strconv.Itoa(ms.ClosedIssues))
+	due := formatMilestoneDue(ms.DueOn, ms.State)
+	ago := timeAgo(ms.UpdatedAt)
+
+	repoStyled := hlText(repo, "repo", hlField, hlValue)
+	titleStyled := hlText(title, "subject", hlField, hlValue)
+	row := "  " +
+		cell(repoStyled, repoW) +
+		cell(titleStyled, titleW) +
+		cell(state, stateW) +
+		cell(progress, progressW) +
+		cell(openCount, openW) +
+		cell(closedCount, closedW) +
+		cell(due, dueW) +
+		cell(DimStyle.Render(ago), agoW)
+	if selected {
+		return selRow(row)
+	}
+	return row
+}
+
+func RenderMilestones(groups []MilestoneGroup, cursor, width, scrollOffset, maxLines int, hlField, hlValue string) string {
+	total := 0
+	for _, g := range groups {
+		total += len(g.Milestones)
+	}
+	if total == 0 {
+		return DimStyle.Render("\n  No milestones found.\n")
+	}
+	contentW := listHeaderContentWidth(width, total, "milestone", "milestones")
+
+	// indent(2) is fixed; remaining columns flex within the content width.
+	fixedW := 2
+	cols := flexCols(contentW-fixedW, []colSpec{
+		{Min: 14, Weight: 2}, // repo
+		{Min: 18, Weight: 4}, // title
+		{Min: 8, Weight: 1},  // state
+		{Min: 8, Weight: 1},  // progress
+		{Min: 6, Weight: 1},  // open
+		{Min: 8, Weight: 1},  // closed
+		{Min: 12, Weight: 1}, // due
+		{Min: 7, Weight: 1},  // updated
+	})
+	repoW, titleW, stateW, progressW := cols[0], cols[1], cols[2], cols[3]
+	openW, closedW, dueW, agoW := cols[4], cols[5], cols[6], cols[7]
+
+	var b strings.Builder
+	header := "  " +
+		cell("Repository", repoW) + cell("Milestone", titleW) + cell("State", stateW) +
+		cell("Progress", progressW) + cell("Open", openW) + cell("Closed", closedW) +
+		cell("Due", dueW) + cell("Updated", agoW)
+	b.WriteString(renderListHeader(header, width, total, "milestone", "milestones"))
+	b.WriteString("\n")
+
+	sw := newScrollWriter(scrollOffset, maxLines)
+	flatIdx := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			sw.writeLine("")
+		}
+		if g.Name != "" {
+			sw.writeLine(groupHeader(g.Name, width))
+		}
+		for _, ms := range g.Milestones {
+			sw.writeLine(renderMilestoneRow(ms, flatIdx == cursor, hlField, hlValue, repoW, titleW, stateW, progressW, openW, closedW, dueW, agoW))
+			flatIdx++
+		}
+	}
+	b.WriteString(sw.string())
+	return b.String()
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────
 
 func RenderTabs(tabs []string, active, width int) string {

@@ -1,11 +1,11 @@
-// Package cache provides disk-backed persistence for GitHub API responses.
+// Package cache provides disk-backed persistence for forge API responses.
 //
-// Each data type (PRs, branches, activity, CI runs) is stored as a single JSON
-// file under $XDG_CACHE_HOME/grove/.  Every file wraps its payload in an
+// Each data type is stored as a single JSON file under $XDG_CACHE_HOME/grove/.
+// Every file wraps its payload in an
 // envelope that records when it was written (cached_at) and a config-derived
 // key (config_key).  If the key no longer matches the running config — because
-// the user changed their profile owner or prefixes — the data is discarded and
-// the caller must re-fetch.
+// the user changed their profile owner, prefixes, or concern remotes — the data
+// is discarded and the caller must re-fetch.
 //
 // The cache is read synchronously at startup so the TUI can render immediately
 // with last-known state.  Writes happen asynchronously (go cache.SaveX(...)) so
@@ -25,11 +25,12 @@ import (
 // Maximum entries stored per cache file.  These cap file size while staying
 // well above what the app can actually display.
 const (
-	maxPRs      = 500
-	maxBranches = 2000
-	maxActivity = 100
-	maxRuns     = 500
-	maxIssues   = 500
+	maxPRs        = 500
+	maxBranches   = 2000
+	maxActivity   = 100
+	maxRuns       = 500
+	maxIssues     = 500
+	maxMilestones = 500
 )
 
 // ErrConfigChanged is returned by Load* when the stored config key doesn't
@@ -146,4 +147,12 @@ func LoadIssues(dir, configKey string) ([]model.Issue, time.Time, error) {
 
 func SaveIssues(dir, configKey string, data []model.Issue) error {
 	return save(dir, "issues", configKey, capSlice(data, maxIssues))
+}
+
+func LoadMilestones(dir, configKey string) ([]model.Milestone, time.Time, error) {
+	return load[[]model.Milestone](dir, "milestones", configKey)
+}
+
+func SaveMilestones(dir, configKey string, data []model.Milestone) error {
+	return save(dir, "milestones", configKey, capSlice(data, maxMilestones))
 }

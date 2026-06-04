@@ -421,6 +421,55 @@ func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) 
 	}
 }
 
+func loadMilestones(profiles []config.Profile, providers map[string]forge.Provider) tea.Cmd {
+	return func() tea.Msg {
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		var allMilestones []model.Milestone
+		var errs []string
+
+		for _, p := range profiles {
+			paths := discoverRepoPaths(p)
+			for _, path := range paths {
+				wg.Add(1)
+				go func(path string, profile config.Profile) {
+					defer wg.Done()
+					name := filepath.Base(path)
+					remote := profile.SocialRemote(name, path)
+					if remote.Owner == "" {
+						return
+					}
+					prov := providerForRemote(providers, remote)
+					if prov == nil {
+						return
+					}
+					repoFull := remote.FullName(name)
+					milestones, err := prov.ListMilestones(repoFull)
+					mu.Lock()
+					if err != nil {
+						errs = append(errs, formatRemoteError(name, remote, err))
+					} else {
+						localRepoFull := remote.Owner + "/" + name
+						for i := range milestones {
+							milestones[i].Profile = profile.Name
+							milestones[i].Repo = localRepoFull
+							milestones[i].RepoPath = path
+						}
+						allMilestones = append(allMilestones, milestones...)
+					}
+					mu.Unlock()
+				}(path, p)
+			}
+		}
+		wg.Wait()
+
+		sort.Slice(allMilestones, func(i, j int) bool {
+			return milestoneLess(allMilestones[i], allMilestones[j], true)
+		})
+		return milestonesLoadedMsg{milestones: allMilestones, errors: errs}
+	}
+}
+
 func loadDetail(repo model.Repo, profile config.Profile, providers map[string]forge.Provider) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
@@ -885,6 +934,12 @@ func (m *Model) loadTabIfNeeded() tea.Cmd {
 			m.loading = true
 			m.statusMsg = "Loading issues..."
 			return loadIssues(m.cfg.Profiles, m.providers)
+		}
+	case tabMilestones:
+		if len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl {
+			m.loading = true
+			m.statusMsg = "Loading milestones..."
+			return loadMilestones(m.cfg.Profiles, m.providers)
 		}
 	}
 	return nil

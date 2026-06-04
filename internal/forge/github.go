@@ -365,6 +365,48 @@ func (g *GitHubProvider) ListIssues(repoFullName string) ([]model.Issue, error) 
 	return issues, nil
 }
 
+func (g *GitHubProvider) ListMilestones(repoFullName string) ([]model.Milestone, error) {
+	items, err := g.apiGetPaginated(fmt.Sprintf("/repos/%s/milestones?state=open", repoFullName), 100)
+	if err != nil {
+		return nil, err
+	}
+
+	milestones := make([]model.Milestone, 0, len(items))
+	for _, item := range items {
+		var raw struct {
+			Number       int        `json:"number"`
+			Title        string     `json:"title"`
+			Description  string     `json:"description"`
+			State        string     `json:"state"`
+			OpenIssues   int        `json:"open_issues"`
+			ClosedIssues int        `json:"closed_issues"`
+			DueOn        *time.Time `json:"due_on"`
+			CreatedAt    time.Time  `json:"created_at"`
+			UpdatedAt    time.Time  `json:"updated_at"`
+			ClosedAt     *time.Time `json:"closed_at"`
+			HTMLURL      string     `json:"html_url"`
+		}
+		if err := json.Unmarshal(item, &raw); err != nil {
+			return nil, fmt.Errorf("parse milestones for %s: %w", repoFullName, err)
+		}
+		milestones = append(milestones, model.Milestone{
+			Repo:         repoFullName,
+			Number:       raw.Number,
+			Title:        raw.Title,
+			Description:  raw.Description,
+			State:        raw.State,
+			OpenIssues:   raw.OpenIssues,
+			ClosedIssues: raw.ClosedIssues,
+			DueOn:        raw.DueOn,
+			CreatedAt:    raw.CreatedAt,
+			UpdatedAt:    raw.UpdatedAt,
+			ClosedAt:     raw.ClosedAt,
+			URL:          raw.HTMLURL,
+		})
+	}
+	return milestones, nil
+}
+
 func (g *GitHubProvider) ListBranches(repoFullName string) ([]model.BranchInfo, error) {
 	data, err := g.apiGet(fmt.Sprintf("/repos/%s", repoFullName))
 	if err != nil {

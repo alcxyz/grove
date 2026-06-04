@@ -1,6 +1,6 @@
 # grove
 
-TUI for multi-repo git forge monitoring across GitHub, Forgejo, and Azure DevOps. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, recent branches, and commit activity across all your repos without leaving the terminal.
+TUI for multi-repo git forge monitoring across GitHub, Forgejo, and Azure DevOps. See branch status, dirty working trees, ahead/behind counts, open PRs, CI runs, issues, milestones, recent branches, and commit activity across all your repos without leaving the terminal.
 
 ```
                {o,o}
@@ -22,6 +22,7 @@ TUI for multi-repo git forge monitoring across GitHub, Forgejo, and Azure DevOps
 - **Branches** (tab 4): all remote branches with PR and merge indicators
 - **Activity** (tab 5): recent commits across repos with inline diff viewer
 - **Issues** (tab 6): open forge issues across all repos with labels, assignees, milestones, and age
+- **Milestones** (tab 7): open milestones across all repos with progress, open/closed issue counts, due date, and update age
 - **Detail pane**: full repo detail with local/remote branches, open PRs, open issues, CI runs, recent commits, and stats; item-level cursor with contextual actions per item type
 - **Diff viewer**: scrollable inline `git show` output with syntax colouring; respects your configured diff pager (`delta`, `bat`); navigate between commits with `[` / `]` and between files with `{` / `}`
 - **External tools**: `space` opens diffnav (commits) or lazygit (repos) based on context; `e` opens `$EDITOR` / nvim at repo root
@@ -87,11 +88,11 @@ yay -S grove-tui-bin
 
 Requires Go 1.22+. Forgejo-backed profiles support `auth_mode: token` (default) with `token_file`, and `auth_mode: tea` for environments where an authenticated `tea` CLI is preferred. GitHub-backed profiles support `auth_mode: token` (default) with `token_file`, `GH_TOKEN`, or `GITHUB_TOKEN`, and `auth_mode: gh` for environments where an authenticated `gh` CLI is available but PATs are blocked. Azure DevOps-backed profiles use the Azure CLI DevOps extension (`az repos ...`) and require `project` in config.
 
-For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions for the configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata.
+For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to the specific GitHub-facing repositories. Grove only needs read-only repository permissions for the configured concerns: Metadata, Pull requests, Issues and milestones, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata.
 
-Use `auth_mode: gh` for GitHub organizations that do not allow PATs. In that mode Grove shells out to `gh api` for PRs, issues, branches, CI, and repo enumeration, and `gh repo clone` for GitHub clones.
+Use `auth_mode: gh` for GitHub organizations that do not allow PATs. In that mode Grove shells out to `gh api` for PRs, issues, milestones, branches, CI, and repo enumeration, and `gh repo clone` for GitHub clones.
 
-Use `auth_mode: tea` for Forgejo/Gitea instances when you want Grove to reuse `tea` CLI authentication. In that mode Grove shells out to `tea api` for PRs, issues, branches, CI, and repo enumeration, and `tea clone` for Forgejo clones. Configure the login first with `tea logins add`.
+Use `auth_mode: tea` for Forgejo/Gitea instances when you want Grove to reuse `tea` CLI authentication. In that mode Grove shells out to `tea api` for PRs, issues, milestones, branches, CI, and repo enumeration, and `tea clone` for Forgejo clones. Configure the login first with `tea logins add`.
 
 For Azure DevOps, authenticate outside grove with `az devops login` or your normal configured Azure CLI credentials. Grove does not read Azure DevOps token files directly.
 
@@ -216,7 +217,7 @@ grove ~/dir1 ~/dir2
 | Path                                 | Purpose                                                      |
 | ------------------------------------ | ------------------------------------------------------------ |
 | `$XDG_CONFIG_HOME/grove/config.yaml` | Config (falls back to `~/.grove.yaml`); profile-based format |
-| `$XDG_CACHE_HOME/grove/`             | Cached PR / branch / activity / CI run data + UI state       |
+| `$XDG_CACHE_HOME/grove/`             | Cached forge data + UI state                                 |
 | `$XDG_STATE_HOME/grove/grove.log`    | Runtime log                                                  |
 
 ## Key bindings
@@ -233,7 +234,7 @@ grove ~/dir1 ~/dir2
 | `{ }`               | Jump between config groups                                                |
 | `[ ]`               | Jump between repo blocks                                                  |
 | `( )`               | Jump between CI status blocks (tab 1) / subject / branch / message blocks |
-| `1`–`6`              | Switch to tab directly                                                    |
+| `1`–`7`              | Switch to tab directly                                                    |
 
 ### Filters and sort
 
@@ -245,8 +246,8 @@ grove ~/dir1 ~/dir2
 | `s` / `S` | Cycle by subject prefix, sort by name / title                                             |
 | `a` / `A` | Cycle by repository, sort by repository                                                   |
 | `f` / `F` | Cycle by date, sort by date / updated                                                     |
-| `x` / `X` | Cycle / sort by **PR count** (tab 1) / **review status** (tab 2) / **has-PR** (tab 4)     |
-| `c` / `C` | Cycle / sort by **branch count** (tab 1) / **merged** (tab 4) / **branch prefix** (tab 3) |
+| `x` / `X` | Cycle / sort by **PR count** (tab 1) / **review status** (tab 2) / **has-PR** (tab 4) / **state** (tab 7) |
+| `c` / `C` | Cycle / sort by **branch count** (tab 1) / **merged** (tab 4) / **branch prefix** (tab 3) / **due date** (tab 7) |
 | `v` / `V` | Cycle / sort by **CI status** (tabs 1, 3) / **checks result** (tab 2)                     |
 
 The `x` / `c` / `v` keys follow the spatial layout of the columns they target (PR / Br / CI on the dashboard).
@@ -257,7 +258,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 
 | Key                 | Action                                                                                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `enter`             | Open detail pane (tabs 1-4, 6) / open diff (tab 5)                                                                           |
+| `enter`             | Open detail pane (tabs 1-4, 6-7) / open diff (tab 5)                                                                         |
 | `o`                 | Open in browser on the active forge (all tabs and views)                                                                     |
 | `space`             | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
 | `e`                 | Open `$EDITOR` / nvim at repo root (all tabs and views)                                                                      |
@@ -319,6 +320,23 @@ Tab 3 shows recent workflow / pipeline runs across all repos:
 
 The **Dashboard** tab (tab 1) also shows a compact CI status icon (`✓` / `✗` / `●` / `—`) in the `CI` column, reflecting the latest run for each repo.
 
+## Milestones
+
+Tab 7 shows open repository milestones across GitHub and Forgejo profiles:
+
+| Column     | Meaning                                      |
+| ---------- | -------------------------------------------- |
+| Repository | Short repo name                              |
+| Milestone  | Milestone title                              |
+| State      | Forge milestone state                        |
+| Progress   | Closed issues as a percentage of total issues |
+| Open       | Open issue count                             |
+| Closed     | Closed issue count                           |
+| Due        | Due date, highlighted when overdue           |
+| Updated    | Time since last update                       |
+
+`o` opens the milestone in the browser. `enter` opens the repo's detail pane when the milestone maps to a local repo. Filtering and sorting work by repository, title, state, due date, and updated date. Issue rows still include milestone names for context, but milestone progress and scheduling live in this tab.
+
 ### Dashboard indicators
 
 | Column           | Meaning                                                              |
@@ -367,18 +385,19 @@ Grove caches forge API responses to disk so the UI opens instantly and remains u
 
 **What is cached**
 
-| File            | Content                   | Cap         |
-| --------------- | ------------------------- | ----------- |
-| `prs.json`      | Open pull requests        | 500 items   |
-| `branches.json` | Remote branches           | 2 000 items |
-| `activity.json` | Recent commits            | 100 items   |
-| `runs.json`     | CI workflow runs          | 500 items   |
-| `issues.json`   | Open issues               | 500 items   |
-| `state.json`    | UI state (active profile) | —           |
+| File              | Content                   | Cap         |
+| ----------------- | ------------------------- | ----------- |
+| `prs.json`        | Open pull requests        | 500 items   |
+| `branches.json`   | Remote branches           | 2 000 items |
+| `activity.json`   | Recent commits            | 100 items   |
+| `runs.json`       | CI workflow runs          | 500 items   |
+| `issues.json`     | Open issues               | 500 items   |
+| `milestones.json` | Open milestones           | 500 items   |
+| `state.json`      | UI state (active profile) | —           |
 
 Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string>, "data": [...] }`.
 
-**Startup** — all five cache files are read before the TUI launches. The UI renders immediately with the cached data; fresh data loads in the background and replaces it without any visual flicker. The last active profile is restored from `state.json`.
+**Startup** — all six data cache files are read before the TUI launches. The UI renders immediately with the cached data; fresh data loads in the background and replaces it without any visual flicker. The last active profile is restored from `state.json`.
 
 **TTL** — controlled by `refresh_secs` in config (default 300 s). On startup and on every tab switch, grove checks whether the data for that tab is older than the TTL. If so, a background fetch is triggered automatically. Auto-refresh (toggled with `R`) repeats this on a timer.
 

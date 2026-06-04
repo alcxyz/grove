@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestForgejoCloneURLUsesConfiguredSSHHost(t *testing.T) {
@@ -144,6 +145,66 @@ printf '%s\n' "$@" > "` + argsPath + `"
 	want := "clone\nhttps://git.alc.xyz/alcxyz/grove.git\n" + target
 	if got != want {
 		t.Fatalf("unexpected tea clone args:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestForgejoListMilestonesUsesMilestonesEndpoint(t *testing.T) {
+	requestURIs := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestURIs <- r.URL.RequestURI()
+		if r.URL.Path != "/api/v1/repos/alcxyz/grove/milestones" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[
+			{
+				"id": 4,
+				"title": "v1.0",
+				"description": "Release train",
+				"state": "open",
+				"open_issues": 2,
+				"closed_issues": 3,
+				"due_on": "2026-06-30T00:00:00Z",
+				"created_at": "2026-06-01T12:00:00Z",
+				"updated_at": "2026-06-05T12:00:00Z",
+				"closed_at": null
+			}
+		]`))
+	}))
+	defer server.Close()
+
+	provider, err := NewForgejoProvider(ProviderConfig{
+		Forge:       "forgejo",
+		InstanceURL: server.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	milestones, err := provider.ListMilestones("alcxyz/grove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestURI := <-requestURIs
+	if requestURI != "/api/v1/repos/alcxyz/grove/milestones?state=open&page=1&limit=50" {
+		t.Fatalf("unexpected request URI %q", requestURI)
+	}
+	if len(milestones) != 1 {
+		t.Fatalf("len(milestones) = %d, want 1", len(milestones))
+	}
+	ms := milestones[0]
+	if ms.Repo != "alcxyz/grove" || ms.Number != 4 || ms.Title != "v1.0" || ms.State != "open" {
+		t.Fatalf("unexpected milestone: %+v", ms)
+	}
+	if ms.OpenIssues != 2 || ms.ClosedIssues != 3 {
+		t.Fatalf("issue counts = (%d, %d), want (2, 3)", ms.OpenIssues, ms.ClosedIssues)
+	}
+	if ms.DueOn == nil || !ms.DueOn.Equal(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("DueOn = %v, want 2026-06-30", ms.DueOn)
+	}
+	if ms.URL != server.URL+"/alcxyz/grove/milestones/4" {
+		t.Fatalf("URL = %q", ms.URL)
 	}
 }
 

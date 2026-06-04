@@ -66,7 +66,7 @@ Usage:
   grove -h, --help          show this help
 
 Navigation:
-  1-6         switch tabs (Dashboard, PRs, CI, Branches, Activity, Issues)
+  1-7         switch tabs (Dashboard, PRs, CI, Branches, Activity, Issues, Milestones)
   h/l         previous/next tab
   j/k         move cursor down/up
   enter       open detail view
@@ -180,6 +180,8 @@ Config: ` + config.ConfigPath() + "\n")
 	var initRunsAt time.Time
 	var initIssues []model.Issue
 	var initIssuesAt time.Time
+	var initMilestones []model.Milestone
+	var initMilestonesAt time.Time
 
 	if prs, at, err := cache.LoadPRs(cacheDir, cacheKey); err == nil {
 		initPRs, initPRsAt = prs, at
@@ -195,6 +197,9 @@ Config: ` + config.ConfigPath() + "\n")
 	}
 	if issues, at, err := cache.LoadIssues(cacheDir, cacheKey); err == nil {
 		initIssues, initIssuesAt = issues, at
+	}
+	if milestones, at, err := cache.LoadMilestones(cacheDir, cacheKey); err == nil {
+		initMilestones, initMilestonesAt = milestones, at
 	}
 
 	// Restore last active profile from persisted state.
@@ -223,25 +228,27 @@ Config: ` + config.ConfigPath() + "\n")
 	}
 
 	m := app.New(app.Options{
-		Cfg:              cfg,
-		Version:          version,
-		StatusMsg:        initStatus,
-		LogPath:          logPath,
-		CacheDir:         cacheDir,
-		CacheKey:         cacheKey,
-		PRs:              initPRs,
-		PRsLoadedAt:      initPRsAt,
-		Branches:         initBranches,
-		BranchesLoadedAt: initBranchesAt,
-		Activity:         initActivity,
-		ActivityLoadedAt: initActivityAt,
-		Runs:             initRuns,
-		RunsLoadedAt:     initRunsAt,
-		Issues:           initIssues,
-		IssuesLoadedAt:   initIssuesAt,
-		ActiveProfile:    initProfile,
-		Providers:        providers,
-		DepWarnings:      depWarnings,
+		Cfg:                cfg,
+		Version:            version,
+		StatusMsg:          initStatus,
+		LogPath:            logPath,
+		CacheDir:           cacheDir,
+		CacheKey:           cacheKey,
+		PRs:                initPRs,
+		PRsLoadedAt:        initPRsAt,
+		Branches:           initBranches,
+		BranchesLoadedAt:   initBranchesAt,
+		Activity:           initActivity,
+		ActivityLoadedAt:   initActivityAt,
+		Runs:               initRuns,
+		RunsLoadedAt:       initRunsAt,
+		Issues:             initIssues,
+		IssuesLoadedAt:     initIssuesAt,
+		Milestones:         initMilestones,
+		MilestonesLoadedAt: initMilestonesAt,
+		ActiveProfile:      initProfile,
+		Providers:          providers,
+		DepWarnings:        depWarnings,
 	})
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

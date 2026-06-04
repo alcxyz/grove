@@ -90,3 +90,20 @@ type Issue struct {
 	URL       string
 	Profile   string
 }
+
+type Milestone struct {
+	Repo         string
+	RepoPath     string
+	Number       int
+	Title        string
+	Description  string
+	State        string
+	OpenIssues   int
+	ClosedIssues int
+	DueOn        *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	ClosedAt     *time.Time
+	URL          string
+	Profile      string
+}

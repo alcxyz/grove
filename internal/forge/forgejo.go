@@ -123,8 +123,12 @@ func forgejoTeaError(path string, stderr []byte) error {
 
 func (f *ForgejoProvider) apiGetPaginated(pathFmt string) ([]json.RawMessage, error) {
 	var all []json.RawMessage
+	sep := "?"
+	if strings.Contains(pathFmt, "?") {
+		sep = "&"
+	}
 	for page := 1; ; page++ {
-		path := fmt.Sprintf("%s?page=%d&limit=50", pathFmt, page)
+		path := fmt.Sprintf("%s%spage=%d&limit=50", pathFmt, sep, page)
 		data, err := f.apiGet(path)
 		if err != nil {
 			if page == 1 {
@@ -232,6 +236,47 @@ func (f *ForgejoProvider) ListIssues(repoFullName string) ([]model.Issue, error)
 		}
 	}
 	return issues, nil
+}
+
+func (f *ForgejoProvider) ListMilestones(repoFullName string) ([]model.Milestone, error) {
+	items, err := f.apiGetPaginated(fmt.Sprintf("/repos/%s/milestones?state=open", repoFullName))
+	if err != nil {
+		return nil, err
+	}
+
+	milestones := make([]model.Milestone, 0, len(items))
+	for _, item := range items {
+		var raw struct {
+			ID           int64      `json:"id"`
+			Title        string     `json:"title"`
+			Description  string     `json:"description"`
+			State        string     `json:"state"`
+			OpenIssues   int        `json:"open_issues"`
+			ClosedIssues int        `json:"closed_issues"`
+			DueOn        *time.Time `json:"due_on"`
+			CreatedAt    time.Time  `json:"created_at"`
+			UpdatedAt    time.Time  `json:"updated_at"`
+			ClosedAt     *time.Time `json:"closed_at"`
+		}
+		if err := json.Unmarshal(item, &raw); err != nil {
+			return nil, fmt.Errorf("parse milestones for %s: %w", repoFullName, err)
+		}
+		milestones = append(milestones, model.Milestone{
+			Repo:         repoFullName,
+			Number:       int(raw.ID),
+			Title:        raw.Title,
+			Description:  raw.Description,
+			State:        raw.State,
+			OpenIssues:   raw.OpenIssues,
+			ClosedIssues: raw.ClosedIssues,
+			DueOn:        raw.DueOn,
+			CreatedAt:    raw.CreatedAt,
+			UpdatedAt:    raw.UpdatedAt,
+			ClosedAt:     raw.ClosedAt,
+			URL:          fmt.Sprintf("%s/milestones/%d", f.repoWebURL(repoFullName), raw.ID),
+		})
+	}
+	return milestones, nil
 }
 
 func (f *ForgejoProvider) ListBranches(repoFullName string) ([]model.BranchInfo, error) {
@@ -433,6 +478,11 @@ func (f *ForgejoProvider) cloneURL(owner, name string) string {
 
 func (f *ForgejoProvider) RepoURL(owner, repo string) string {
 	return fmt.Sprintf("%s/%s/%s", f.baseURL, owner, repo)
+}
+
+func (f *ForgejoProvider) repoWebURL(repoFullName string) string {
+	owner, repo := splitRepoFullName(repoFullName)
+	return f.RepoURL(owner, repo)
 }
 
 func (f *ForgejoProvider) CommitURL(owner, repo, hash string) string {

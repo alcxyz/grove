@@ -6,6 +6,8 @@
 
 **Revision 2026-05-05:** GitHub now uses the same direct HTTP provider model as Forgejo. The `gh` CLI is no longer a provider dependency for PRs, issues, branches, CI, repo enumeration, or clone routing.
 
+**Revision 2026-06-04:** The provider contract includes first-class repository milestones for GitHub and Forgejo; issue rows still retain labels, assignees, and milestone names as issue metadata.
+
 ## Context
 
 Grove started tightly coupled to GitHub at every layer of the stack. Data fetching went through the `gh` CLI wrapper in `internal/gh/gh.go`, model types in `internal/model/repo.go` assumed GitHub semantics, and the `grove clone` subcommand called the GitHub REST API directly.
@@ -67,7 +69,7 @@ GitHub has Actions (`WorkflowRun`). Forgejo 1.20+ has its own Actions (GitHub Ac
 `grove clone` calls `gh api orgs/<owner>/repos` or `users/<owner>/repos`. Forgejo uses `/api/v1/orgs/{org}/repos` and `/api/v1/users/{user}/repos` — structurally similar, different base URL. Per-provider implementation via the `Provider` interface.
 
 **Auth:**
-Forgejo uses token-based HTTP auth via `token_file`. GitHub supports two modes per resolved remote: `auth_mode: token` (default), which reads `token_file` or falls back to `GH_TOKEN` / `GITHUB_TOKEN`, and `auth_mode: gh`, which shells out to the authenticated GitHub CLI (`gh api`, `gh repo clone`). Fine-grained GitHub PATs should be repository-scoped and read-only when token mode is usable, with only the permissions that match configured concerns: Metadata, Pull requests, Issues, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata. `auth_mode: gh` exists for organizations that permit `gh auth login` but block PAT creation.
+Forgejo uses token-based HTTP auth via `token_file`. GitHub supports two modes per resolved remote: `auth_mode: token` (default), which reads `token_file` or falls back to `GH_TOKEN` / `GITHUB_TOKEN`, and `auth_mode: gh`, which shells out to the authenticated GitHub CLI (`gh api`, `gh repo clone`). Fine-grained GitHub PATs should be repository-scoped and read-only when token mode is usable, with only the permissions that match configured concerns: Metadata, Pull requests, Issues and milestones, Actions, Commit statuses, and Contents when GitHub is the code remote for branch/commit metadata. `auth_mode: gh` exists for organizations that permit `gh auth login` but block PAT creation.
 
 **Rate limits:**
 GitHub caps authenticated REST API requests at 5,000 req/hr for normal user tokens. Grove limits GitHub-backed API calls to 5 concurrent HTTP requests. Forgejo instance limits are admin-configurable. The concurrency model is per-provider.

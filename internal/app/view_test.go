@@ -61,13 +61,15 @@ func TestViewAllTabs(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.loading = false
-	m.repos = []model.Repo{{Name: "repo", Path: "/tmp/repo", Branch: "main", Owner: "org"}}
-	m.prs = []model.PR{{Repo: "org/repo", Title: "Fix", Author: "dev"}}
-	m.branches = []model.BranchInfo{{Repo: "org/repo", Name: "feat", Author: "dev"}}
-	m.activity = []model.Commit{{Repo: "repo", Subject: "init", Author: "dev"}}
-	m.runs = []model.WorkflowRun{{Repo: "org/repo", WorkflowName: "CI", Status: "completed", Conclusion: "success"}}
+	m.repos = []model.Repo{{Name: "repo", Path: "/tmp/repo", Branch: "main", Owner: "org", Profile: "test"}}
+	m.prs = []model.PR{{Repo: "org/repo", Title: "Fix", Author: "dev", Profile: "test"}}
+	m.branches = []model.BranchInfo{{Repo: "org/repo", Name: "feat", Author: "dev", Profile: "test"}}
+	m.activity = []model.Commit{{Repo: "repo", Subject: "init", Author: "dev", Profile: "test"}}
+	m.runs = []model.WorkflowRun{{Repo: "org/repo", WorkflowName: "CI", Status: "completed", Conclusion: "success", Profile: "test"}}
+	m.issues = []model.Issue{{Repo: "org/repo", Title: "Bug", Author: "dev", Profile: "test"}}
+	m.milestones = []model.Milestone{{Repo: "org/repo", Title: "v1.0", State: "open", Profile: "test"}}
 
-	tabs := []tab{tabDashboard, tabPRs, tabCI, tabBranches, tabActivity}
+	tabs := []tab{tabDashboard, tabPRs, tabCI, tabBranches, tabActivity, tabIssues, tabMilestones}
 	for _, tb := range tabs {
 		m.activeTab = tb
 		out := m.View()

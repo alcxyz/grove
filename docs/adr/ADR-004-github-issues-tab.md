@@ -6,6 +6,8 @@
 
 **Revision 2026-05-05:** GitHub issue fetching now goes through the direct HTTP `GitHubProvider` in `internal/forge/`, not the retired `internal/gh` CLI wrapper. The issue model, cache, tab, and rendering decisions remain unchanged.
 
+**Revision 2026-06-04:** Milestone names remain on issue rows for context, but standalone milestone planning moved to the first-class Milestones tab described in ADR-012.
+
 ## Context
 
 Grove monitors PRs, CI runs, branches, and recent commits across repos — but has no visibility into GitHub Issues. For teams that use issues for bug tracking, feature requests, and task management, switching to a browser to check issue status breaks the terminal-centric workflow grove provides.

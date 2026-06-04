@@ -12,13 +12,13 @@ Existing tools each cover part of this workflow but none cover the full lifecycl
 
 - **`gh` CLI** can list GitHub repos (`gh repo list`) and clone them (`gh repo clone`), but operates on one repo or one entity at a time. There is no cross-repo overview — seeing PRs, CI status, and issues across dozens of repos requires scripting multiple commands. It also has no awareness of your directory layout or routing rules.
 - **Forge web UIs** can browse repos on GitHub, Forgejo, Codeberg, or self-hosted instances, but they are not connected to grove's local checkout state, profile grouping, or clone destinations.
-- **lazygit** is excellent for deep single-repo git work but is purely local and single-repo. It has no forge API integration (no PRs, issues, or CI) and no multi-repo awareness. Grove already launches lazygit as its drill-down tool — they are complementary layers, not competing.
+- **lazygit** is excellent for deep single-repo git work but is purely local and single-repo. It has no forge API integration (no PRs, issues, milestones, or CI) and no multi-repo awareness. Grove already launches lazygit as its drill-down tool — they are complementary layers, not competing.
 
-Grove's value is as the **multi-repo orchestration layer**: a single dashboard showing PRs, CI, branches, issues, and activity across all repos. Remote profiles extend this to the full discover → clone → monitor lifecycle. You browse an org's uncloned repos in the same TUI where you monitor cloned ones, see forge context before deciding to clone, then clone with a keystroke into the right directory via group routing rules — all without leaving the terminal.
+Grove's value is as the **multi-repo orchestration layer**: a single dashboard showing PRs, CI, branches, issues, milestones, and activity across all repos. Remote profiles extend this to the full discover → clone → monitor lifecycle. You browse an org's uncloned repos in the same TUI where you monitor cloned ones, see forge context before deciding to clone, then clone with a keystroke into the right directory via group routing rules — all without leaving the terminal.
 
 A shared config across machines (macOS/Linux) already has profiles with `owner` and group routing rules. Extending profiles with a `type` field lets us reuse this infrastructure for remote browsing without a separate concept.
 
-Since ADR-006 introduced a `Provider` interface abstracting forge-specific API calls, remote profiles should work against any supported forge (GitHub, Forgejo/Codeberg), not just GitHub. The provider already covers PRs, issues, branches, CI runs, repo listing, and cloning.
+Since ADR-006 introduced a `Provider` interface abstracting forge-specific API calls, remote profiles should work against any supported forge (GitHub, Forgejo/Codeberg), not just GitHub. The provider already covers PRs, issues, milestones, branches, CI runs, repo listing, and cloning.
 
 ADR-009 later split configured remotes into **code**, **social**, and **CI** concerns. That matters for already-cloned repos whose code lives on Forgejo while PRs/issues/CI remain on GitHub. Remote discovery is different: it is about repositories that do not yet have a local checkout, so the browse/list/clone concern must be anchored on the resolved **code** remote. Social and CI remotes can still provide context when configured, but they are secondary and may not exist for uncloned repos.
 
@@ -30,7 +30,7 @@ Add a `type` field to profiles: `local` (default, current behaviour) and `remote
 - List repos via the profile's resolved **code** remote `Provider`, using its `owner`, `forge`, `instance_url`, `token_file`, `auth_mode`, `clone_proto`, and `ssh_host`, filtered by `prefixes`.
 - Show a dashboard with API-derived columns: description, language, visibility, stars/forks, last pushed, archived status.
 - `enter` opens a read-only detail view with full repo metadata (description, topics, license, default branch, issue/PR counts).
-- PRs, CI, and Issues tabs may work via the resolved **social** and **CI** remotes when a matching local/remote repo name can be resolved. They are best-effort context, not a prerequisite for remote browsing.
+- PRs, CI, Issues, and Milestones tabs may work via the resolved **social** and **CI** remotes when a matching local/remote repo name can be resolved. They are best-effort context, not a prerequisite for remote browsing.
 - Activity and Branches tabs are not available (they require local git data).
 - `@` key triggers clone via the code `Provider.CloneRepo()`. Clone destination is inferred from the profile's group `base_path` / `match` / `match_path` rules (same routing as `grove clone`), with the option to override.
 - After cloning, the repo appears in the matching local profile on next refresh.
@@ -61,7 +61,7 @@ Remote profiles should reuse the same remote resolution primitives as local prof
 - Detail view needs a remote variant showing API metadata instead of local git info.
 - The `@` key is reserved for clone actions (currently unmapped).
 - Clone routing reuses existing group `base_path` infrastructure, no new config needed.
-- Issues/PRs/CI for remote profiles are best-effort because ADR-009 allows these concerns to live on a different forge from code hosting.
+- Issues/milestones/PRs/CI for remote profiles are best-effort because ADR-009 allows these concerns to live on a different forge from code hosting.
 - Network dependency: remote profiles require API access on every load (no local fallback on first use, but cacheable after).
 - The "All" profile view will need to handle mixed local/remote grouping gracefully.
 - The `Provider` interface (ADR-006) needs extension for remote profile browsing: `ListRepos` currently returns `[]string` (names only), but the remote dashboard and detail view require richer metadata (description, language, stars, visibility, license, topics). A `ListReposDetailed` method or similar will be needed.

@@ -84,6 +84,9 @@ func (m Model) Init() tea.Cmd {
 	if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
 		cmds = append(cmds, loadIssues(m.cfg.Profiles, m.providers))
 	}
+	if len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl {
+		cmds = append(cmds, loadMilestones(m.cfg.Profiles, m.providers))
+	}
 
 	if m.autoRefresh {
 		cmds = append(cmds, tickCmd(ttl))
@@ -136,7 +139,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Diff view input — isTabNav keys fall through to close overlay + continue
 		if m.showDiff {
-			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5" || key == "6"
+			isTabNav := key == "h" || key == "l" || isTabNumberKey(key)
 			if !isTabNav {
 				return m.handleDiffKey(msg)
 			}
@@ -145,7 +148,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Detail pane input — isTabNav keys fall through to close overlay + continue
 		if m.showDetail {
-			isTabNav := key == "h" || key == "l" || key == "1" || key == "2" || key == "3" || key == "4" || key == "5" || key == "6"
+			isTabNav := key == "h" || key == "l" || isTabNumberKey(key)
 			if !isTabNav {
 				return m.handleDetailKey(msg)
 			}
@@ -225,6 +228,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("%d open issues", len(msg.issues))
 		}
 		go cache.SaveIssues(m.cacheDir, m.cacheKey, msg.issues) //nolint:errcheck
+
+	case milestonesLoadedMsg:
+		m.milestones = msg.milestones
+		m.errLog = msg.errors
+		m.authKind = authErrorKind(msg.errors)
+		m.milestonesLoadedAt = time.Now()
+		m.loading = false
+		if len(msg.errors) > 0 {
+			m.statusMsg = fmt.Sprintf("%d milestones (%d repos failed)", len(msg.milestones), len(msg.errors))
+		} else {
+			m.statusMsg = fmt.Sprintf("%d milestones", len(msg.milestones))
+		}
+		go cache.SaveMilestones(m.cacheDir, m.cacheKey, msg.milestones) //nolint:errcheck
 
 	case detailLoadedMsg:
 		m.detailCommits = msg.commits
@@ -774,14 +790,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.highlightField = ""
 		}
 	case "h":
-		m.activeTab = (m.activeTab + 5) % 6
+		m.activeTab = tab((int(m.activeTab) + tabCount - 1) % tabCount)
 		m.cursor = 0
 		m.filterQuery = ""
 		m.clearCycleFilter()
 		m.scrollOffset[m.activeTab] = 0
 		return m, m.loadTabIfNeeded()
 	case "l":
-		m.activeTab = (m.activeTab + 1) % 6
+		m.activeTab = tab((int(m.activeTab) + 1) % tabCount)
 		m.cursor = 0
 		m.filterQuery = ""
 		m.clearCycleFilter()
@@ -854,6 +870,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMsg = "Loading issues..."
 			return m, loadIssues(m.cfg.Profiles, m.providers)
 		}
+	case "7":
+		m.activeTab = tabMilestones
+		m.cursor = 0
+		m.filterQuery = ""
+		m.clearCycleFilter()
+		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
+		if len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl {
+			m.loading = true
+			m.statusMsg = "Loading milestones..."
+			return m, loadMilestones(m.cfg.Profiles, m.providers)
+		}
 	case "enter":
 		// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
 		openDetail := func(repo model.Repo) (Model, tea.Cmd) {
@@ -907,6 +934,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return openDetail(repo)
 				}
 			}
+		case tabMilestones:
+			if ms, ok := m.milestoneAtCursor(); ok {
+				if repo, ok := m.repoByRow(ms.Repo, ms.Profile, ms.RepoPath); ok {
+					return openDetail(repo)
+				}
+			}
 		}
 	case "r":
 		m.loading = true
@@ -924,6 +957,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, loadRuns(m.cfg.Profiles, m.providers)
 		case tabIssues:
 			return m, loadIssues(m.cfg.Profiles, m.providers)
+		case tabMilestones:
+			return m, loadMilestones(m.cfg.Profiles, m.providers)
 		}
 	case "R":
 		m.autoRefresh = !m.autoRefresh
@@ -998,6 +1033,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.doCycleFilter("review")
 		case tabBranches:
 			m.doCycleFilter("prcount")
+		case tabMilestones:
+			m.doCycleFilter("state")
 		}
 	case "X":
 		switch m.activeTab {
@@ -1007,6 +1044,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cycleSortField("review")
 		case tabBranches:
 			m.cycleSortField("prcount")
+		case tabMilestones:
+			m.cycleSortField("state")
 		}
 	// c/C — Br column: branch count (tab 1) · merged (tab 3) · branch prefix (tab 5)
 	case "c":
@@ -1017,6 +1056,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.doCycleFilter("merged")
 		case tabCI:
 			m.doCycleFilter("branch")
+		case tabMilestones:
+			m.doCycleFilter("due")
 		}
 	case "C":
 		switch m.activeTab {
@@ -1026,6 +1067,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cycleSortField("merged")
 		case tabCI:
 			m.cycleSortField("branch")
+		case tabMilestones:
+			m.cycleSortField("due")
 		}
 	// v/V — CI column: CI conclusion (tabs 1 5) · PR checks (tab 2)
 	case "v":
@@ -1197,6 +1240,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.statusMsg = "nothing selected"
 			}
+		case tabMilestones:
+			if ms, ok := m.milestoneAtCursor(); ok {
+				_ = ui.OpenURL(ms.URL)
+			} else {
+				m.statusMsg = "nothing selected"
+			}
 		}
 	case "up", "k":
 		if m.cursor > 0 {
@@ -1225,6 +1274,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func isTabNumberKey(key string) bool {
+	if len(key) != 1 {
+		return false
+	}
+	idx := int(key[0] - '1')
+	return idx >= 0 && idx < tabCount
 }
 
 // handleMouse handles mouse events.
@@ -1372,6 +1429,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				case tabIssues:
 					if iss, ok := m.issueAtCursor(); ok {
 						if repo, ok := m.repoByRow(iss.Repo, iss.Profile, iss.RepoPath); ok {
+							return dblOpenDetail(repo)
+						}
+					}
+				case tabMilestones:
+					if ms, ok := m.milestoneAtCursor(); ok {
+						if repo, ok := m.repoByRow(ms.Repo, ms.Profile, ms.RepoPath); ok {
 							return dblOpenDetail(repo)
 						}
 					}

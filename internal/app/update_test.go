@@ -77,6 +77,8 @@ func TestUpdateTabSwitchByNumber(t *testing.T) {
 		{"3", tabCI},
 		{"4", tabBranches},
 		{"5", tabActivity},
+		{"6", tabIssues},
+		{"7", tabMilestones},
 		{"1", tabDashboard},
 	}
 	for _, tt := range tests {
@@ -108,8 +110,8 @@ func TestUpdateTabSwitchHL(t *testing.T) {
 
 	// h wraps around
 	m = sendKey(m, "h")
-	if m.activeTab != tabIssues {
-		t.Errorf("h from dashboard: activeTab = %d, want %d (should wrap)", m.activeTab, tabIssues)
+	if m.activeTab != tabMilestones {
+		t.Errorf("h from dashboard: activeTab = %d, want %d (should wrap)", m.activeTab, tabMilestones)
 	}
 }
 

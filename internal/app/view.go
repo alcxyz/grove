@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/alcxyz/grove/internal/config"
 	"github.com/alcxyz/grove/internal/ui"
@@ -129,6 +130,24 @@ func (m Model) infoBarParts() []string {
 			fmt.Sprintf("%d issues", len(issues)),
 			fmt.Sprintf("%d repos", len(repos)),
 		)
+	case tabMilestones:
+		milestones := m.filteredMilestones()
+		repos := map[string]struct{}{}
+		overdue := 0
+		now := time.Now()
+		for _, ms := range milestones {
+			repos[repoDataKey(ms.Profile, localRepoName(ms.Repo, ms.RepoPath))] = struct{}{}
+			if ms.DueOn != nil && ms.DueOn.Before(now) && ms.State != "closed" {
+				overdue++
+			}
+		}
+		parts = append(parts,
+			fmt.Sprintf("%d milestones", len(milestones)),
+			fmt.Sprintf("%d repos", len(repos)),
+		)
+		if overdue > 0 {
+			parts = append(parts, ui.FailStyle.Render(fmt.Sprintf("%d overdue", overdue)))
+		}
 	}
 	if !m.grouped {
 		parts = append(parts, ui.CycleStyle.Render("flat"))
@@ -190,21 +209,23 @@ func (m Model) View() string {
 		switch ts.Field {
 		case "date":
 			label = map[tab]string{
-				tabDashboard: "date",
-				tabPRs:       "updated",
-				tabBranches:  "date",
-				tabActivity:  "date",
-				tabCI:        "updated",
-				tabIssues:    "updated",
+				tabDashboard:  "date",
+				tabPRs:        "updated",
+				tabBranches:   "date",
+				tabActivity:   "date",
+				tabCI:         "updated",
+				tabIssues:     "updated",
+				tabMilestones: "updated",
 			}[m.activeTab]
 		case "subject":
 			label = map[tab]string{
-				tabDashboard: "name",
-				tabPRs:       "title",
-				tabBranches:  "branch",
-				tabActivity:  "subject",
-				tabCI:        "workflow",
-				tabIssues:    "title",
+				tabDashboard:  "name",
+				tabPRs:        "title",
+				tabBranches:   "branch",
+				tabActivity:   "subject",
+				tabCI:         "workflow",
+				tabIssues:     "title",
+				tabMilestones: "title",
 			}[m.activeTab]
 		case "repo":
 			label = "repo"
@@ -226,6 +247,10 @@ func (m Model) View() string {
 			label = "merged"
 		case "branch":
 			label = "branch"
+		case "state":
+			label = "state"
+		case "due":
+			label = "due"
 		}
 		b.WriteString(ui.RenderSortIndicator(label, ts.Order == sortAsc))
 	}
@@ -360,6 +385,15 @@ func (m Model) View() string {
 			} else {
 				b.WriteString(ui.RenderIssues(m.groupedIssues(), m.cursor, cw, so, sh, hlField, hlValue))
 				if len(m.issues) == 0 && len(m.errLog) > 0 {
+					b.WriteString(ui.RenderErrors(m.errLog))
+				}
+			}
+		case tabMilestones:
+			if m.authKind != "" && len(m.milestones) == 0 {
+				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
+			} else {
+				b.WriteString(ui.RenderMilestones(m.groupedMilestones(), m.cursor, cw, so, sh, hlField, hlValue))
+				if len(m.milestones) == 0 && len(m.errLog) > 0 {
 					b.WriteString(ui.RenderErrors(m.errLog))
 				}
 			}

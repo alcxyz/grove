@@ -444,3 +444,79 @@ func IssueGroupStarts(groups []IssueGroup) []int {
 	}
 	return s
 }
+
+type MilestoneGroup struct {
+	Name       string
+	Milestones []model.Milestone
+	StartIdx   int
+}
+
+func BuildMilestoneGroups(milestones []model.Milestone, groupFor func(string) string, groupOrder func(string) int) []MilestoneGroup {
+	var groups []MilestoneGroup
+	idx := map[string]int{}
+	for _, ms := range milestones {
+		gname := groupFor(repoShortName(ms.Repo))
+		gi, exists := idx[gname]
+		if !exists {
+			gi = len(groups)
+			idx[gname] = gi
+			groups = append(groups, MilestoneGroup{Name: gname})
+		}
+		groups[gi].Milestones = append(groups[gi].Milestones, ms)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groupOrder(groups[i].Name) < groupOrder(groups[j].Name)
+	})
+	si := 0
+	for i := range groups {
+		groups[i].StartIdx = si
+		si += len(groups[i].Milestones)
+	}
+	return groups
+}
+
+func MilestoneCursorLine(groups []MilestoneGroup, cursor int) int {
+	vl := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			vl++
+		}
+		if g.Name != "" {
+			vl++
+		}
+		for i := range g.Milestones {
+			if g.StartIdx+i == cursor {
+				return vl
+			}
+			vl++
+		}
+	}
+	return 0
+}
+
+func MilestoneIndexAtVL(groups []MilestoneGroup, vl int) int {
+	cur := 0
+	for gi, g := range groups {
+		if gi > 0 && g.Name != "" {
+			cur++
+		}
+		if g.Name != "" {
+			cur++
+		}
+		for i := range g.Milestones {
+			if cur == vl {
+				return g.StartIdx + i
+			}
+			cur++
+		}
+	}
+	return -1
+}
+
+func MilestoneGroupStarts(groups []MilestoneGroup) []int {
+	s := make([]int, len(groups))
+	for i, g := range groups {
+		s[i] = g.StartIdx
+	}
+	return s
+}

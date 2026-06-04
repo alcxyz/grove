@@ -612,6 +612,69 @@ func applyIssueSort(out []model.Issue, ts tabSortState) {
 	}
 }
 
+func milestoneLess(a, b model.Milestone, dueAsc bool) bool {
+	switch {
+	case a.DueOn != nil && b.DueOn != nil:
+		if !a.DueOn.Equal(*b.DueOn) {
+			if dueAsc {
+				return a.DueOn.Before(*b.DueOn)
+			}
+			return a.DueOn.After(*b.DueOn)
+		}
+	case a.DueOn != nil:
+		return true
+	case b.DueOn != nil:
+		return false
+	}
+	if !a.UpdatedAt.Equal(b.UpdatedAt) {
+		return a.UpdatedAt.After(b.UpdatedAt)
+	}
+	return a.Title < b.Title
+}
+
+func applyMilestoneSort(out []model.Milestone, ts tabSortState) {
+	asc := ts.Order == sortAsc
+	switch ts.Field {
+	case "":
+		sort.SliceStable(out, func(i, j int) bool {
+			return milestoneLess(out[i], out[j], true)
+		})
+	case "date":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].UpdatedAt.Before(out[j].UpdatedAt)
+			}
+			return out[i].UpdatedAt.After(out[j].UpdatedAt)
+		})
+	case "due":
+		sort.SliceStable(out, func(i, j int) bool {
+			return milestoneLess(out[i], out[j], asc)
+		})
+	case "subject":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].Title < out[j].Title
+			}
+			return out[i].Title > out[j].Title
+		})
+	case "repo":
+		sort.SliceStable(out, func(i, j int) bool {
+			ri, rj := repoBaseName(out[i].Repo), repoBaseName(out[j].Repo)
+			if asc {
+				return ri < rj
+			}
+			return ri > rj
+		})
+	case "state":
+		sort.SliceStable(out, func(i, j int) bool {
+			if asc {
+				return out[i].State < out[j].State
+			}
+			return out[i].State > out[j].State
+		})
+	}
+}
+
 func (m Model) filteredActivity() []model.Commit {
 	q := strings.ToLower(m.filterQuery)
 	ts := m.tabSort[tabActivity]
@@ -676,7 +739,8 @@ func (m Model) filteredIssues() []model.Issue {
 			if !strings.Contains(strings.ToLower(iss.Repo), q) &&
 				!strings.Contains(strings.ToLower(iss.Title), q) &&
 				!strings.Contains(strings.ToLower(iss.Author), q) &&
-				!strings.Contains(strings.ToLower(labelStr), q) {
+				!strings.Contains(strings.ToLower(labelStr), q) &&
+				!strings.Contains(strings.ToLower(iss.Milestone), q) {
 				continue
 			}
 		}
@@ -695,6 +759,53 @@ func (m Model) filteredIssues() []model.Issue {
 		out = append(out, iss)
 	}
 	applyIssueSort(out, ts)
+	return out
+}
+
+func (m Model) filteredMilestones() []model.Milestone {
+	q := strings.ToLower(m.filterQuery)
+	ts := m.tabSort[tabMilestones]
+	hasCycle := m.cycleField == "subject" || m.cycleField == "repo" || m.cycleField == "date" ||
+		m.cycleField == "due" || m.cycleField == "state"
+	profileFilter := m.activeProfile >= 0 && m.activeProfile < len(m.cfg.Profiles)
+	out := make([]model.Milestone, 0, len(m.milestones))
+	activeProfileName := ""
+	if profileFilter {
+		activeProfileName = m.cfg.Profiles[m.activeProfile].Name
+	}
+	for _, ms := range m.milestones {
+		if profileFilter && ms.Profile != activeProfileName {
+			continue
+		}
+		if q != "" {
+			if !strings.Contains(strings.ToLower(ms.Repo), q) &&
+				!strings.Contains(strings.ToLower(ms.Title), q) &&
+				!strings.Contains(strings.ToLower(ms.Description), q) &&
+				!strings.Contains(strings.ToLower(ms.State), q) {
+				continue
+			}
+		}
+		if !m.cycleMatch("subject", ms.Title) {
+			continue
+		}
+		if !m.cycleMatch("repo", localRepoName(ms.Repo, ms.RepoPath)) {
+			continue
+		}
+		if !m.cycleMatch("state", ms.State) {
+			continue
+		}
+		if !m.cycleMatchDate(ms.UpdatedAt) {
+			continue
+		}
+		if !m.cycleMatchOptionalDate("due", ms.DueOn) {
+			continue
+		}
+		out = append(out, ms)
+	}
+	if q == "" && !hasCycle && ts.Field == "" && !profileFilter {
+		out = append(out[:0], m.milestones...)
+	}
+	applyMilestoneSort(out, ts)
 	return out
 }
 
@@ -766,11 +877,21 @@ func (m Model) cycleMatchDate(t time.Time) bool {
 	return dateInBucket(t, m.cycleValues[m.cycleIdx])
 }
 
+func (m Model) cycleMatchOptionalDate(field string, t *time.Time) bool {
+	if m.cycleField != field || m.cycleIdx < 0 || m.cycleIdx >= len(m.cycleValues) {
+		return true
+	}
+	if t == nil {
+		return false
+	}
+	return dateInBucket(*t, m.cycleValues[m.cycleIdx])
+}
+
 // collectCycleValues gathers unique sorted values for a field from the raw
 // (text-filtered only) data of the active tab.  Called when a cycle key is
 // first pressed or the field changes.
 func (m Model) collectCycleValues(field string) []string {
-	if field == "date" {
+	if field == "date" || field == "due" {
 		return timeBuckets
 	}
 	q := strings.ToLower(m.filterQuery)
@@ -963,7 +1084,7 @@ func (m Model) collectCycleValues(field string) []string {
 	case tabIssues:
 		for _, iss := range m.issues {
 			labelStr := strings.Join(iss.Labels, " ")
-			if !match(iss.Repo, iss.Title, iss.Author, labelStr) {
+			if !match(iss.Repo, iss.Title, iss.Author, labelStr, iss.Milestone) {
 				continue
 			}
 			switch field {
@@ -973,6 +1094,20 @@ func (m Model) collectCycleValues(field string) []string {
 				add(cyclePrefix(iss.Title))
 			case "repo":
 				add(localRepoName(iss.Repo, iss.RepoPath))
+			}
+		}
+	case tabMilestones:
+		for _, ms := range m.milestones {
+			if !match(ms.Repo, ms.Title, ms.Description, ms.State) {
+				continue
+			}
+			switch field {
+			case "subject":
+				add(cyclePrefix(ms.Title))
+			case "repo":
+				add(localRepoName(ms.Repo, ms.RepoPath))
+			case "state":
+				add(ms.State)
 			}
 		}
 	}

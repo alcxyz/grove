@@ -24,6 +24,8 @@ func (m Model) listLen() int {
 		return len(m.filteredRuns())
 	case tabIssues:
 		return len(m.filteredIssues())
+	case tabMilestones:
+		return len(m.filteredMilestones())
 	}
 	return 0
 }
@@ -181,6 +183,34 @@ func profileIssueGroups(issues []model.Issue, order func(string) int) []ui.Issue
 		return order(groups[i].Name) < order(groups[j].Name)
 	})
 	return setIssueGroupStarts(groups)
+}
+
+func setMilestoneGroupStarts(groups []ui.MilestoneGroup) []ui.MilestoneGroup {
+	start := 0
+	for i := range groups {
+		groups[i].StartIdx = start
+		start += len(groups[i].Milestones)
+	}
+	return groups
+}
+
+func profileMilestoneGroups(milestones []model.Milestone, order func(string) int) []ui.MilestoneGroup {
+	var groups []ui.MilestoneGroup
+	idx := map[string]int{}
+	for _, ms := range milestones {
+		name := ms.Profile
+		gi, ok := idx[name]
+		if !ok {
+			gi = len(groups)
+			idx[name] = gi
+			groups = append(groups, ui.MilestoneGroup{Name: name})
+		}
+		groups[gi].Milestones = append(groups[gi].Milestones, ms)
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return order(groups[i].Name) < order(groups[j].Name)
+	})
+	return setMilestoneGroupStarts(groups)
 }
 
 func setCommitGroupStarts(groups []ui.CommitGroup) []ui.CommitGroup {
@@ -347,6 +377,8 @@ func (m *Model) adjustScroll() {
 		cvl = ui.CICursorLine(m.groupedRuns(), m.cursor)
 	case tabIssues:
 		cvl = ui.IssueCursorLine(m.groupedIssues(), m.cursor)
+	case tabMilestones:
+		cvl = ui.MilestoneCursorLine(m.groupedMilestones(), m.cursor)
 	}
 
 	so := m.scrollOffset[m.activeTab]
@@ -415,6 +447,14 @@ func (m Model) maxScrollOffset() int {
 				totalVL = ui.IssueCursorLine(groups, g.StartIdx+len(g.Issues)-1) + 1
 			}
 		}
+	case tabMilestones:
+		groups := m.groupedMilestones()
+		if len(groups) > 0 {
+			g := groups[len(groups)-1]
+			if len(g.Milestones) > 0 {
+				totalVL = ui.MilestoneCursorLine(groups, g.StartIdx+len(g.Milestones)-1) + 1
+			}
+		}
 	}
 	mso := totalVL - m.scrollHeight()
 	if mso < 0 {
@@ -459,6 +499,8 @@ func (m Model) termRowToCursor(termRow int) int {
 		return ui.CIIndexAtVL(m.groupedRuns(), vl)
 	case tabIssues:
 		return ui.IssueIndexAtVL(m.groupedIssues(), vl)
+	case tabMilestones:
+		return ui.MilestoneIndexAtVL(m.groupedMilestones(), vl)
 	}
 	return -1
 }
@@ -557,6 +599,18 @@ func (m Model) groupedIssues() []ui.IssueGroup {
 	}
 	p := m.activeProfileObj()
 	return ui.BuildIssueGroups(issues, m.groupForFunc(p), p.GroupOrder)
+}
+
+func (m Model) groupedMilestones() []ui.MilestoneGroup {
+	milestones := m.filteredMilestones()
+	if !m.grouped {
+		return []ui.MilestoneGroup{{Name: "", Milestones: milestones, StartIdx: 0}}
+	}
+	if m.activeProfile == -1 && len(m.cfg.Profiles) > 1 {
+		return profileMilestoneGroups(milestones, m.profileOrder())
+	}
+	p := m.activeProfileObj()
+	return ui.BuildMilestoneGroups(milestones, m.groupForFunc(p), p.GroupOrder)
 }
 
 func (m Model) groupedActivity() []ui.CommitGroup {
@@ -666,6 +720,18 @@ func (m Model) blockHighlightValue() string {
 				flat++
 			}
 		}
+	case tabMilestones:
+		for _, g := range m.groupedMilestones() {
+			for _, ms := range g.Milestones {
+				if flat == m.cursor {
+					if m.highlightField == "repo" {
+						return localRepoName(ms.Repo, ms.RepoPath)
+					}
+					return cyclePrefix(ms.Title)
+				}
+				flat++
+			}
+		}
 	}
 	return ""
 }
@@ -731,6 +797,16 @@ func (m *Model) jumpRepo(dir int) {
 		for _, g := range m.groupedIssues() {
 			for j, iss := range g.Issues {
 				if name := localRepoName(iss.Repo, iss.RepoPath); name != last {
+					starts = append(starts, g.StartIdx+j)
+					last = name
+				}
+			}
+		}
+	case tabMilestones:
+		last := ""
+		for _, g := range m.groupedMilestones() {
+			for j, ms := range g.Milestones {
+				if name := localRepoName(ms.Repo, ms.RepoPath); name != last {
 					starts = append(starts, g.StartIdx+j)
 					last = name
 				}
@@ -817,6 +893,16 @@ func (m *Model) jumpSubject(dir int) {
 		for _, g := range m.groupedIssues() {
 			for j, iss := range g.Issues {
 				if p := cyclePrefix(iss.Title); p != last {
+					starts = append(starts, g.StartIdx+j)
+					last = p
+				}
+			}
+		}
+	case tabMilestones:
+		last := ""
+		for _, g := range m.groupedMilestones() {
+			for j, ms := range g.Milestones {
+				if p := cyclePrefix(ms.Title); p != last {
 					starts = append(starts, g.StartIdx+j)
 					last = p
 				}
@@ -915,6 +1001,15 @@ func (m Model) repoForDetailNav(idx int) (model.Repo, bool) {
 			for _, iss := range g.Issues {
 				if flat == idx {
 					return m.repoByRow(iss.Repo, iss.Profile, iss.RepoPath)
+				}
+				flat++
+			}
+		}
+	case tabMilestones:
+		for _, g := range m.groupedMilestones() {
+			for _, ms := range g.Milestones {
+				if flat == idx {
+					return m.repoByRow(ms.Repo, ms.Profile, ms.RepoPath)
 				}
 				flat++
 			}
@@ -1026,6 +1121,15 @@ func (m Model) repoPathAtCursor() string {
 				flat++
 			}
 		}
+	case tabMilestones:
+		for _, g := range m.groupedMilestones() {
+			for _, ms := range g.Milestones {
+				if flat == m.cursor {
+					return m.repoPathForRow(ms.Repo, ms.Profile, ms.RepoPath)
+				}
+				flat++
+			}
+		}
 	}
 	return ""
 }
@@ -1112,6 +1216,19 @@ func (m Model) issueAtCursor() (model.Issue, bool) {
 		}
 	}
 	return model.Issue{}, false
+}
+
+func (m Model) milestoneAtCursor() (model.Milestone, bool) {
+	flat := 0
+	for _, g := range m.groupedMilestones() {
+		for _, ms := range g.Milestones {
+			if flat == m.cursor {
+				return ms, true
+			}
+			flat++
+		}
+	}
+	return model.Milestone{}, false
 }
 
 // detailSectionStarts returns the line indices where each section of the detail pane
@@ -1421,6 +1538,8 @@ func (m *Model) jumpGroup(dir int) {
 		starts = ui.CIGroupStarts(m.groupedRuns())
 	case tabIssues:
 		starts = ui.IssueGroupStarts(m.groupedIssues())
+	case tabMilestones:
+		starts = ui.MilestoneGroupStarts(m.groupedMilestones())
 	}
 	m.jumpTo(starts, dir)
 }

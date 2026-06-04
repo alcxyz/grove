@@ -14,6 +14,7 @@ var ErrNotAuthenticated = errors.New("not authenticated")
 type Provider interface {
 	ListPRs(repoFullName string) ([]model.PR, error)
 	ListIssues(repoFullName string) ([]model.Issue, error)
+	ListMilestones(repoFullName string) ([]model.Milestone, error)
 	ListBranches(repoFullName string) ([]model.BranchInfo, error)
 	ListWorkflowRuns(repoFullName string) ([]model.WorkflowRun, error)
 

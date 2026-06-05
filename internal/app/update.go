@@ -1176,6 +1176,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.statusMsg = "no repo selected"
+	case "P":
+		// P = git push the repo for the selected item (all tabs).
+		if path := m.repoPathAtCursor(); path != "" {
+			name := repoBaseName(path)
+			m.loading = true
+			m.statusMsg = fmt.Sprintf("Pushing %s...", name)
+			return m, func() tea.Msg {
+				_, err := gitpkg.Push(path)
+				if err != nil {
+					return statusMsg(fmt.Sprintf("Push %s failed: %v", name, err))
+				}
+				return statusMsg(fmt.Sprintf("Pushed %s", name))
+			}
+		}
+		m.statusMsg = "no repo selected"
 	case "o":
 		// o = open in browser.
 		switch m.activeTab {

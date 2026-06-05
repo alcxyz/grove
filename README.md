@@ -263,6 +263,7 @@ Date buckets: today, yesterday, this week, last week, this month, last month, th
 | `space`             | Per-tab tool: gh-dash (PRs), checkout + lazygit (branches), workflow in editor (CI), diffnav (activity), lazygit (dashboard) |
 | `e`                 | Open `$EDITOR` / nvim at repo root (all tabs and views)                                                                      |
 | `p`                 | `git pull` current repo (all tabs)                                                                                           |
+| `P`                 | `git push` current repo (all tabs)                                                                                           |
 | `r`                 | Refresh current tab                                                                                                          |
 | `R`                 | Toggle auto-refresh                                                                                                          |
 | `ctrl+f`            | `git fetch` all repos                                                                                                        |

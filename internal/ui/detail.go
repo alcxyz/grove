@@ -395,6 +395,7 @@ var helpPages = [2][]struct {
 			{"space", "diffnav · gh-dash · lazygit · workflow (per tab)"},
 			{"e", "open $EDITOR / nvim at repo root"},
 			{"p", "git pull current repo"},
+			{"P", "git push current repo"},
 			{"r", "refresh current tab"},
 			{"R", "toggle auto-refresh"},
 			{"ctrl+f", "git fetch all repos"},
@@ -439,7 +440,7 @@ var helpPages = [2][]struct {
 // description text that overflows the available width continues aligned
 // under itself, not under the key label.
 //
-// contentW is the box content width (same value passed to lipgloss Width).
+// contentW is the box text content width after horizontal padding is removed.
 // keyW is the padded key column width.
 func wrapHelpLine(key, desc string, keyW, contentW int) string {
 	prefixW := 2 + keyW         // "  " + padded key column
@@ -448,42 +449,12 @@ func wrapHelpLine(key, desc string, keyW, contentW int) string {
 	if descW <= 0 {
 		return prefix + desc
 	}
-
-	// All characters used in help descriptions are single display-column wide
-	// (ASCII + ✓ ✗ · ↑ ↓ ● ∈ —), so rune count == visual width here.
-	runes := []rune(desc)
-	if len(runes) <= descW {
+	if lipgloss.Width(desc) <= descW {
 		return prefix + desc
 	}
 
 	indent := strings.Repeat(" ", prefixW)
-	var segments []string
-	start := 0
-	for start < len(runes) {
-		end := start + descW
-		if end >= len(runes) {
-			segments = append(segments, string(runes[start:]))
-			break
-		}
-		// Walk back from end to find the last space to break on.
-		bp := -1
-		for i := end; i > start; i-- {
-			if runes[i] == ' ' {
-				bp = i
-				break
-			}
-		}
-		if bp < 0 {
-			bp = end // hard break — no space found
-		}
-		segments = append(segments, strings.TrimRight(string(runes[start:bp]), " "))
-		// Skip any spaces at the break point so the next segment starts clean.
-		start = bp
-		for start < len(runes) && runes[start] == ' ' {
-			start++
-		}
-	}
-
+	segments := wrapHelpText(desc, descW)
 	if len(segments) == 0 {
 		return prefix + desc
 	}
@@ -494,6 +465,53 @@ func wrapHelpLine(key, desc string, keyW, contentW int) string {
 	return out
 }
 
+func wrapHelpText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+	runes := []rune(text)
+	var segments []string
+	start := 0
+	for start < len(runes) {
+		for start < len(runes) && runes[start] == ' ' {
+			start++
+		}
+		if start >= len(runes) {
+			break
+		}
+
+		end := start
+		lastSpace := -1
+		for end < len(runes) {
+			if lipgloss.Width(string(runes[start:end+1])) > width {
+				break
+			}
+			if runes[end] == ' ' {
+				lastSpace = end
+			}
+			end++
+		}
+		if end >= len(runes) {
+			segments = append(segments, strings.TrimRight(string(runes[start:]), " "))
+			break
+		}
+
+		bp := end // hard break if no space fits
+		if lastSpace > start {
+			bp = lastSpace
+		} else if bp == start {
+			bp = start + 1
+		}
+		segments = append(segments, strings.TrimRight(string(runes[start:bp]), " "))
+		// Skip any spaces at the break point so the next segment starts clean.
+		start = bp
+		for start < len(runes) && runes[start] == ' ' {
+			start++
+		}
+	}
+	return segments
+}
+
 // RenderHelp renders the keybinding reference as a centred bordered box.
 // page selects which of the two pages to show (0 or 1).
 func RenderHelp(width, page int, version string) string {
@@ -501,13 +519,14 @@ func RenderHelp(width, page int, version string) string {
 	sections := helpPages[page]
 
 	boxW := min(width-4, 90)
+	contentW := max(1, boxW-4) // account for horizontal padding inside the box
 	keyW := 22
 	var lines []string
 	for _, s := range sections {
 		lines = append(lines, "")
 		lines = append(lines, HeaderStyle.Render(s.title))
 		for _, r := range s.rows {
-			lines = append(lines, wrapHelpLine(r[0], r[1], keyW, boxW))
+			lines = append(lines, wrapHelpLine(r[0], r[1], keyW, contentW))
 		}
 	}
 	lines = append(lines, "")

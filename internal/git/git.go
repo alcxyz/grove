@@ -221,3 +221,7 @@ func Fetch(path string) error {
 func Pull(path string) (string, error) {
 	return run(path, "pull", "--ff-only")
 }
+
+func Push(path string) (string, error) {
+	return run(path, "push")
+}

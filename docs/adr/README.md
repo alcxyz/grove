@@ -12,3 +12,4 @@
 | [ADR-010](ADR-010-azure-devops-provider.md) | Azure DevOps provider support | forge, config, app, clone |
 | [ADR-011](ADR-011-split-host-integration-authority.md) | Explicit integration authority and public intake mirrors | workflow, release |
 | [ADR-012](ADR-012-milestones-tab.md) | First-class Milestones tab | model, forge, cache, app, ui |
+| [ADR-013](ADR-013-development-build-identity.md) | Identify development builds by source revision | build |

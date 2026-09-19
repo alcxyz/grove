@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/alcxyz/grove/internal/app"
+	"github.com/alcxyz/grove/internal/buildinfo"
 	"github.com/alcxyz/grove/internal/cache"
 	"github.com/alcxyz/grove/internal/clone"
 	"github.com/alcxyz/grove/internal/config"
@@ -42,6 +43,7 @@ func setupLog() (string, func()) {
 func main() {
 	logPath, closeLog := setupLog()
 	defer closeLog()
+	currentVersion := buildinfo.Resolve(version)
 
 	// First-run bootstrap: write the example config to the XDG path so the
 	// user has a real file to edit rather than relying on compiled defaults.
@@ -82,10 +84,10 @@ Config: ` + config.ConfigPath() + "\n")
 	// Version flag — print and exit before any TUI setup.
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version" || os.Args[1] == "-version" || os.Args[1] == "version" || os.Args[1] == "v") {
 		fmt.Printf("grove %s\nconfig: %s\ncache:  %s\nlog:    %s\n",
-			version, config.ConfigPath(), config.CacheDir(), config.LogPath())
-		if !app.IsReleaseVersion(version) {
+			currentVersion, config.ConfigPath(), config.CacheDir(), config.LogPath())
+		if !app.IsReleaseVersion(currentVersion) {
 			fmt.Println("update: skipped (non-release build)")
-		} else if latest := app.LatestVersion(version); latest != "" {
+		} else if latest := app.LatestVersion(currentVersion); latest != "" {
 			fmt.Printf("update: %s available\n", latest)
 		} else {
 			fmt.Println("update: current")
@@ -229,7 +231,7 @@ Config: ` + config.ConfigPath() + "\n")
 
 	m := app.New(app.Options{
 		Cfg:                cfg,
-		Version:            version,
+		Version:            currentVersion,
 		StatusMsg:          initStatus,
 		LogPath:            logPath,
 		CacheDir:           cacheDir,

@@ -49,7 +49,7 @@ func vcsRevision(info *debug.BuildInfo) (string, bool) {
 
 func isHex(value string) bool {
 	for _, r := range value {
-		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
 			return false
 		}
 	}

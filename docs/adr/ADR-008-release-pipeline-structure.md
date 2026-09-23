@@ -23,8 +23,9 @@ The CI pipeline is structured as four jobs:
 3. **Release** — runs after Promotion policy and Check pass, on pull requests
    (snapshot only) and on `main` pushes (auto-tag + GoReleaser). It produces
    binaries, a GitHub Release, a Homebrew tap update, and an AUR package.
-4. **Nix** — runs after Release succeeds, only on `main` pushes. It verifies
-   the Nix flake and updates a stale `vendorHash`.
+4. **Nix** — runs after Release succeeds on promotion pull requests and `main`
+   pushes. It verifies the Nix package without changing protected branches. A
+   stale `vendorHash` must be corrected on `dev` before promotion.
 
 Grove, canopy, and paperflow share the Check, Release, and Nix structure.
 Grove also requires its promotion policy because `dev` is its explicit
@@ -48,9 +49,12 @@ promotion checks.
 ## Consequences
 
 - Binary releases (GitHub, Homebrew, AUR) are never blocked by Nix issues.
-- Nix consumers get a working `vendorHash` within minutes of a release, automatically.
-- The pipeline is identical across all Go projects, reducing maintenance.
+- Nix consumers receive releases whose `vendorHash` was validated before the
+  promotion merged.
+- The shared Check, Release, and Nix job names reduce maintenance across the Go
+  projects while Grove's promotion policy enforces its branch contract.
 - CI requires the `DeterminateSystems/nix-installer-action` in the Nix job, adding ~30s of setup time.
-- If the Nix job fails for reasons other than vendorHash (e.g., nixpkgs breakage), it surfaces as a separate failure that doesn't affect the release.
+- A Nix failure blocks a promotion before release. The post-merge run verifies
+  the exact released commit without trying to push through branch protection.
 - `main` cannot accept a feature branch or an unchanged/reused release version
   when its required protection checks are enabled.

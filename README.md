@@ -443,7 +443,8 @@ Feature pull requests target `dev`. To publish a new version:
 
 1. Bump `VERSION` on `dev` to a new plain release version such as `0.10.0`.
 2. Open a same-repository pull request from `dev` to `main`.
-3. Wait for the promotion policy, code checks, and release snapshot to pass.
+3. Wait for the promotion policy, code checks, release snapshot, and Nix build
+   to pass.
 4. Squash-merge the promotion. CI creates the version tag and publishes the
    GitHub release, Homebrew formula, and AUR package from `main`.
 5. Merge `main` back into `dev`, then set the next development version such as

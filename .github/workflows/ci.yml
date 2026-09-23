@@ -7,7 +7,7 @@ on:
     branches: [main, dev]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   promotion:
@@ -59,11 +59,16 @@ jobs:
       - name: Test
         run: go test -race ./...
 
+      - name: Test promotion policy
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
   release:
     name: Release
     needs: [promotion, check]
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -157,43 +162,14 @@ jobs:
   nix:
     name: Nix
     needs: release
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: main
 
       - uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Verify or update vendorHash
-        run: |
-          set +e
-          output=$(nix build .#grove 2>&1)
-          rc=$?
-          set -e
-
-          if [ $rc -eq 0 ]; then
-            echo "vendorHash is up to date"
-            exit 0
-          fi
-
-          new_hash=$(echo "$output" | grep "got:" | awk '{print $2}')
-          if [ -z "$new_hash" ]; then
-            echo "::error::Nix build failed but could not extract new hash"
-            echo "$output"
-            exit 1
-          fi
-
-          echo "Updating vendorHash to $new_hash"
-          sed -i "s|vendorHash = \".*\"|vendorHash = \"$new_hash\"|" flake.nix
-
-          # Verify the build succeeds with the new hash
-          nix build .#grove
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add flake.nix
-          git commit -m "chore: update vendorHash for v$(cat VERSION)"
-          git push
+      - name: Verify Nix package
+        run: nix build .#grove

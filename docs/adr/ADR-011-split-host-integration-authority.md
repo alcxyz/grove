@@ -1,7 +1,7 @@
 # ADR-011: Explicit integration authority and public intake mirrors
 
 **Status:** Accepted
-**Date:** 2026-05-03 (revised 2026-05-03)
+**Date:** 2026-05-03 (revised 2026-09-23)
 **Applies to:** repository workflow, release workflow, split remote concern configuration
 
 ## Context
@@ -22,6 +22,18 @@ GitHub's public surface is still valuable. People can find projects, fork them, 
 ## Decision
 
 Each repository has exactly one explicit **integration authority** for `main`.
+
+Grove chooses GitHub as that authority. GitHub owns Grove's canonical branches,
+pull requests, CI, and releases. `dev` is the default branch for development;
+feature pull requests target `dev`. Protected `main` contains releases and
+accepts promotion pull requests only from the same repository's `dev` branch.
+Promotion pull requests are squash-merged after their version, tests, and
+release snapshot pass. The resulting `main` commit is merged back into `dev` so
+later promotions share its history.
+
+Other hosting services are secondary continuity mirrors for Grove. They copy
+GitHub's branches and tags in the GitHub-to-mirror direction and do not create
+another integration commit for the same change.
 
 Integration authority is independent of social, CI, release, and clone concerns:
 

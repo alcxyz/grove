@@ -1,7 +1,7 @@
 # ADR-008: Release pipeline structure
 
 **Status:** Accepted
-**Date:** 2026-04-29 (revised 2026-05-03)
+**Date:** 2026-04-29 (revised 2026-09-23)
 **Applies to:** `.github/workflows/ci.yml`, `flake.nix`
 
 ## Context
@@ -12,15 +12,28 @@ A monolithic release job also meant that a Nix build failure could block or comp
 
 ## Decision
 
-The CI pipeline is structured as three sequential jobs:
+The CI pipeline is structured as four jobs:
 
-1. **Check** — runs on every push to `dev` and on PRs to `main`. Build, vet, gofmt, golangci-lint, and race-detected tests.
-2. **Release** — runs after Check passes, on PRs (snapshot only) and on main push (auto-tag + GoReleaser). Produces binaries, GitHub Release, Homebrew tap update, and AUR package.
-3. **Nix** — runs after Release succeeds, only on main push. Verifies the Nix flake builds. If `vendorHash` is stale, computes the correct hash from the build error, updates `flake.nix`, and pushes the fix automatically.
+1. **Promotion policy** — allows pull requests to `main` only from this
+   repository's `dev` branch, with a new plain-semver `VERSION` that does not
+   already have a tag. Development pull requests are unaffected.
+2. **Check** — runs on pushes to `dev` and `main`, and on pull requests to
+   either branch. It builds, vets, checks formatting, lints, and runs tests with
+   the race detector.
+3. **Release** — runs after Promotion policy and Check pass, on pull requests
+   (snapshot only) and on `main` pushes (auto-tag + GoReleaser). It produces
+   binaries, a GitHub Release, a Homebrew tap update, and an AUR package.
+4. **Nix** — runs after Release succeeds, only on `main` pushes. It verifies
+   the Nix flake and updates a stale `vendorHash`.
 
-All three projects (grove, canopy, paperflow) use this same structure. The `release.yml` fallback workflow (triggered by manual tag push) is removed — `ci.yml` handles everything.
+Grove, canopy, and paperflow share the Check, Release, and Nix structure.
+Grove also requires its promotion policy because `dev` is its explicit
+development branch and `main` is release-only. The `release.yml` fallback
+workflow (triggered by manual tag push) is removed; `ci.yml` handles everything.
 
-ADR-011 revises the split-host trust model: GitHub can be a release and distribution surface without being the integration authority. The current GitHub `main` push auto-tag flow is therefore acceptable only for repositories that explicitly choose GitHub as integration authority. For repositories where Forgejo, Codeberg, or a trusted local clone owns protected history, the release flow should move toward trusted tags created outside GitHub and pushed to GitHub for distribution.
+ADR-011 identifies GitHub as Grove's integration authority. The `main` push
+auto-tag flow therefore runs against the same protected history that passed the
+promotion checks.
 
 ## Alternatives Considered
 
@@ -39,4 +52,5 @@ ADR-011 revises the split-host trust model: GitHub can be a release and distribu
 - The pipeline is identical across all Go projects, reducing maintenance.
 - CI requires the `DeterminateSystems/nix-installer-action` in the Nix job, adding ~30s of setup time.
 - If the Nix job fails for reasons other than vendorHash (e.g., nixpkgs breakage), it surfaces as a separate failure that doesn't affect the release.
-- Split-host repos must not infer release authority from GitHub reach alone; release automation should consume trusted history and tags from the integration authority.
+- `main` cannot accept a feature branch or an unchanged/reused release version
+  when its required protection checks are enabled.

@@ -43,31 +43,18 @@ go vet ./...
 2. Make your changes
 3. Add or update tests as needed
 4. Run `go test ./...` and `go vet ./...`
-5. Open or import the change on the repository's integration authority
+5. Open a GitHub pull request targeting `dev`
+6. Squash-merge after all checks pass
 
 CI runs build, vet, and tests. All checks must pass before merging.
 
-## Split-host workflow
+## Repository workflow
 
-GitHub can be used for public reach, issue intake, PR suggestions, and releases without being trusted as the integration authority.
-
-Do not merge the same `dev -> main` change on more than one host. Merge once on the configured integration authority, then fast-forward mirrors to that exact commit.
-
-For a Forgejo-authoritative repo with GitHub as public mirror:
-
-```bash
-git fetch origin main dev --tags
-git fetch github main dev --tags
-git switch dev
-git merge --ff-only origin/main
-git push origin dev
-git push github origin/main:main
-git push github dev
-```
-
-If any fast-forward step is rejected, stop and inspect the divergence before doing anything else.
-
-GitHub PRs are acceptable as public patch suggestions, but they should not be merged on GitHub unless that repository explicitly chooses GitHub as its integration authority. Accepted GitHub PRs should be fetched, reviewed, and applied through the authoritative host or a trusted local clone.
+GitHub is Grove's source of truth for branches, pull requests, CI, and
+releases. `dev` is the default development branch. Protected `main` accepts
+only same-repository `dev` promotion pull requests with a new release version.
+Secondary mirrors copy the resulting history; do not merge the same change on
+another host.
 
 ## Commit messages
 
@@ -92,15 +79,13 @@ build uses `.#release` from clean, identified release source.
 
 To cut a release:
 
-1. Bump the `VERSION` file on `dev` to a plain release version like `0.9.2`
-2. Merge `dev -> main` on the integration authority
-3. Create or push the release tag from the integration authority or a trusted local clone
-4. Push the trusted tag to GitHub if GitHub Releases/Homebrew/AUR are used as distribution surfaces
-5. Bump `dev` to the next non-release version like `0.9.3-dev`
+1. Bump the `VERSION` file on `dev` to a new plain release version like `0.10.0`
+2. Open a same-repository pull request from `dev` to `main`
+3. Wait for the promotion policy, code checks, and release snapshot to pass
+4. Squash-merge the promotion; CI creates the tag and publishes the release
+5. Merge `main` back into `dev`, then bump to the next development version like `0.10.1-dev`
 
 This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).
-
-The release automation may need further changes so GitHub consumes trusted tags instead of creating authoritative tags itself.
 
 ### Version numbering
 

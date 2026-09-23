@@ -438,17 +438,22 @@ Existing repos (detected by the presence of a `.git` directory) are skipped. Up 
 
 ## Releasing
 
-Releases are automated. To publish a new version:
+`dev` is the default development branch and `main` contains released work.
+Feature pull requests target `dev`. To publish a new version:
 
-1. Bump the `VERSION` file to a plain release version like `0.9.2`
-2. Merge `dev -> main` on the repository's integration authority
-3. Create or push the release tag from the authority or a trusted local clone
-4. Push the trusted history and tags to GitHub if GitHub Releases/Homebrew/AUR are used
-5. Bump `dev` to the next non-release version like `0.9.3-dev`
+1. Bump `VERSION` on `dev` to a new plain release version such as `0.10.0`.
+2. Open a same-repository pull request from `dev` to `main`.
+3. Wait for the promotion policy, code checks, and release snapshot to pass.
+4. Squash-merge the promotion. CI creates the version tag and publishes the
+   GitHub release, Homebrew formula, and AUR package from `main`.
+5. Merge `main` back into `dev`, then set the next development version such as
+   `0.10.1-dev`.
 
-CI runs tests and goreleaser builds binaries for GitHub Releases, Homebrew, and AUR.
-
-Grove supports split-host workflows: GitHub can be used for reach, issue intake, PR suggestions, and distribution without being trusted as the integration authority. Do not merge the same `dev -> main` change on multiple hosts. See [ADR-011](docs/adr/ADR-011-split-host-integration-authority.md).
+The promotion policy rejects feature branches, fork branches named `dev`,
+missing version bumps, and reused release tags. GitHub is Grove's source of
+truth for branches, pull requests, CI, and releases. Secondary mirrors copy
+that history and do not create separate integration commits. See
+[ADR-011](docs/adr/ADR-011-split-host-integration-authority.md).
 
 ## License
 

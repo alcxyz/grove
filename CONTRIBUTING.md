@@ -82,8 +82,8 @@ To cut a release:
 1. Bump the `VERSION` file on `dev` to a new plain release version like `0.10.0`
 2. Open a same-repository pull request from `dev` to `main`
 3. Wait for the promotion policy, code checks, release snapshot, and Nix build to pass
-4. Squash-merge the promotion; CI creates the tag and publishes the release
-5. Merge `main` back into `dev`, then bump to the next development version like `0.10.1-dev`
+4. Merge the promotion with a merge commit, not a squash; CI creates the tag and publishes the release
+5. Bump `dev` to the next development version like `0.10.1-dev`
 
 This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).
 

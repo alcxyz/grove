@@ -445,10 +445,10 @@ Feature pull requests target `dev`. To publish a new version:
 2. Open a same-repository pull request from `dev` to `main`.
 3. Wait for the promotion policy, code checks, release snapshot, and Nix build
    to pass.
-4. Squash-merge the promotion. CI creates the version tag and publishes the
-   GitHub release, Homebrew formula, and AUR package from `main`.
-5. Merge `main` back into `dev`, then set the next development version such as
-   `0.10.1-dev`.
+4. Merge the promotion with a merge commit, not a squash. CI creates the
+   version tag and publishes the GitHub release, Homebrew formula, and AUR
+   package from `main`.
+5. Set the next development version on `dev`, such as `0.10.1-dev`.
 
 The promotion policy rejects feature branches, fork branches named `dev`,
 missing version bumps, and reused release tags. GitHub is Grove's source of

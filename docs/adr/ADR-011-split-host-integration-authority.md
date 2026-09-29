@@ -1,7 +1,7 @@
 # ADR-011: Explicit integration authority and public intake mirrors
 
 **Status:** Accepted
-**Date:** 2026-05-03 (revised 2026-09-23)
+**Date:** 2026-05-03 (revised 2026-09-23, 2026-09-30)
 **Applies to:** repository workflow, release workflow, split remote concern configuration
 
 ## Context
@@ -27,9 +27,10 @@ Grove chooses GitHub as that authority. GitHub owns Grove's canonical branches,
 pull requests, CI, and releases. `dev` is the default branch for development;
 feature pull requests target `dev`. Protected `main` contains releases and
 accepts promotion pull requests only from the same repository's `dev` branch.
-Promotion pull requests are squash-merged after their version, tests, and
-release snapshot pass. The resulting `main` commit is merged back into `dev` so
-later promotions share its history.
+Promotion pull requests are merged with a merge commit after their version,
+tests, and release snapshot pass, so later promotions share history without a
+back-merge. The 2026-09-30 revision replaced squash promotions and their
+required back-merge into `dev`.
 
 Other hosting services are secondary continuity mirrors for Grove. They copy
 GitHub's branches and tags in the GitHub-to-mirror direction and do not create

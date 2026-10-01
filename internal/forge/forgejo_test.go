@@ -79,7 +79,7 @@ printf '[{"number":8,"title":"API via tea","user":{"login":"alc"},"state":"open"
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "api\nhttps://git.alc.xyz/api/v1/repos/alcxyz/grove/issues?state=open&type=issues\n"
+	want := "api\nhttps://git.alc.xyz/api/v1/repos/alcxyz/grove/issues?state=open&type=issues&page=1&limit=50\n"
 	if string(args) != want {
 		t.Fatalf("unexpected tea args:\n%s\nwant:\n%s", args, want)
 	}
@@ -299,5 +299,136 @@ func TestForgejoWorkflowStatusMapsTaskStatuses(t *testing.T) {
 			t.Fatalf("forgejoWorkflowStatus(%q) = (%q, %q), want (%q, %q)",
 				c.status, gotStatus, gotConclusion, c.wantStatus, c.wantConclusion)
 		}
+	}
+}
+
+func TestForgejoListPRsFollowsTotalCountPastServerPageCap(t *testing.T) {
+	const total, serverCap = 45, 30
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/repos/team/repo/pulls" {
+			http.NotFound(w, r)
+			return
+		}
+		page := 1
+		if p := r.URL.Query().Get("page"); p != "" {
+			page = int(p[0] - '0')
+		}
+		start := (page - 1) * serverCap
+		var items []map[string]any
+		for n := start; n < total && n < start+serverCap; n++ {
+			items = append(items, map[string]any{"number": n + 1, "title": "pr"})
+		}
+		w.Header().Set("X-Total-Count", "45")
+		if items == nil {
+			items = []map[string]any{}
+		}
+		writeJSON(t, w, items)
+	}))
+	defer server.Close()
+
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prs, err := provider.ListPRs("team/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != total {
+		t.Fatalf("len(prs) = %d, want %d", len(prs), total)
+	}
+}
+
+func TestForgejoPaginationReportsLaterPageErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		items := make([]map[string]any, forgejoPageLimit)
+		for i := range items {
+			items[i] = map[string]any{"number": i + 1}
+		}
+		writeJSON(t, w, items)
+	}))
+	defer server.Close()
+
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ListIssues("team/repo"); err == nil {
+		t.Fatal("expected error from failed second page, got silently truncated result")
+	}
+}
+
+func TestForgejoUnreadableTokenFileIsAuthError(t *testing.T) {
+	provider, err := NewForgejoProvider(ProviderConfig{
+		Forge:       "forgejo",
+		InstanceURL: "https://forge.invalid",
+		TokenFile:   filepath.Join(t.TempDir(), "missing-token"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ListPRs("team/repo"); !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("err = %v, want ErrNotAuthenticated", err)
+	}
+}
+
+func TestForgejoWorkflowRunsErrorHandling(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		code    int
+		wantErr bool
+	}{
+		{http.StatusNotFound, false},
+		{http.StatusForbidden, false},
+		{http.StatusUnauthorized, true},
+		{http.StatusInternalServerError, true},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.code)
+		}))
+		provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL, TokenFile: tokenPath})
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs, err := provider.ListWorkflowRuns("team/repo")
+		server.Close()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("status %d: err = %v, wantErr %v", tc.code, err, tc.wantErr)
+		}
+		if runs != nil {
+			t.Errorf("status %d: runs = %v, want nil", tc.code, runs)
+		}
+	}
+}
+
+func TestForgejoWorkflowRunsTreatAnonymous401AsNoRuns(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runs, err := provider.ListWorkflowRuns("team/repo"); err != nil || runs != nil {
+		t.Fatalf("ListWorkflowRuns = %v, %v; want nil, nil without a token", runs, err)
+	}
+}
+
+func TestForgejoTeaWorkflowRunsSurfaceMissingTea(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: "https://forge.invalid", AuthMode: "tea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ListWorkflowRuns("team/repo"); err == nil {
+		t.Fatal("expected error when tea cannot run")
 	}
 }

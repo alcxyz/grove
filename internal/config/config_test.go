@@ -595,7 +595,13 @@ prefixes:
 		t.Fatal(err)
 	}
 
-	cfg := Load()
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
 	if len(cfg.Profiles) != 1 {
 		t.Fatalf("expected 1 synthesised profile, got %d", len(cfg.Profiles))
 	}
@@ -631,7 +637,13 @@ profiles:
 	}
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	cfg := Load()
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
 	if len(cfg.Profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d", len(cfg.Profiles))
 	}
@@ -680,5 +692,138 @@ func TestResolveGroups_EmptyProfile(t *testing.T) {
 	groups := p.ResolveGroups()
 	if len(groups) != 0 {
 		t.Errorf("expected 0 groups for empty profile, got %d", len(groups))
+	}
+}
+
+func writeXDGConfig(t *testing.T, content string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "grove", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+}
+
+func TestLoad_InvalidYAMLReturnsError(t *testing.T) {
+	writeXDGConfig(t, "profiles:\n  - name: x\n   owner: bad-indent\n")
+	if _, _, err := Load(); err == nil {
+		t.Fatal("expected parse error for malformed YAML")
+	}
+}
+
+func TestLoad_UnknownKeysWarn(t *testing.T) {
+	writeXDGConfig(t, `
+profiles:
+  - name: Work
+    owner: acme
+    token-file: ~/token
+`)
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profiles[0].Owner != "acme" {
+		t.Errorf("owner = %q, want acme", cfg.Profiles[0].Owner)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "token-file") {
+		t.Errorf("warnings = %v, want one mentioning token-file", warnings)
+	}
+}
+
+func TestLoad_EmptyFileUsesDefaults(t *testing.T) {
+	writeXDGConfig(t, "")
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0].Owner != Default.Org {
+		t.Errorf("expected synthesised default profile, got %+v", cfg.Profiles)
+	}
+}
+
+func remoteKeys(remotes []Remote) map[string]bool {
+	keys := map[string]bool{}
+	for _, r := range remotes {
+		keys[r.Key()] = true
+	}
+	return keys
+}
+
+func TestPathDependentRemotesCoverMatchPathGroupWithRepoOverride(t *testing.T) {
+	p := Profile{
+		Name:  "p",
+		Owner: "alice",
+		Groups: []Group{{
+			Name:      "x",
+			MatchPath: "/src/x",
+			Code:      Remote{Forge: "forgejo", InstanceURL: "https://forge.example"},
+			CI:        Remote{Owner: "ci-org"},
+		}},
+		Repos: []RepoOverride{{Name: "r", Code: Remote{Owner: "bob"}, CI: Remote{Repo: "r-ci"}}},
+	}
+	c := Config{Profiles: []Profile{p}}
+	keys := remoteKeys(append(c.AllRemotes(), c.PathDependentRemotes()...))
+	for _, path := range []string{"/src/x/r", "/elsewhere/r"} {
+		for _, want := range []Remote{
+			p.CodeRemote("r", path),
+			p.SocialRemote("r", path),
+			p.CIRemote("r", path),
+		} {
+			if !keys[want.Key()] {
+				t.Errorf("runtime remote %+v for %s has no provider", want, path)
+			}
+		}
+	}
+	definite := remoteKeys(c.AllRemotes())
+	if definite[p.CodeRemote("r", "/src/x/r").Key()] {
+		t.Error("match_path combination should be path-dependent, not definite")
+	}
+}
+
+func TestAllRemotesSkipsImpossibleOverrideCombinations(t *testing.T) {
+	// The tools override never matches the gh- group, so combining them would
+	// switch to GitHub and drop the Forgejo instance_url.
+	p := Profile{
+		Name:        "p",
+		Owner:       "alice",
+		Forge:       "forgejo",
+		InstanceURL: "https://forge.example",
+		Groups:      []Group{{Name: "gh", Match: "gh-", Code: Remote{Forge: "github"}}},
+		Repos:       []RepoOverride{{Name: "tools", Social: Remote{Forge: "forgejo", Owner: "other"}}},
+	}
+	c := Config{Profiles: []Profile{p}}
+	for _, r := range append(c.AllRemotes(), c.PathDependentRemotes()...) {
+		if r.EffectiveForge() == "forgejo" && r.InstanceURL == "" {
+			t.Errorf("enumerated impossible remote without instance_url: %+v", r)
+		}
+	}
+	if !remoteKeys(c.AllRemotes())[p.SocialRemote("tools", "/src/tools").Key()] {
+		t.Error("runtime social remote for tools missing from AllRemotes")
+	}
+}
+
+func TestAllRemotesAppliesNameMatchedGroupToOverride(t *testing.T) {
+	// svc-api always lands in the svc- group, which supplies the instance URL.
+	p := Profile{
+		Name:   "p",
+		Owner:  "alice",
+		Groups: []Group{{Name: "svc", Match: "svc-", Code: Remote{Forge: "forgejo", InstanceURL: "https://forge.example"}}},
+		Repos:  []RepoOverride{{Name: "svc-api", Code: Remote{Forge: "forgejo", Owner: "bob"}}},
+	}
+	c := Config{Profiles: []Profile{p}}
+	for _, r := range append(c.AllRemotes(), c.PathDependentRemotes()...) {
+		if r.EffectiveForge() == "forgejo" && r.InstanceURL == "" {
+			t.Errorf("enumerated impossible remote without instance_url: %+v", r)
+		}
+	}
+	if !remoteKeys(c.AllRemotes())[p.CodeRemote("svc-api", "/src/svc-api").Key()] {
+		t.Error("runtime code remote for svc-api missing from AllRemotes")
 	}
 }

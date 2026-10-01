@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,13 +111,18 @@ func legacyConfigPath() string {
 }
 
 // ConfigPath returns the config file that should be read: XDG if it exists,
-// legacy ~/.grove.yaml as a fallback.
+// legacy ~/.grove.yaml as a fallback. When neither exists it returns the XDG
+// path, where a new config belongs.
 func ConfigPath() string {
 	xdg := xdgConfigPath()
 	if _, err := os.Stat(xdg); err == nil {
 		return xdg
 	}
-	return legacyConfigPath()
+	legacy := legacyConfigPath()
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return xdg
 }
 
 // LogPath returns the path for the runtime log file.
@@ -153,11 +161,15 @@ func BootstrapXDG(example []byte) (string, error) {
 	return p, nil
 }
 
-func Load() Config {
+// Load reads the config file. A missing file yields the compiled defaults.
+// Unreadable or malformed files return an error; unknown keys are returned as
+// warnings so a typo does not silently change behaviour.
+func Load() (Config, []string, error) {
 	cfg := Default
+	path := ConfigPath()
 
-	data, err := os.ReadFile(ConfigPath())
-	if err != nil {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
 		// No config file — synthesise default profile from Default fields.
 		cfg.Profiles = []Profile{{
 			Name:      "default",
@@ -168,10 +180,16 @@ func Load() Config {
 			Groups:    cfg.Groups,
 		}}
 		normaliseProfiles(&cfg, true)
-		return cfg
+		return cfg, nil, nil
+	}
+	if err != nil {
+		return Config{}, nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
-	_ = yaml.Unmarshal(data, &cfg)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	warnings := unknownKeyWarnings(path, data)
 
 	if cfg.RefreshSecs <= 0 {
 		cfg.RefreshSecs = Default.RefreshSecs
@@ -203,7 +221,25 @@ func Load() Config {
 
 	normaliseProfiles(&cfg, synthesized)
 
-	return cfg
+	return cfg, warnings, nil
+}
+
+// unknownKeyWarnings re-decodes data strictly and reports keys that do not map
+// to a config field.
+func unknownKeyWarnings(path string, data []byte) []string {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	var strict Config
+	err := dec.Decode(&strict)
+	var typeErr *yaml.TypeError
+	if !errors.As(err, &typeErr) {
+		return nil
+	}
+	warnings := make([]string, 0, len(typeErr.Errors))
+	for _, e := range typeErr.Errors {
+		warnings = append(warnings, fmt.Sprintf("config %s: %s", filepath.Base(path), e))
+	}
+	return warnings
 }
 
 // normaliseProfiles normalises each profile: merge legacy base_path, expand ~,
@@ -583,8 +619,23 @@ func (p Profile) CIRemote(repoName, repoPath string) Remote {
 	return remote
 }
 
-// AllRemotes returns every resolved remote configuration referenced by this config.
+// AllRemotes returns the remotes this config always resolves, independent of
+// where repos live on disk: profile and group defaults, and each repo override
+// combined with the group its name selects (or no group). A misconfigured
+// remote in this set is a config error.
 func (c Config) AllRemotes() []Remote {
+	return c.collectRemotes(false)
+}
+
+// PathDependentRemotes returns the extra remotes that only occur when a repo
+// override's local path falls under a group's match_path. Whether that happens
+// is unknown until repos are discovered, so these may never be used and a
+// misconfiguration here is reported per repo rather than at startup.
+func (c Config) PathDependentRemotes() []Remote {
+	return c.collectRemotes(true)
+}
+
+func (c Config) collectRemotes(pathDependent bool) []Remote {
 	seen := map[string]struct{}{}
 	var remotes []Remote
 	add := func(r Remote) {
@@ -595,20 +646,58 @@ func (c Config) AllRemotes() []Remote {
 		seen[key] = struct{}{}
 		remotes = append(remotes, r)
 	}
+	type concern struct {
+		base   Remote
+		group  func(Group) Remote
+		repoOv func(RepoOverride) Remote
+	}
 	for _, p := range c.Profiles {
-		add(p.CodeRemote("", ""))
-		add(p.SocialRemote("", ""))
-		add(p.CIRemote("", ""))
-		for _, g := range p.ResolveGroups() {
-			add(mergeRemote(p.codeDefaults(), g.Code))
-			add(mergeRemote(mergeRemote(p.codeDefaults(), p.Social), g.Social))
-			add(mergeRemote(mergeRemote(p.codeDefaults(), p.CI), g.CI))
+		concerns := []concern{
+			{p.codeDefaults(), func(g Group) Remote { return g.Code }, func(r RepoOverride) Remote { return r.Code }},
+			{mergeRemote(p.codeDefaults(), p.Social), func(g Group) Remote { return g.Social }, func(r RepoOverride) Remote { return r.Social }},
+			{mergeRemote(p.codeDefaults(), p.CI), func(g Group) Remote { return g.CI }, func(r RepoOverride) Remote { return r.CI }},
 		}
-		for _, ov := range p.Repos {
-			add(p.CodeRemote(ov.Name, ""))
-			add(p.SocialRemote(ov.Name, ""))
-			add(p.CIRemote(ov.Name, ""))
+		groups := p.ResolveGroups()
+		for _, cn := range concerns {
+			if !pathDependent {
+				add(cn.base)
+				for _, g := range groups {
+					add(mergeRemote(cn.base, cn.group(g)))
+				}
+			}
+			for _, ov := range p.Repos {
+				// Groups are tried in order and the first match wins. A name
+				// match is certain, so it ends the search; match_path groups
+				// before it apply only if the repo lives under their path.
+				nameGroup, pathGroups := overrideGroupCandidates(groups, ov.Name)
+				if pathDependent {
+					for _, g := range pathGroups {
+						add(mergeRemote(mergeRemote(cn.base, cn.group(g)), cn.repoOv(ov)))
+					}
+					continue
+				}
+				anchor := cn.base
+				if nameGroup != nil {
+					anchor = mergeRemote(cn.base, cn.group(*nameGroup))
+				}
+				add(mergeRemote(anchor, cn.repoOv(ov)))
+			}
 		}
 	}
 	return remotes
+}
+
+// overrideGroupCandidates returns the group a repo name certainly selects, if
+// any, and the match_path groups ahead of it that could win instead.
+func overrideGroupCandidates(groups []Group, repoName string) (*Group, []Group) {
+	var pathGroups []Group
+	for i, g := range groups {
+		if g.Match != "" && strings.Contains(repoName, g.Match) {
+			return &groups[i], pathGroups
+		}
+		if g.MatchPath != "" {
+			pathGroups = append(pathGroups, g)
+		}
+	}
+	return nil, pathGroups
 }

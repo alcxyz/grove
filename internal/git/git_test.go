@@ -51,3 +51,30 @@ func TestPushPushesCurrentBranchToUpstream(t *testing.T) {
 		t.Fatalf("remote head = %s, want %s", remoteHead, localHead)
 	}
 }
+
+func TestRunErrorsIncludeGitStderr(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init")
+	_, err := run(dir, "rev-parse", "--verify", "does-not-exist^{commit}")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "fatal:") {
+		t.Fatalf("error should carry git's explanation, got %q", err)
+	}
+}
+
+func TestStderrSummary(t *testing.T) {
+	stderr := `To example.test:repo.git
+ ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'example.test:repo.git'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally.
+`
+	if got, want := stderrSummary(stderr), "error: failed to push some refs to 'example.test:repo.git'"; got != want {
+		t.Errorf("stderrSummary = %q, want %q", got, want)
+	}
+	if got := stderrSummary("hint: only hints\n"); got != "" {
+		t.Errorf("stderrSummary of hints only = %q, want empty", got)
+	}
+}

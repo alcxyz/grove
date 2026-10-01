@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,32 @@ type ForgejoProvider struct {
 
 	tokenOnce sync.Once
 	token     string
+	tokenErr  error
+}
+
+// forgejoPageLimit is the page size grove requests; Forgejo's default
+// MAX_RESPONSE_ITEMS is also 50.
+const forgejoPageLimit = 50
+
+// forgejoStatusError reports a non-2xx Forgejo API response.
+type forgejoStatusError struct {
+	baseURL string
+	url     string
+	code    int
+}
+
+func (e *forgejoStatusError) Error() string {
+	if e.code == http.StatusUnauthorized || e.code == http.StatusForbidden {
+		return fmt.Sprintf("%v: %s returned %d", ErrNotAuthenticated, e.baseURL, e.code)
+	}
+	return fmt.Sprintf("%s: %d", e.url, e.code)
+}
+
+func (e *forgejoStatusError) Unwrap() error {
+	if e.code == http.StatusUnauthorized || e.code == http.StatusForbidden {
+		return ErrNotAuthenticated
+	}
+	return nil
 }
 
 func NewForgejoProvider(cfg ProviderConfig) (*ForgejoProvider, error) {
@@ -48,58 +75,75 @@ func NewForgejoProvider(cfg ProviderConfig) (*ForgejoProvider, error) {
 	}, nil
 }
 
-func (f *ForgejoProvider) loadToken() string {
+func (f *ForgejoProvider) loadToken() (string, error) {
 	f.tokenOnce.Do(func() {
 		if f.tokenFile == "" {
 			return
 		}
 		data, err := os.ReadFile(f.tokenFile)
 		if err != nil {
+			f.tokenErr = err
 			return
 		}
 		f.token = strings.TrimSpace(string(data))
 	})
-	return f.token
+	return f.token, f.tokenErr
 }
 
 func (f *ForgejoProvider) apiGet(path string) ([]byte, error) {
+	body, _, err := f.apiGetPage(path)
+	return body, err
+}
+
+// apiGetPage fetches one API response and returns the X-Total-Count header
+// value, or -1 when the total is unknown (for example in tea mode).
+func (f *ForgejoProvider) apiGetPage(path string) ([]byte, int, error) {
 	if f.authMode == "tea" {
-		return f.teaAPIGet(path)
+		body, err := f.teaAPIGet(path)
+		return body, -1, err
 	}
 	url := f.baseURL + "/api/v1" + path
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
-	if tok := f.loadToken(); tok != "" {
+	tok, err := f.loadToken()
+	if err != nil {
+		return nil, -1, fmt.Errorf("%w: forgejo token_file %s: %v", ErrNotAuthenticated, f.tokenFile, err)
+	}
+	if tok != "" {
 		req.Header.Set("Authorization", "token "+tok)
 	}
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("%w: %s returned %d", ErrNotAuthenticated, f.baseURL, resp.StatusCode)
-	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s: %d", url, resp.StatusCode)
+		return nil, -1, &forgejoStatusError{baseURL: f.baseURL, url: url, code: resp.StatusCode}
 	}
-	return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, -1, err
+	}
+	total := -1
+	if n, err := strconv.Atoi(resp.Header.Get("X-Total-Count")); err == nil {
+		total = n
+	}
+	return body, total, nil
 }
 
 func (f *ForgejoProvider) teaAPIGet(path string) ([]byte, error) {
-	cmd := exec.Command("tea", "api", f.baseURL+"/api/v1"+path)
-	out, err := cmd.Output()
+	out, stderr, err := runCLI("tea", "api", f.baseURL+"/api/v1"+path)
 	if err == nil {
 		return out, nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return nil, forgejoTeaError(path, exitErr.Stderr)
+		return nil, forgejoTeaError(path, stderr)
 	}
 	return nil, err
 }
@@ -128,20 +172,28 @@ func (f *ForgejoProvider) apiGetPaginated(pathFmt string) ([]json.RawMessage, er
 		sep = "&"
 	}
 	for page := 1; ; page++ {
-		path := fmt.Sprintf("%s%spage=%d&limit=50", pathFmt, sep, page)
-		data, err := f.apiGet(path)
+		path := fmt.Sprintf("%s%spage=%d&limit=%d", pathFmt, sep, page, forgejoPageLimit)
+		data, total, err := f.apiGetPage(path)
 		if err != nil {
-			if page == 1 {
-				return nil, err
-			}
-			break
+			return nil, err
 		}
 		var batch []json.RawMessage
 		if err := json.Unmarshal(data, &batch); err != nil {
 			return nil, fmt.Errorf("parse page %d: %w", page, err)
 		}
 		all = append(all, batch...)
-		if len(batch) < 50 {
+		if len(batch) == 0 {
+			break
+		}
+		// Prefer the server's total: it also covers instances whose
+		// MAX_RESPONSE_ITEMS is below the requested limit.
+		if total >= 0 {
+			if len(all) >= total {
+				break
+			}
+			continue
+		}
+		if len(batch) < forgejoPageLimit {
 			break
 		}
 	}
@@ -149,27 +201,25 @@ func (f *ForgejoProvider) apiGetPaginated(pathFmt string) ([]json.RawMessage, er
 }
 
 func (f *ForgejoProvider) ListPRs(repoFullName string) ([]model.PR, error) {
-	path := fmt.Sprintf("/repos/%s/pulls?state=open", repoFullName)
-	data, err := f.apiGet(path)
+	items, err := f.apiGetPaginated(fmt.Sprintf("/repos/%s/pulls?state=open", repoFullName))
 	if err != nil {
 		return nil, err
 	}
 
-	var raw []struct {
-		Number    int                    `json:"number"`
-		Title     string                 `json:"title"`
-		User      struct{ Login string } `json:"user"`
-		Head      struct{ Ref string }   `json:"head"`
-		State     string                 `json:"state"`
-		UpdatedAt time.Time              `json:"updated_at"`
-		HTMLURL   string                 `json:"html_url"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse PRs for %s: %w", repoFullName, err)
-	}
-
-	prs := make([]model.PR, len(raw))
-	for i, r := range raw {
+	prs := make([]model.PR, len(items))
+	for i, item := range items {
+		var r struct {
+			Number    int                    `json:"number"`
+			Title     string                 `json:"title"`
+			User      struct{ Login string } `json:"user"`
+			Head      struct{ Ref string }   `json:"head"`
+			State     string                 `json:"state"`
+			UpdatedAt time.Time              `json:"updated_at"`
+			HTMLURL   string                 `json:"html_url"`
+		}
+		if err := json.Unmarshal(item, &r); err != nil {
+			return nil, fmt.Errorf("parse PRs for %s: %w", repoFullName, err)
+		}
 		prs[i] = model.PR{
 			Repo:      repoFullName,
 			Number:    r.Number,
@@ -185,30 +235,28 @@ func (f *ForgejoProvider) ListPRs(repoFullName string) ([]model.PR, error) {
 }
 
 func (f *ForgejoProvider) ListIssues(repoFullName string) ([]model.Issue, error) {
-	path := fmt.Sprintf("/repos/%s/issues?state=open&type=issues", repoFullName)
-	data, err := f.apiGet(path)
+	items, err := f.apiGetPaginated(fmt.Sprintf("/repos/%s/issues?state=open&type=issues", repoFullName))
 	if err != nil {
 		return nil, err
 	}
 
-	var raw []struct {
-		Number    int                      `json:"number"`
-		Title     string                   `json:"title"`
-		User      struct{ Login string }   `json:"user"`
-		State     string                   `json:"state"`
-		Labels    []struct{ Name string }  `json:"labels"`
-		Assignees []struct{ Login string } `json:"assignees"`
-		Milestone *struct{ Title string }  `json:"milestone"`
-		CreatedAt time.Time                `json:"created_at"`
-		UpdatedAt time.Time                `json:"updated_at"`
-		HTMLURL   string                   `json:"html_url"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse issues for %s: %w", repoFullName, err)
-	}
-
-	issues := make([]model.Issue, len(raw))
-	for i, r := range raw {
+	issues := make([]model.Issue, len(items))
+	for i, item := range items {
+		var r struct {
+			Number    int                      `json:"number"`
+			Title     string                   `json:"title"`
+			User      struct{ Login string }   `json:"user"`
+			State     string                   `json:"state"`
+			Labels    []struct{ Name string }  `json:"labels"`
+			Assignees []struct{ Login string } `json:"assignees"`
+			Milestone *struct{ Title string }  `json:"milestone"`
+			CreatedAt time.Time                `json:"created_at"`
+			UpdatedAt time.Time                `json:"updated_at"`
+			HTMLURL   string                   `json:"html_url"`
+		}
+		if err := json.Unmarshal(item, &r); err != nil {
+			return nil, fmt.Errorf("parse issues for %s: %w", repoFullName, err)
+		}
 		labels := make([]string, len(r.Labels))
 		for j, l := range r.Labels {
 			labels[j] = l.Name
@@ -332,8 +380,15 @@ func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.Workflo
 	path := fmt.Sprintf("/repos/%s/actions/tasks?page=1&limit=20", repoFullName)
 	data, err := f.apiGet(path)
 	if err != nil {
-		// Actions may not be enabled — return nil, not error.
-		return nil, nil
+		// Forgejo answers 403 or 404 when Actions is disabled for a repo, and
+		// tea mode cannot tell the cases apart; treat those as "no runs".
+		// Surface everything else, such as an unreadable token or network
+		// failure.
+		var statusErr *forgejoStatusError
+		if f.authMode == "tea" || (errors.As(err, &statusErr) && (statusErr.code == http.StatusForbidden || statusErr.code == http.StatusNotFound)) {
+			return nil, nil
+		}
+		return nil, err
 	}
 
 	var resp struct {
@@ -410,13 +465,15 @@ func forgejoWorkflowStatus(status string) (string, string) {
 }
 
 func (f *ForgejoProvider) ListRepos(owner string, prefixes []string) ([]string, error) {
-	// Try org endpoint first, fall back to user.
+	// Try org endpoint first, fall back to user. Only a 404 means "not an
+	// org"; tea mode cannot report status, so it falls back on any error.
 	items, err := f.apiGetPaginated(fmt.Sprintf("/orgs/%s/repos", owner))
-	if err != nil {
+	var statusErr *forgejoStatusError
+	if err != nil && (f.authMode == "tea" || (errors.As(err, &statusErr) && statusErr.code == http.StatusNotFound)) {
 		items, err = f.apiGetPaginated(fmt.Sprintf("/users/%s/repos", owner))
-		if err != nil {
-			return nil, fmt.Errorf("listing repos for %s: %w", owner, err)
-		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing repos for %s: %w", owner, err)
 	}
 
 	var names []string

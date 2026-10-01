@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -37,7 +38,7 @@ func TestGitHubListPRsUsesRESTAPI(t *testing.T) {
 				"html_url":   "https://github.com/alcxyz/grove/pull/26",
 			}})
 		case "/repos/alcxyz/grove/commits/abc123/status":
-			writeJSON(t, w, map[string]any{"state": "success"})
+			writeJSON(t, w, map[string]any{"state": "success", "total_count": 1})
 		case "/repos/alcxyz/grove/actions/runs":
 			if got := r.URL.Query().Get("head_sha"); got != "abc123" {
 				t.Errorf("head_sha query = %q, want abc123", got)
@@ -350,6 +351,102 @@ exit 0
 	got := strings.TrimSpace(string(data))
 	if !strings.HasPrefix(got, "repo clone alcxyz/grove ") || !strings.HasSuffix(got, " -- --quiet") {
 		t.Fatalf("unexpected gh args: %q", got)
+	}
+}
+
+func TestGitHubCheckSummaryIgnoresEmptyCombinedStatus(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/alcxyz/grove/commits/abc123/status":
+			// GitHub reports "pending" when a commit has no statuses at all.
+			writeJSON(t, w, map[string]any{"state": "pending", "total_count": 0, "statuses": []any{}})
+		case "/repos/alcxyz/grove/actions/runs":
+			writeJSON(t, w, map[string]any{
+				"total_count":   1,
+				"workflow_runs": []map[string]any{{"status": "completed", "conclusion": "success"}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	if got := provider.checkSummary("alcxyz/grove", "abc123"); got != "pass" {
+		t.Fatalf("checkSummary = %q, want pass", got)
+	}
+}
+
+func TestGitHubRateLimitIsNotAuthFailure(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", "1800000000")
+		w.WriteHeader(http.StatusForbidden)
+		writeJSON(t, w, map[string]any{"message": "API rate limit exceeded"})
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	_, err := provider.ListIssues("alcxyz/grove")
+	if !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err = %v, want ErrRateLimited", err)
+	}
+	if errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("rate limit reported as auth failure: %v", err)
+	}
+}
+
+func TestGitHubListReposIncludesPrivateReposForAuthenticatedUser(t *testing.T) {
+	t.Setenv("GH_TOKEN", "token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/orgs/alice/repos":
+			http.NotFound(w, r)
+		case "/user":
+			writeJSON(t, w, map[string]any{"login": "Alice"})
+		case "/user/repos":
+			if got := r.URL.Query().Get("affiliation"); got != "owner" {
+				t.Errorf("affiliation = %q, want owner", got)
+			}
+			writeJSON(t, w, []map[string]any{{"name": "public"}, {"name": "private"}})
+		default:
+			t.Errorf("unexpected request %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	names, err := provider.ListRepos("alice", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"private", "public"}; !reflect.DeepEqual(names, want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+}
+
+func TestGitHubListReposDoesNotMaskOrgErrors(t *testing.T) {
+	t.Setenv("GH_TOKEN", "token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/orgs/acme/repos" {
+			t.Errorf("unexpected fallback request %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	if _, err := provider.ListRepos("acme", nil); !errors.Is(err, ErrNotAuthenticated) {
+		t.Fatalf("err = %v, want ErrNotAuthenticated", err)
 	}
 }
 

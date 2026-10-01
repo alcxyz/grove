@@ -535,7 +535,7 @@ func RenderPRs(groups []PRGroup, cursor, width, scrollOffset, maxLines int, hlFi
 
 // ── Branch row ────────────────────────────────────────────────────────────
 
-func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines int, prBranches map[string]bool, hlField, hlValue string) string {
+func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines int, hasPR func(model.BranchInfo) bool, hlField, hlValue string) string {
 	total := 0
 	for _, g := range groups {
 		total += len(g.Branches)
@@ -574,12 +574,12 @@ func RenderBranches(groups []BranchGroup, cursor, width, scrollOffset, maxLines 
 			name := truncate(br.Name, branchW-2)
 			author := truncate(br.Author, authorW-2)
 			ago := timeAgo(br.LastCommit)
-			hasPR := prBranches[br.Name]
+			branchHasPR := hasPR != nil && hasPR(br)
 			if br.IsDefault {
 				name = "* " + name
 			}
 			prStyled := "   "
-			if hasPR {
+			if branchHasPR {
 				prStyled = ReviewStyle.Render("●") + "  "
 			}
 			mergedStyled := ""

@@ -46,3 +46,15 @@ func TestDiscoverRepoPathsIncludesExactRepoPaths(t *testing.T) {
 		t.Fatalf("discoverRepoPaths() = %v, want [%s]", got, repoPath)
 	}
 }
+
+func TestEditorCommandSplitsArguments(t *testing.T) {
+	t.Setenv("EDITOR", "code --wait")
+	bin, args := editorCommand()
+	if bin != "code" || len(args) != 1 || args[0] != "--wait" {
+		t.Fatalf("editorCommand() = %q %q, want code [--wait]", bin, args)
+	}
+	t.Setenv("EDITOR", "")
+	if bin, args := editorCommand(); bin != "nvim" || len(args) != 0 {
+		t.Fatalf("editorCommand() default = %q %q, want nvim", bin, args)
+	}
+}

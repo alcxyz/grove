@@ -73,6 +73,9 @@ func New(o Options) Model {
 		loading:            true,
 		scrollOffset:       map[tab]int{},
 		tabSort:            map[tab]tabSortState{},
+		errLog:             map[tab][]string{},
+		authKind:           map[tab]string{},
+		inFlight:           map[tab]bool{},
 		cycleIdx:           -1,
 		logPath:            o.LogPath,
 		grouped:            true,
@@ -131,10 +134,11 @@ type Model struct {
 	issuesLoadedAt     time.Time
 	milestonesLoadedAt time.Time
 
-	// Load errors — shown in view when a tab has no data
-	errLog   []string
-	authKind string // "", "github", "forgejo", or "mixed"
-	logPath  string // path of the runtime log file, shown in the help bar
+	// Load errors per tab — shown in view when a tab has no data
+	errLog   map[tab][]string
+	authKind map[tab]string // "", "github", "forgejo", "mixed", or "unknown"
+	inFlight map[tab]bool   // data tabs with a load command running
+	logPath  string         // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool

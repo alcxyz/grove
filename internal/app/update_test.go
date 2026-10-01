@@ -317,8 +317,8 @@ func TestUpdateBranchesLoadedWithErrors(t *testing.T) {
 	if len(m.branches) != 1 {
 		t.Errorf("branches count = %d, want 1", len(m.branches))
 	}
-	if len(m.errLog) != 1 {
-		t.Errorf("errLog count = %d, want 1", len(m.errLog))
+	if len(m.errLog[tabBranches]) != 1 {
+		t.Errorf("errLog count = %d, want 1", len(m.errLog[tabBranches]))
 	}
 }
 
@@ -604,5 +604,101 @@ func TestIsReleaseVersion(t *testing.T) {
 	}
 	if IsReleaseVersion("dev") || IsReleaseVersion("0.9") || IsReleaseVersion("0.9.0-beta") {
 		t.Error("non-release versions should not be recognized")
+	}
+}
+
+func TestLoadErrorsStayWithTheirTab(t *testing.T) {
+	m := newTestModel()
+	result, _ := m.Update(prsLoadedMsg{errors: []string{"repo [github]: not authenticated: github API returned 401"}})
+	m = result.(Model)
+	result, _ = m.Update(milestonesLoadedMsg{})
+	m = result.(Model)
+
+	if got := len(m.errLog[tabPRs]); got != 1 {
+		t.Errorf("PR errors = %d, want 1 after milestones finished cleanly", got)
+	}
+	if m.authKind[tabPRs] != "github" {
+		t.Errorf("PR authKind = %q, want github", m.authKind[tabPRs])
+	}
+	if len(m.errLog[tabMilestones]) != 0 || m.authKind[tabMilestones] != "" {
+		t.Errorf("milestones should have no errors, got %v / %q", m.errLog[tabMilestones], m.authKind[tabMilestones])
+	}
+}
+
+func TestTabLoadsDoNotOverlap(t *testing.T) {
+	m := newTestModel()
+	if cmd := m.startTabLoad(tabCI); cmd == nil {
+		t.Fatal("first CI load should start")
+	}
+	if cmd := m.startTabLoad(tabCI); cmd != nil {
+		t.Fatal("second CI load should be skipped while the first is in flight")
+	}
+	result, _ := m.Update(runsLoadedMsg{})
+	m = result.(Model)
+	if cmd := m.startTabLoad(tabCI); cmd == nil {
+		t.Fatal("CI load should start again after the previous one finished")
+	}
+}
+
+func TestRefreshKeyReportsLoadInProgress(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabIssues
+	m.startTabLoad(tabIssues)
+	m = sendKey(m, "r")
+	if m.statusMsg != "Refresh already in progress" {
+		t.Errorf("statusMsg = %q", m.statusMsg)
+	}
+}
+
+func TestAutoRefreshReloadsActiveTabData(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabCI
+	m.runs = []model.WorkflowRun{{Repo: "org/repo"}}
+	m.runsLoadedAt = time.Now()
+
+	result, _ := m.Update(tickMsg(time.Now()))
+	m = result.(Model)
+	if !m.inFlight[tabCI] {
+		t.Error("auto-refresh tick should reload CI runs on the CI tab even when fresh")
+	}
+	if m.inFlight[tabMilestones] {
+		t.Error("auto-refresh tick should not reload tabs that are not visible")
+	}
+}
+
+func TestAutoRefreshOnDashboardReloadsSummaryData(t *testing.T) {
+	m := newTestModel()
+	result, _ := m.Update(tickMsg(time.Now()))
+	m = result.(Model)
+	for _, tb := range []tab{tabPRs, tabCI, tabIssues} {
+		if !m.inFlight[tb] {
+			t.Errorf("dashboard tick should reload tab %d", tb)
+		}
+	}
+}
+
+func TestNumberKeysResetScroll(t *testing.T) {
+	m := newTestModel()
+	m.scrollOffset[tabActivity] = 7
+	m.activity = []model.Commit{{Hash: "abc"}}
+	m.activityLoadedAt = time.Now()
+	m = sendKey(m, "5")
+	if m.activeTab != tabActivity {
+		t.Fatalf("activeTab = %d, want activity", m.activeTab)
+	}
+	if m.scrollOffset[tabActivity] != 0 {
+		t.Errorf("scrollOffset = %d, want 0", m.scrollOffset[tabActivity])
+	}
+}
+
+func TestPRBranchSetIsPerRepo(t *testing.T) {
+	m := newTestModel()
+	m.prs = []model.PR{{Repo: "org/a", RepoPath: "/src/a", Profile: "test", Branch: "dev"}}
+	set := m.prBranchSet()
+	if !set[prBranchKey("test", "org/a", "/src/a", "dev")] {
+		t.Error("repo a's dev branch should have a PR")
+	}
+	if set[prBranchKey("test", "org/b", "/src/b", "dev")] {
+		t.Error("repo b's dev branch must not inherit repo a's PR")
 	}
 }

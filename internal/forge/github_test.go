@@ -433,6 +433,56 @@ func TestGitHubListReposIncludesPrivateReposForAuthenticatedUser(t *testing.T) {
 	}
 }
 
+func TestGitHubListReposSurfacesUserLookupFailures(t *testing.T) {
+	t.Setenv("GH_TOKEN", "token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/orgs/alice/repos":
+			http.NotFound(w, r)
+		case "/user":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		default:
+			t.Errorf("unexpected fallback request %s", r.URL.Path)
+			writeJSON(t, w, []map[string]any{{"name": "public"}})
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	if _, err := provider.ListRepos("alice", nil); err == nil {
+		t.Fatal("expected error when the signed-in user cannot be identified")
+	}
+}
+
+func TestGitHubListReposWithoutTokenListsPublicUserRepos(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/orgs/alice/repos":
+			http.NotFound(w, r)
+		case "/user":
+			w.WriteHeader(http.StatusUnauthorized)
+		case "/users/alice/repos":
+			writeJSON(t, w, []map[string]any{{"name": "public"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	names, err := provider.ListRepos("alice", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "public" {
+		t.Fatalf("names = %v, want [public]", names)
+	}
+}
+
 func TestGitHubListReposDoesNotMaskOrgErrors(t *testing.T) {
 	t.Setenv("GH_TOKEN", "token")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

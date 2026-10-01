@@ -619,8 +619,23 @@ func (p Profile) CIRemote(repoName, repoPath string) Remote {
 	return remote
 }
 
-// AllRemotes returns every resolved remote configuration referenced by this config.
+// AllRemotes returns the remotes this config always resolves, independent of
+// where repos live on disk: profile and group defaults, and each repo override
+// combined with the group its name selects (or no group). A misconfigured
+// remote in this set is a config error.
 func (c Config) AllRemotes() []Remote {
+	return c.collectRemotes(false)
+}
+
+// PathDependentRemotes returns the extra remotes that only occur when a repo
+// override's local path falls under a group's match_path. Whether that happens
+// is unknown until repos are discovered, so these may never be used and a
+// misconfiguration here is reported per repo rather than at startup.
+func (c Config) PathDependentRemotes() []Remote {
+	return c.collectRemotes(true)
+}
+
+func (c Config) collectRemotes(pathDependent bool) []Remote {
 	seen := map[string]struct{}{}
 	var remotes []Remote
 	add := func(r Remote) {
@@ -631,9 +646,6 @@ func (c Config) AllRemotes() []Remote {
 		seen[key] = struct{}{}
 		remotes = append(remotes, r)
 	}
-	// A repo's group is only known once its local path is, so any group may
-	// combine with any repo override at runtime. Enumerate every combination
-	// so each remote Code/Social/CIRemote can resolve has a provider.
 	type concern struct {
 		base   Remote
 		group  func(Group) Remote
@@ -647,18 +659,45 @@ func (c Config) AllRemotes() []Remote {
 		}
 		groups := p.ResolveGroups()
 		for _, cn := range concerns {
-			add(cn.base)
-			for _, ov := range p.Repos {
-				add(mergeRemote(cn.base, cn.repoOv(ov)))
-			}
-			for _, g := range groups {
-				grouped := mergeRemote(cn.base, cn.group(g))
-				add(grouped)
-				for _, ov := range p.Repos {
-					add(mergeRemote(grouped, cn.repoOv(ov)))
+			if !pathDependent {
+				add(cn.base)
+				for _, g := range groups {
+					add(mergeRemote(cn.base, cn.group(g)))
 				}
+			}
+			for _, ov := range p.Repos {
+				// Groups are tried in order and the first match wins. A name
+				// match is certain, so it ends the search; match_path groups
+				// before it apply only if the repo lives under their path.
+				nameGroup, pathGroups := overrideGroupCandidates(groups, ov.Name)
+				if pathDependent {
+					for _, g := range pathGroups {
+						add(mergeRemote(mergeRemote(cn.base, cn.group(g)), cn.repoOv(ov)))
+					}
+					continue
+				}
+				anchor := cn.base
+				if nameGroup != nil {
+					anchor = mergeRemote(cn.base, cn.group(*nameGroup))
+				}
+				add(mergeRemote(anchor, cn.repoOv(ov)))
 			}
 		}
 	}
 	return remotes
+}
+
+// overrideGroupCandidates returns the group a repo name certainly selects, if
+// any, and the match_path groups ahead of it that could win instead.
+func overrideGroupCandidates(groups []Group, repoName string) (*Group, []Group) {
+	var pathGroups []Group
+	for i, g := range groups {
+		if g.Match != "" && strings.Contains(repoName, g.Match) {
+			return &groups[i], pathGroups
+		}
+		if g.MatchPath != "" {
+			pathGroups = append(pathGroups, g)
+		}
+	}
+	return nil, pathGroups
 }

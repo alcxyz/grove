@@ -143,26 +143,46 @@ func (f *ForgejoProvider) teaAPIGet(path string) ([]byte, error) {
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return nil, forgejoTeaError(path, stderr)
+		return nil, newForgejoTeaError(path, stderr)
 	}
 	return nil, err
 }
 
-func forgejoTeaError(path string, stderr []byte) error {
+// forgejoTeaError reports a failed tea api call. tea does not expose the
+// HTTP status, so the kind of failure is inferred from its message.
+type forgejoTeaError struct {
+	path string
+	msg  string
+	auth bool
+}
+
+func (e *forgejoTeaError) Error() string {
+	if e.auth {
+		return fmt.Sprintf("%v: tea api %s: %s", ErrNotAuthenticated, e.path, e.msg)
+	}
+	return fmt.Sprintf("tea api %s: %s", e.path, e.msg)
+}
+
+func (e *forgejoTeaError) Unwrap() error {
+	if e.auth {
+		return ErrNotAuthenticated
+	}
+	return nil
+}
+
+func newForgejoTeaError(path string, stderr []byte) error {
 	msg := strings.TrimSpace(string(stderr))
 	if msg == "" {
 		msg = "tea api failed"
 	}
 	lower := strings.ToLower(msg)
-	if strings.Contains(lower, "no available login") ||
+	auth := strings.Contains(lower, "no available login") ||
 		strings.Contains(lower, "login name") ||
 		strings.Contains(lower, "not logged") ||
 		strings.Contains(lower, "authentication") ||
 		strings.Contains(lower, "unauthorized") ||
-		strings.Contains(lower, "forbidden") {
-		return fmt.Errorf("%w: tea api %s: %s", ErrNotAuthenticated, path, msg)
-	}
-	return fmt.Errorf("tea api %s: %s", path, msg)
+		strings.Contains(lower, "forbidden")
+	return &forgejoTeaError{path: path, msg: msg, auth: auth}
 }
 
 func (f *ForgejoProvider) apiGetPaginated(pathFmt string) ([]json.RawMessage, error) {
@@ -380,12 +400,7 @@ func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.Workflo
 	path := fmt.Sprintf("/repos/%s/actions/tasks?page=1&limit=20", repoFullName)
 	data, err := f.apiGet(path)
 	if err != nil {
-		// Forgejo answers 403 or 404 when Actions is disabled for a repo, and
-		// tea mode cannot tell the cases apart; treat those as "no runs".
-		// Surface everything else, such as an unreadable token or network
-		// failure.
-		var statusErr *forgejoStatusError
-		if f.authMode == "tea" || (errors.As(err, &statusErr) && (statusErr.code == http.StatusForbidden || statusErr.code == http.StatusNotFound)) {
+		if f.actionsUnavailable(err) {
 			return nil, nil
 		}
 		return nil, err
@@ -448,6 +463,29 @@ func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.Workflo
 		}
 	}
 	return runs, nil
+}
+
+// actionsUnavailable reports whether a workflow-runs error just means the
+// repo has no visible Actions: Forgejo answers 403 or 404 when Actions is
+// disabled, and 401 to anonymous callers. A failed tea api call cannot be told
+// apart from those, so it counts too. Timeouts, network failures, and an
+// unreadable token_file are real errors.
+func (f *ForgejoProvider) actionsUnavailable(err error) bool {
+	var teaErr *forgejoTeaError
+	if errors.As(err, &teaErr) {
+		return true
+	}
+	var statusErr *forgejoStatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	switch statusErr.code {
+	case http.StatusForbidden, http.StatusNotFound:
+		return true
+	case http.StatusUnauthorized:
+		return f.tokenFile == ""
+	}
+	return false
 }
 
 func forgejoWorkflowStatus(status string) (string, string) {

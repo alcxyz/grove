@@ -40,6 +40,18 @@ func setupLog() (string, func()) {
 	return logPath, func() { _ = f.Close() }
 }
 
+func newProvider(remote config.Remote) (forge.Provider, error) {
+	return forge.NewProvider(forge.ProviderConfig{
+		Forge:       remote.Forge,
+		InstanceURL: remote.InstanceURL,
+		Project:     remote.Project,
+		TokenFile:   remote.TokenFile,
+		AuthMode:    remote.AuthMode,
+		CloneProto:  remote.CloneProto,
+		SSHHost:     remote.SSHHost,
+	})
+}
+
 // fatalf reports a startup error on stderr as well as in the log file, which
 // is otherwise the only destination for log output.
 func fatalf(format string, args ...any) {
@@ -111,6 +123,9 @@ Config: ` + config.ConfigPath() + "\n")
 
 	// clone subcommand: enumerate org repos and clone any that are missing.
 	if len(os.Args) > 1 && os.Args[1] == "clone" {
+		for _, warning := range cfgWarnings {
+			fmt.Fprintf(os.Stderr, "warning: %s\n", warning)
+		}
 		clone.Run(cfg)
 		return
 	}
@@ -226,17 +241,21 @@ Config: ` + config.ConfigPath() + "\n")
 
 	providers := make(map[string]forge.Provider)
 	for _, remote := range cfg.AllRemotes() {
-		prov, err := forge.NewProvider(forge.ProviderConfig{
-			Forge:       remote.Forge,
-			InstanceURL: remote.InstanceURL,
-			Project:     remote.Project,
-			TokenFile:   remote.TokenFile,
-			AuthMode:    remote.AuthMode,
-			CloneProto:  remote.CloneProto,
-			SSHHost:     remote.SSHHost,
-		})
+		prov, err := newProvider(remote)
 		if err != nil {
 			fatalf("remote %q/%q: %v", remote.Owner, remote.EffectiveForge(), err)
+		}
+		providers[remote.Key()] = prov
+	}
+	// Remotes that only arise for repos under a match_path may never be used,
+	// so a misconfiguration there is reported per repo instead of at startup.
+	for _, remote := range cfg.PathDependentRemotes() {
+		if _, ok := providers[remote.Key()]; ok {
+			continue
+		}
+		prov, err := newProvider(remote)
+		if err != nil {
+			prov = forge.Unavailable(err)
 		}
 		providers[remote.Key()] = prov
 	}

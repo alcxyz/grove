@@ -74,6 +74,9 @@ func runCLI(name string, args ...string) ([]byte, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	// Wrapper scripts (az is one) can leave a child holding the output pipes
+	// after the timeout kills the wrapper; stop waiting for them shortly after.
+	cmd.WaitDelay = 5 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -82,3 +85,29 @@ func runCLI(name string, args ...string) ([]byte, []byte, error) {
 	}
 	return out, stderr.Bytes(), err
 }
+
+// unavailableProvider stands in for a remote whose provider could not be
+// built, so each repo that resolves to it reports the reason.
+type unavailableProvider struct {
+	err error
+}
+
+// Unavailable returns a Provider whose calls all fail with err.
+func Unavailable(err error) Provider {
+	return unavailableProvider{err: err}
+}
+
+func (u unavailableProvider) ListPRs(string) ([]model.PR, error)       { return nil, u.err }
+func (u unavailableProvider) ListIssues(string) ([]model.Issue, error) { return nil, u.err }
+func (u unavailableProvider) ListMilestones(string) ([]model.Milestone, error) {
+	return nil, u.err
+}
+func (u unavailableProvider) ListBranches(string) ([]model.BranchInfo, error) { return nil, u.err }
+func (u unavailableProvider) ListWorkflowRuns(string) ([]model.WorkflowRun, error) {
+	return nil, u.err
+}
+func (u unavailableProvider) ListRepos(string, []string) ([]string, error) { return nil, u.err }
+func (u unavailableProvider) CloneRepo(string, string, string) error       { return u.err }
+func (u unavailableProvider) RepoURL(string, string) string                { return "" }
+func (u unavailableProvider) CommitURL(string, string, string) string      { return "" }
+func (u unavailableProvider) BranchURL(string, string, string) string      { return "" }

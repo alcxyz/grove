@@ -610,9 +610,16 @@ func (g *GitHubProvider) ListRepos(owner string, prefixes []string) ([]string, e
 	if errors.Is(err, errGitHubNotFound) {
 		// Not an org. The public user endpoint omits private repos, so use
 		// the authenticated endpoint when owner is the signed-in user.
-		if login, loginErr := g.authenticatedLogin(); loginErr == nil && strings.EqualFold(login, owner) {
+		// Without credentials /user answers 401, and only public repos are
+		// listable anyway; any other lookup failure must not quietly drop
+		// private repos from the result.
+		login, loginErr := g.authenticatedLogin()
+		switch {
+		case loginErr != nil && !errors.Is(loginErr, ErrNotAuthenticated):
+			err = fmt.Errorf("identify authenticated user: %w", loginErr)
+		case loginErr == nil && strings.EqualFold(login, owner):
 			names, err = g.listReposEndpoint("/user/repos?affiliation=owner")
-		} else {
+		default:
 			names, err = g.listReposEndpoint("/users/" + owner + "/repos?type=owner")
 		}
 	}

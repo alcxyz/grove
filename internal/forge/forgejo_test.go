@@ -377,6 +377,10 @@ func TestForgejoUnreadableTokenFileIsAuthError(t *testing.T) {
 }
 
 func TestForgejoWorkflowRunsErrorHandling(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		code    int
 		wantErr bool
@@ -389,7 +393,7 @@ func TestForgejoWorkflowRunsErrorHandling(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(tc.code)
 		}))
-		provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL})
+		provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL, TokenFile: tokenPath})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -401,5 +405,30 @@ func TestForgejoWorkflowRunsErrorHandling(t *testing.T) {
 		if runs != nil {
 			t.Errorf("status %d: runs = %v, want nil", tc.code, runs)
 		}
+	}
+}
+
+func TestForgejoWorkflowRunsTreatAnonymous401AsNoRuns(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runs, err := provider.ListWorkflowRuns("team/repo"); err != nil || runs != nil {
+		t.Fatalf("ListWorkflowRuns = %v, %v; want nil, nil without a token", runs, err)
+	}
+}
+
+func TestForgejoTeaWorkflowRunsSurfaceMissingTea(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: "https://forge.invalid", AuthMode: "tea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.ListWorkflowRuns("team/repo"); err == nil {
+		t.Fatal("expected error when tea cannot run")
 	}
 }

@@ -7,8 +7,11 @@ import (
 	"runtime"
 )
 
-// OpenURL opens url in the default browser: open on macOS, xdg-open
-// elsewhere. The launcher runs in the background and is reaped when it exits.
+// OpenURL opens url in the default browser with open on macOS or xdg-open
+// elsewhere, and waits for the launcher so its exit status can be reported.
+// Run it off the UI goroutine: some launchers wait for the browser to exit.
+// Output is discarded rather than piped, so a browser that outlives the
+// launcher never writes to a closed pipe.
 func OpenURL(url string) error {
 	if url == "" {
 		return errors.New("no URL available")
@@ -17,10 +20,8 @@ func OpenURL(url string) error {
 	if runtime.GOOS == "darwin" {
 		launcher = "open"
 	}
-	cmd := exec.Command(launcher, url)
-	if err := cmd.Start(); err != nil {
+	if err := exec.Command(launcher, url).Run(); err != nil {
 		return fmt.Errorf("%s: %w", launcher, err)
 	}
-	go func() { _ = cmd.Wait() }()
 	return nil
 }

@@ -16,8 +16,8 @@ import (
 )
 
 // Timeouts for git invocations. Network operations get longer because large
-// fetches and pushes are legitimately slow.
-const (
+// fetches and pushes are legitimately slow. Variables so tests can shorten them.
+var (
 	localTimeout   = time.Minute
 	networkTimeout = 5 * time.Minute
 )
@@ -36,6 +36,9 @@ func runWithTimeout(timeout time.Duration, dir string, args ...string) (string, 
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	detachFromTerminal(cmd)
+	// Stop waiting on output pipes shortly after cancellation even if a
+	// helper process survived the kill.
+	cmd.WaitDelay = 5 * time.Second
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
@@ -261,9 +264,10 @@ func HeadCommit(path string) (string, error) {
 	return run(path, "rev-parse", "HEAD")
 }
 
-// Checkout switches to the named branch.
+// Checkout switches to the named branch. It gets the network timeout because
+// hooks and LFS smudge filters may download content.
 func Checkout(path, branch string) error {
-	_, err := run(path, "checkout", branch)
+	_, err := runWithTimeout(networkTimeout, path, "checkout", branch)
 	return err
 }
 

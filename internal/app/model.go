@@ -184,6 +184,7 @@ type Model struct {
 	// Splash/about overlay (! key) with blink animation
 	showSplash  bool
 	splashBlink int // 0=both open 1=left closed 2=right closed 3=both closed
+	splashGen   int // incremented per opening; stale blink ticks are dropped
 
 	// Profile switching: index into cfg.Profiles, or -1 for "All"
 	activeProfile int
@@ -290,6 +291,6 @@ type detailItem struct {
 
 type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
-type ssTickMsg struct{}                // screensaver animation frame
-type idleCheckMsg struct{}             // periodic idle-time check
-type splashBlinkMsg struct{ next int } // next blink state
+type ssTickMsg struct{}                     // screensaver animation frame
+type idleCheckMsg struct{}                  // periodic idle-time check
+type splashBlinkMsg struct{ next, gen int } // next blink state; gen ties it to one splash opening

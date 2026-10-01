@@ -155,12 +155,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adjustScroll()
 
 	case reposLoadedMsg:
+		selected := m.selectionKey()
 		m.repos = msg.repos
+		m.restoreSelection(selected)
 		m.loading = false
 		m.statusMsg = fmt.Sprintf("%d repositories loaded", len(msg.repos))
 
 	case prsLoadedMsg:
+		selected := m.selectionKey()
 		m.prs = msg.prs
+		m.restoreSelection(selected)
 		m.setLoadErrors(tabPRs, msg.errors)
 		m.prsLoadedAt = time.Now()
 		m.loading = false
@@ -172,7 +176,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		go cache.SavePRs(m.cacheDir, m.cacheKey, msg.prs) //nolint:errcheck
 
 	case branchesLoadedMsg:
+		selected := m.selectionKey()
 		m.branches = msg.branches
+		m.restoreSelection(selected)
 		m.setLoadErrors(tabBranches, msg.errors)
 		m.branchesLoadedAt = time.Now()
 		m.loading = false
@@ -184,7 +190,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		go cache.SaveBranches(m.cacheDir, m.cacheKey, msg.branches) //nolint:errcheck
 
 	case activityLoadedMsg:
+		selected := m.selectionKey()
 		m.activity = msg.commits
+		m.restoreSelection(selected)
 		delete(m.inFlight, tabActivity)
 		m.activityLoadedAt = time.Now()
 		m.loading = false
@@ -192,7 +200,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		go cache.SaveActivity(m.cacheDir, m.cacheKey, msg.commits) //nolint:errcheck
 
 	case runsLoadedMsg:
+		selected := m.selectionKey()
 		m.runs = msg.runs
+		m.restoreSelection(selected)
 		m.setLoadErrors(tabCI, msg.errors)
 		m.runsLoadedAt = time.Now()
 		m.loading = false
@@ -204,7 +214,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		go cache.SaveRuns(m.cacheDir, m.cacheKey, msg.runs) //nolint:errcheck
 
 	case issuesLoadedMsg:
+		selected := m.selectionKey()
 		m.issues = msg.issues
+		m.restoreSelection(selected)
 		m.setLoadErrors(tabIssues, msg.errors)
 		m.issuesLoadedAt = time.Now()
 		m.loading = false
@@ -216,7 +228,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		go cache.SaveIssues(m.cacheDir, m.cacheKey, msg.issues) //nolint:errcheck
 
 	case milestonesLoadedMsg:
+		selected := m.selectionKey()
 		m.milestones = msg.milestones
+		m.restoreSelection(selected)
 		m.setLoadErrors(tabMilestones, msg.errors)
 		m.milestonesLoadedAt = time.Now()
 		m.loading = false
@@ -299,12 +313,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, idleCheckCmd()
 
 	case splashBlinkMsg:
-		if !m.showSplash {
-			m.splashBlink = 0
+		if !m.showSplash || msg.gen != m.splashGen {
 			return m, nil
 		}
 		m.splashBlink = msg.next
-		return m, splashBlinkCmd(msg.next)
+		return m, splashBlinkCmd(msg.next, m.splashGen)
 
 	case ssTickMsg:
 		if !m.ssActive {
@@ -343,10 +356,14 @@ func (m *Model) setLoadErrors(t tab, errs []string) {
 	delete(m.inFlight, t)
 }
 
-// openURL opens url in the browser and reports failures in the status line.
-func (m *Model) openURL(url string) {
-	if err := ui.OpenURL(url); err != nil {
-		m.statusMsg = fmt.Sprintf("open in browser failed: %v", err)
+// openURLCmd opens url in the browser in the background and reports a
+// failure, including a launcher that exits unsuccessfully, in the status line.
+func openURLCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		if err := ui.OpenURL(url); err != nil {
+			return statusMsg(fmt.Sprintf("open in browser failed: %v", err))
+		}
+		return nil
 	}
 }
 
@@ -488,7 +505,7 @@ func (m Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 					remote := profile.CodeRemote(r.Name, r.Path)
 					if prov := providerForRemote(m.providers, remote); prov != nil {
-						m.openURL(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
+						return m, openURLCmd(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
 					}
 				}
 			} else {
@@ -606,7 +623,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
 						remote := profile.CodeRemote(repo.Name, repo.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							m.openURL(prov.BranchURL(remote.Owner, remote.RepoName(repo.Name), branches[item.Index].Name))
+							return m, openURLCmd(prov.BranchURL(remote.Owner, remote.RepoName(repo.Name), branches[item.Index].Name))
 						}
 					}
 				} else {
@@ -614,16 +631,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case detailPR:
 				if item.Index < len(m.detailPRs) {
-					m.openURL(m.detailPRs[item.Index].URL)
+					return m, openURLCmd(m.detailPRs[item.Index].URL)
 				}
 			case detailIssue:
 				if item.Index < len(m.detailIssues) {
-					m.openURL(m.detailIssues[item.Index].URL)
+					return m, openURLCmd(m.detailIssues[item.Index].URL)
 				}
 			case detailCIRun:
 				runs := m.detailCIRuns()
 				if item.Index < len(runs) {
-					m.openURL(runs[item.Index].URL)
+					return m, openURLCmd(runs[item.Index].URL)
 				}
 			case detailCommit:
 				if item.Index < len(m.detailCommits) && repo.Owner != "" {
@@ -631,7 +648,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
 						remote := profile.CodeRemote(repo.Name, repo.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							m.openURL(prov.CommitURL(remote.Owner, remote.RepoName(repo.Name), c.Hash))
+							return m, openURLCmd(prov.CommitURL(remote.Owner, remote.RepoName(repo.Name), c.Hash))
 						}
 					}
 				} else {
@@ -755,7 +772,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "!" && !m.filtering {
 		m.showSplash = true
 		m.splashBlink = 0
-		return m, splashBlinkCmd(0)
+		m.splashGen++
+		return m, splashBlinkCmd(0, m.splashGen)
 	}
 
 	// "?" opens help (only when not filtering)
@@ -1138,7 +1156,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 						remote := profile.CodeRemote(r.Name, r.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							m.openURL(prov.RepoURL(remote.Owner, remote.RepoName(r.Name)))
+							return m, openURLCmd(prov.RepoURL(remote.Owner, remote.RepoName(r.Name)))
 						}
 					}
 				} else {
@@ -1149,7 +1167,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabPRs:
 			if pr, ok := m.prAtCursor(); ok {
-				m.openURL(pr.URL)
+				return m, openURLCmd(pr.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
@@ -1160,7 +1178,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					repoPath := br.RepoPath
 					remote := profile.CodeRemote(name, repoPath)
 					if prov := providerForRemote(m.providers, remote); prov != nil {
-						m.openURL(prov.BranchURL(remote.Owner, remote.RepoName(name), br.Name))
+						return m, openURLCmd(prov.BranchURL(remote.Owner, remote.RepoName(name), br.Name))
 					}
 				}
 			} else {
@@ -1172,7 +1190,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 						remote := profile.CodeRemote(r.Name, r.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							m.openURL(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
+							return m, openURLCmd(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
 						}
 					}
 				} else {
@@ -1183,19 +1201,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabCI:
 			if r, ok := m.runAtCursor(); ok {
-				m.openURL(r.URL)
+				return m, openURLCmd(r.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
 		case tabIssues:
 			if iss, ok := m.issueAtCursor(); ok {
-				m.openURL(iss.URL)
+				return m, openURLCmd(iss.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
 		case tabMilestones:
 			if ms, ok := m.milestoneAtCursor(); ok {
-				m.openURL(ms.URL)
+				return m, openURLCmd(ms.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}

@@ -717,9 +717,11 @@ func launchDiffnav(repoPath, hash string) tea.Cmd {
 	if _, err := exec.LookPath("diffnav"); err != nil {
 		return func() tea.Msg { return statusMsg("diffnav not found on PATH") }
 	}
-	// Pipe git show into diffnav. The path and hash are passed as positional
-	// parameters so the shell never interprets them.
-	c := exec.Command("sh", "-c", `git -C "$1" show "$2" | diffnav`, "sh", repoPath, hash)
+	// Pipe git show into diffnav. The hash is passed as a positional
+	// parameter so the shell never interprets it.
+	// Run from the repo so diffnav resolves repo-relative paths correctly.
+	c := exec.Command("sh", "-c", `git show "$1" | diffnav`, "sh", hash)
+	c.Dir = repoPath
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
 			return statusMsg(fmt.Sprintf("diffnav exited: %v", err))
@@ -909,7 +911,7 @@ func idleCheckCmd() tea.Cmd {
 //   - When current==0 (eyes open): wait 1.5–4 s, then randomly blink one eye
 //     or both (states 1, 2, 3).
 //   - When current!=0 (eyes closed): wait 80–150 ms, then reopen (state 0).
-func splashBlinkCmd(current int) tea.Cmd {
+func splashBlinkCmd(current, gen int) tea.Cmd {
 	var d time.Duration
 	var next int
 	if current == 0 {
@@ -919,7 +921,7 @@ func splashBlinkCmd(current int) tea.Cmd {
 		d = time.Duration(80+rand.Intn(70)) * time.Millisecond
 		next = 0
 	}
-	return tea.Tick(d, func(time.Time) tea.Msg { return splashBlinkMsg{next: next} })
+	return tea.Tick(d, func(time.Time) tea.Msg { return splashBlinkMsg{next: next, gen: gen} })
 }
 
 // tabStale reports whether a tab's data is missing or older than the refresh

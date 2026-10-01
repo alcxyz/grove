@@ -702,3 +702,54 @@ func TestPRBranchSetIsPerRepo(t *testing.T) {
 		t.Error("repo b's dev branch must not inherit repo a's PR")
 	}
 }
+
+func TestReloadKeepsSelectionOnSameItem(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabPRs
+	m.grouped = false
+	old := []model.PR{
+		{Repo: "org/a", RepoPath: "/tmp/a", Profile: "test", Number: 1, UpdatedAt: time.Unix(300, 0)},
+		{Repo: "org/b", RepoPath: "/tmp/b", Profile: "test", Number: 2, UpdatedAt: time.Unix(200, 0)},
+	}
+	result, _ := m.Update(prsLoadedMsg{prs: old})
+	m = result.(Model)
+	m.cursor = 1
+	if pr, _ := m.prAtCursor(); pr.Number != 2 {
+		t.Fatalf("setup: cursor on PR %d, want 2", pr.Number)
+	}
+
+	// A new PR sorts first and shifts the selected one down.
+	fresh := append([]model.PR{{Repo: "org/c", RepoPath: "/tmp/c", Profile: "test", Number: 3, UpdatedAt: time.Unix(400, 0)}}, old...)
+	result, _ = m.Update(prsLoadedMsg{prs: fresh})
+	m = result.(Model)
+	if pr, _ := m.prAtCursor(); pr.Number != 2 {
+		t.Errorf("after reload cursor is on PR %d, want 2", pr.Number)
+	}
+
+	// When the selected PR disappears, the cursor stays in range.
+	result, _ = m.Update(prsLoadedMsg{prs: fresh[:1]})
+	m = result.(Model)
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want clamped to 0", m.cursor)
+	}
+}
+
+func TestStaleSplashBlinkTicksAreDropped(t *testing.T) {
+	m := newTestModel()
+	m = sendKey(m, "!")
+	firstGen := m.splashGen
+	m = sendKey(m, "esc")
+	m = sendKey(m, "!")
+
+	result, cmd := m.Update(splashBlinkMsg{next: 2, gen: firstGen})
+	m = result.(Model)
+	if cmd != nil {
+		t.Error("a blink tick from an earlier opening should not schedule another")
+	}
+	if m.splashBlink != 0 {
+		t.Errorf("splashBlink = %d, want 0", m.splashBlink)
+	}
+	if _, cmd := m.Update(splashBlinkMsg{next: 1, gen: m.splashGen}); cmd == nil {
+		t.Error("the current opening's blink loop should continue")
+	}
+}

@@ -71,7 +71,35 @@ func save[T any](dir, name, configKey string, data T) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name+".json"), b, 0o644)
+	return writeFileAtomic(filepath.Join(dir, name+".json"), b)
+}
+
+// writeFileAtomic replaces path with data via a temporary file and rename, so
+// a crash or two concurrent saves can never leave a truncated cache file.
+func writeFileAtomic(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Chmod(tmpPath, 0o644); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 func capSlice[T any](s []T, max int) []T {
@@ -106,7 +134,7 @@ func SaveState(dir string, s UIState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "state.json"), b, 0o644)
+	return writeFileAtomic(filepath.Join(dir, "state.json"), b)
 }
 
 func LoadPRs(dir, configKey string) ([]model.PR, time.Time, error) {

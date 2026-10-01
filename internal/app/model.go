@@ -73,6 +73,9 @@ func New(o Options) Model {
 		loading:            true,
 		scrollOffset:       map[tab]int{},
 		tabSort:            map[tab]tabSortState{},
+		errLog:             map[tab][]string{},
+		authKind:           map[tab]string{},
+		inFlight:           map[tab]bool{},
 		cycleIdx:           -1,
 		logPath:            o.LogPath,
 		grouped:            true,
@@ -131,10 +134,11 @@ type Model struct {
 	issuesLoadedAt     time.Time
 	milestonesLoadedAt time.Time
 
-	// Load errors — shown in view when a tab has no data
-	errLog   []string
-	authKind string // "", "github", "forgejo", or "mixed"
-	logPath  string // path of the runtime log file, shown in the help bar
+	// Load errors per tab — shown in view when a tab has no data
+	errLog   map[tab][]string
+	authKind map[tab]string // "", "github", "forgejo", "mixed", or "unknown"
+	inFlight map[tab]bool   // data tabs with a load command running
+	logPath  string         // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool
@@ -180,6 +184,7 @@ type Model struct {
 	// Splash/about overlay (! key) with blink animation
 	showSplash  bool
 	splashBlink int // 0=both open 1=left closed 2=right closed 3=both closed
+	splashGen   int // incremented per opening; stale blink ticks are dropped
 
 	// Profile switching: index into cfg.Profiles, or -1 for "All"
 	activeProfile int
@@ -286,6 +291,6 @@ type detailItem struct {
 
 type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
-type ssTickMsg struct{}                // screensaver animation frame
-type idleCheckMsg struct{}             // periodic idle-time check
-type splashBlinkMsg struct{ next int } // next blink state
+type ssTickMsg struct{}                     // screensaver animation frame
+type idleCheckMsg struct{}                  // periodic idle-time check
+type splashBlinkMsg struct{ next, gen int } // next blink state; gen ties it to one splash opening

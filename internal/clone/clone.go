@@ -151,10 +151,16 @@ func parseProfileFilter(cfg config.Config, names []string) map[string]bool {
 
 // cloneDestFor returns the destination base directory for a repo. It checks
 // groups in order and uses the first one whose match prefix fits the repo name
-// and has a base_path set. Falls back to profile.BasePaths[0].
+// and has a base_path set. A group with a base_path but neither match nor
+// match_path catches every repo. Groups selected only by match_path are
+// skipped: a repo being cloned has no local path to match yet. Falls back to
+// profile.BasePaths[0].
 func cloneDestFor(profile config.Profile, repoName string) string {
 	for _, g := range profile.Groups {
 		if g.BasePath == "" {
+			continue
+		}
+		if g.Match == "" && g.MatchPath != "" {
 			continue
 		}
 		if g.Match == "" || strings.HasPrefix(repoName, g.Match) {

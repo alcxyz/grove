@@ -31,7 +31,6 @@ go vet ./...
 - `internal/cache/` -- API response caching
 - `internal/clone/` -- `grove clone` command
 - `internal/config/` -- YAML config loading
-- `internal/gh/` -- GitHub API via `gh` CLI
 - `internal/forge/` -- forge provider abstraction and provider implementations
 - `internal/git/` -- git operations
 - `internal/model/` -- repository model

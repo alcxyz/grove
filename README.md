@@ -408,7 +408,9 @@ Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string
 
 ## Rate limiting
 
-GitHub and Forgejo calls use direct HTTP requests with token auth. GitHub-backed API calls are limited to **5 concurrent requests** at a time to stay inside rate limits.
+GitHub and Forgejo calls use direct HTTP requests with token auth. GitHub-backed API calls are limited to **5 concurrent requests** at a time to stay inside rate limits. When GitHub reports an exhausted rate limit, grove shows it as a rate-limit error (with the reset time when known) rather than an authentication failure.
+
+API requests time out after 30 seconds, and `gh`, `tea`, and `az` reads after two minutes, so a stalled connection cannot hang a refresh.
 
 `grove clone` uses a separate semaphore capped at **8 concurrent clones**, since `git clone` is network-bound rather than API-bound.
 

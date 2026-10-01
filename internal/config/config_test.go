@@ -595,7 +595,13 @@ prefixes:
 		t.Fatal(err)
 	}
 
-	cfg := Load()
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
 	if len(cfg.Profiles) != 1 {
 		t.Fatalf("expected 1 synthesised profile, got %d", len(cfg.Profiles))
 	}
@@ -631,7 +637,13 @@ profiles:
 	}
 	t.Setenv("XDG_CONFIG_HOME", dir)
 
-	cfg := Load()
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
 	if len(cfg.Profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d", len(cfg.Profiles))
 	}
@@ -680,5 +692,86 @@ func TestResolveGroups_EmptyProfile(t *testing.T) {
 	groups := p.ResolveGroups()
 	if len(groups) != 0 {
 		t.Errorf("expected 0 groups for empty profile, got %d", len(groups))
+	}
+}
+
+func writeXDGConfig(t *testing.T, content string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "grove", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", dir)
+}
+
+func TestLoad_InvalidYAMLReturnsError(t *testing.T) {
+	writeXDGConfig(t, "profiles:\n  - name: x\n   owner: bad-indent\n")
+	if _, _, err := Load(); err == nil {
+		t.Fatal("expected parse error for malformed YAML")
+	}
+}
+
+func TestLoad_UnknownKeysWarn(t *testing.T) {
+	writeXDGConfig(t, `
+profiles:
+  - name: Work
+    owner: acme
+    token-file: ~/token
+`)
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profiles[0].Owner != "acme" {
+		t.Errorf("owner = %q, want acme", cfg.Profiles[0].Owner)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "token-file") {
+		t.Errorf("warnings = %v, want one mentioning token-file", warnings)
+	}
+}
+
+func TestLoad_EmptyFileUsesDefaults(t *testing.T) {
+	writeXDGConfig(t, "")
+	cfg, warnings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", warnings)
+	}
+	if len(cfg.Profiles) != 1 || cfg.Profiles[0].Owner != Default.Org {
+		t.Errorf("expected synthesised default profile, got %+v", cfg.Profiles)
+	}
+}
+
+func TestAllRemotesIncludesGroupAndRepoOverrideCombinations(t *testing.T) {
+	p := Profile{
+		Name:  "p",
+		Owner: "alice",
+		Groups: []Group{{
+			Name:      "x",
+			MatchPath: "/src/x",
+			Code:      Remote{Forge: "forgejo", InstanceURL: "https://forge.example"},
+			CI:        Remote{Owner: "ci-org"},
+		}},
+		Repos: []RepoOverride{{Name: "r", Code: Remote{Owner: "bob"}, CI: Remote{Repo: "r-ci"}}},
+	}
+	c := Config{Profiles: []Profile{p}}
+	keys := map[string]bool{}
+	for _, r := range c.AllRemotes() {
+		keys[r.Key()] = true
+	}
+	for _, want := range []Remote{
+		p.CodeRemote("r", "/src/x/r"),
+		p.SocialRemote("r", "/src/x/r"),
+		p.CIRemote("r", "/src/x/r"),
+	} {
+		if !keys[want.Key()] {
+			t.Errorf("runtime remote %+v missing from AllRemotes", want)
+		}
 	}
 }

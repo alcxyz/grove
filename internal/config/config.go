@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,13 +111,18 @@ func legacyConfigPath() string {
 }
 
 // ConfigPath returns the config file that should be read: XDG if it exists,
-// legacy ~/.grove.yaml as a fallback.
+// legacy ~/.grove.yaml as a fallback. When neither exists it returns the XDG
+// path, where a new config belongs.
 func ConfigPath() string {
 	xdg := xdgConfigPath()
 	if _, err := os.Stat(xdg); err == nil {
 		return xdg
 	}
-	return legacyConfigPath()
+	legacy := legacyConfigPath()
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return xdg
 }
 
 // LogPath returns the path for the runtime log file.
@@ -153,11 +161,15 @@ func BootstrapXDG(example []byte) (string, error) {
 	return p, nil
 }
 
-func Load() Config {
+// Load reads the config file. A missing file yields the compiled defaults.
+// Unreadable or malformed files return an error; unknown keys are returned as
+// warnings so a typo does not silently change behaviour.
+func Load() (Config, []string, error) {
 	cfg := Default
+	path := ConfigPath()
 
-	data, err := os.ReadFile(ConfigPath())
-	if err != nil {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
 		// No config file — synthesise default profile from Default fields.
 		cfg.Profiles = []Profile{{
 			Name:      "default",
@@ -168,10 +180,16 @@ func Load() Config {
 			Groups:    cfg.Groups,
 		}}
 		normaliseProfiles(&cfg, true)
-		return cfg
+		return cfg, nil, nil
+	}
+	if err != nil {
+		return Config{}, nil, fmt.Errorf("read config %s: %w", path, err)
 	}
 
-	_ = yaml.Unmarshal(data, &cfg)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, nil, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	warnings := unknownKeyWarnings(path, data)
 
 	if cfg.RefreshSecs <= 0 {
 		cfg.RefreshSecs = Default.RefreshSecs
@@ -203,7 +221,25 @@ func Load() Config {
 
 	normaliseProfiles(&cfg, synthesized)
 
-	return cfg
+	return cfg, warnings, nil
+}
+
+// unknownKeyWarnings re-decodes data strictly and reports keys that do not map
+// to a config field.
+func unknownKeyWarnings(path string, data []byte) []string {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	var strict Config
+	err := dec.Decode(&strict)
+	var typeErr *yaml.TypeError
+	if !errors.As(err, &typeErr) {
+		return nil
+	}
+	warnings := make([]string, 0, len(typeErr.Errors))
+	for _, e := range typeErr.Errors {
+		warnings = append(warnings, fmt.Sprintf("config %s: %s", filepath.Base(path), e))
+	}
+	return warnings
 }
 
 // normaliseProfiles normalises each profile: merge legacy base_path, expand ~,
@@ -595,19 +631,33 @@ func (c Config) AllRemotes() []Remote {
 		seen[key] = struct{}{}
 		remotes = append(remotes, r)
 	}
+	// A repo's group is only known once its local path is, so any group may
+	// combine with any repo override at runtime. Enumerate every combination
+	// so each remote Code/Social/CIRemote can resolve has a provider.
+	type concern struct {
+		base   Remote
+		group  func(Group) Remote
+		repoOv func(RepoOverride) Remote
+	}
 	for _, p := range c.Profiles {
-		add(p.CodeRemote("", ""))
-		add(p.SocialRemote("", ""))
-		add(p.CIRemote("", ""))
-		for _, g := range p.ResolveGroups() {
-			add(mergeRemote(p.codeDefaults(), g.Code))
-			add(mergeRemote(mergeRemote(p.codeDefaults(), p.Social), g.Social))
-			add(mergeRemote(mergeRemote(p.codeDefaults(), p.CI), g.CI))
+		concerns := []concern{
+			{p.codeDefaults(), func(g Group) Remote { return g.Code }, func(r RepoOverride) Remote { return r.Code }},
+			{mergeRemote(p.codeDefaults(), p.Social), func(g Group) Remote { return g.Social }, func(r RepoOverride) Remote { return r.Social }},
+			{mergeRemote(p.codeDefaults(), p.CI), func(g Group) Remote { return g.CI }, func(r RepoOverride) Remote { return r.CI }},
 		}
-		for _, ov := range p.Repos {
-			add(p.CodeRemote(ov.Name, ""))
-			add(p.SocialRemote(ov.Name, ""))
-			add(p.CIRemote(ov.Name, ""))
+		groups := p.ResolveGroups()
+		for _, cn := range concerns {
+			add(cn.base)
+			for _, ov := range p.Repos {
+				add(mergeRemote(cn.base, cn.repoOv(ov)))
+			}
+			for _, g := range groups {
+				grouped := mergeRemote(cn.base, cn.group(g))
+				add(grouped)
+				for _, ov := range p.Repos {
+					add(mergeRemote(grouped, cn.repoOv(ov)))
+				}
+			}
 		}
 	}
 	return remotes

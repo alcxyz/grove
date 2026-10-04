@@ -110,12 +110,14 @@ func legacyConfigPath() string {
 	return filepath.Join(home, ".grove.yaml")
 }
 
-// ConfigPath returns the config file that should be read: XDG if it exists,
-// legacy ~/.grove.yaml as a fallback. When neither exists it returns the XDG
-// path, where a new config belongs.
+// ConfigPath returns the config file that should be read: XDG unless it is
+// missing, legacy ~/.grove.yaml as a fallback. When neither exists it returns
+// the XDG path, where a new config belongs. An XDG file that exists but cannot
+// be stat'ed is still returned, so Load reports the error instead of silently
+// reading the legacy file.
 func ConfigPath() string {
 	xdg := xdgConfigPath()
-	if _, err := os.Stat(xdg); err == nil {
+	if _, err := os.Stat(xdg); !errors.Is(err, fs.ErrNotExist) {
 		return xdg
 	}
 	legacy := legacyConfigPath()
@@ -139,10 +141,10 @@ func CacheDir() string {
 // NeedsBootstrap returns true when no config file exists at either the XDG or
 // legacy location — i.e. this is a first run.
 func NeedsBootstrap() bool {
-	if _, err := os.Stat(xdgConfigPath()); err == nil {
+	if _, err := os.Stat(xdgConfigPath()); !errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
-	if _, err := os.Stat(legacyConfigPath()); err == nil {
+	if _, err := os.Stat(legacyConfigPath()); !errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
 	return true

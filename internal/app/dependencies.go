@@ -65,7 +65,9 @@ func DependencyWarnings(cfg config.Config) []string {
 	needsForgejoTeaAuth := false
 	forgejoTeaURLs := map[string]struct{}{}
 	needsAzureCLI := false
-	for _, remote := range cfg.AllRemotes() {
+	// Path-dependent remotes may never be used, but when they are, missing
+	// tools and credentials should already have been reported.
+	for _, remote := range append(cfg.AllRemotes(), cfg.PathDependentRemotes()...) {
 		if remote.Owner == "" {
 			continue
 		}

@@ -96,11 +96,10 @@ func (f *ForgejoProvider) apiGet(path string) ([]byte, error) {
 }
 
 // apiGetPage fetches one API response and returns the X-Total-Count header
-// value, or -1 when the total is unknown (for example in tea mode).
+// value, or -1 when the server does not send it.
 func (f *ForgejoProvider) apiGetPage(path string) ([]byte, int, error) {
 	if f.authMode == "tea" {
-		body, err := f.teaAPIGet(path)
-		return body, -1, err
+		return f.teaAPIGet(path)
 	}
 	url := f.baseURL + "/api/v1" + path
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -136,16 +135,48 @@ func (f *ForgejoProvider) apiGetPage(path string) ([]byte, int, error) {
 	return body, total, nil
 }
 
-func (f *ForgejoProvider) teaAPIGet(path string) ([]byte, error) {
-	out, stderr, err := runCLI("tea", "api", f.baseURL+"/api/v1"+path)
-	if err == nil {
-		return out, nil
+// teaAPIGet runs tea api with -i, which writes the HTTP status line and
+// response headers to stderr. tea exits 0 on HTTP error statuses, so the
+// status is read from there.
+func (f *ForgejoProvider) teaAPIGet(path string) ([]byte, int, error) {
+	url := f.baseURL + "/api/v1" + path
+	out, stderr, err := runCLI("tea", "api", "-i", url)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return nil, -1, newForgejoTeaError(path, stderr)
+		}
+		return nil, -1, err
 	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		return nil, newForgejoTeaError(path, stderr)
+	code, total := parseTeaHeaders(stderr)
+	if code != 0 && code != http.StatusOK {
+		return nil, -1, &forgejoStatusError{baseURL: f.baseURL, url: url, code: code}
 	}
-	return nil, err
+	return out, total, nil
+}
+
+// parseTeaHeaders returns the HTTP status code (0 if absent) and the
+// X-Total-Count value (-1 if absent) from tea api -i output.
+func parseTeaHeaders(stderr []byte) (int, int) {
+	code, total := 0, -1
+	for _, line := range strings.Split(string(stderr), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "HTTP/") {
+			if fields := strings.Fields(line); len(fields) >= 2 {
+				if n, err := strconv.Atoi(fields[1]); err == nil {
+					code = n
+				}
+			}
+			continue
+		}
+		name, value, ok := strings.Cut(line, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(name), "X-Total-Count") {
+			if n, err := strconv.Atoi(strings.TrimSpace(value)); err == nil {
+				total = n
+			}
+		}
+	}
+	return code, total
 }
 
 // forgejoTeaError reports a failed tea api call. tea does not expose the
@@ -467,14 +498,9 @@ func (f *ForgejoProvider) ListWorkflowRuns(repoFullName string) ([]model.Workflo
 
 // actionsUnavailable reports whether a workflow-runs error just means the
 // repo has no visible Actions: Forgejo answers 403 or 404 when Actions is
-// disabled, and 401 to anonymous callers. A failed tea api call cannot be told
-// apart from those, so it counts too. Timeouts, network failures, and an
-// unreadable token_file are real errors.
+// disabled, and 401 to anonymous callers. Timeouts, network failures, failed
+// tea calls, and an unreadable token_file are real errors.
 func (f *ForgejoProvider) actionsUnavailable(err error) bool {
-	var teaErr *forgejoTeaError
-	if errors.As(err, &teaErr) {
-		return true
-	}
 	var statusErr *forgejoStatusError
 	if !errors.As(err, &statusErr) {
 		return false
@@ -483,7 +509,7 @@ func (f *ForgejoProvider) actionsUnavailable(err error) bool {
 	case http.StatusForbidden, http.StatusNotFound:
 		return true
 	case http.StatusUnauthorized:
-		return f.tokenFile == ""
+		return f.authMode != "tea" && f.tokenFile == ""
 	}
 	return false
 }
@@ -503,11 +529,11 @@ func forgejoWorkflowStatus(status string) (string, string) {
 }
 
 func (f *ForgejoProvider) ListRepos(owner string, prefixes []string) ([]string, error) {
-	// Try org endpoint first, fall back to user. Only a 404 means "not an
-	// org"; tea mode cannot report status, so it falls back on any error.
+	// Try org endpoint first, fall back to user. A 404 means "not an org";
+	// a token without the read:organization scope gets 403 instead.
 	items, err := f.apiGetPaginated(fmt.Sprintf("/orgs/%s/repos", owner))
 	var statusErr *forgejoStatusError
-	if err != nil && (f.authMode == "tea" || (errors.As(err, &statusErr) && statusErr.code == http.StatusNotFound)) {
+	if errors.As(err, &statusErr) && (statusErr.code == http.StatusNotFound || statusErr.code == http.StatusForbidden) {
 		items, err = f.apiGetPaginated(fmt.Sprintf("/users/%s/repos", owner))
 	}
 	if err != nil {

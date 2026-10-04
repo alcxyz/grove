@@ -827,3 +827,35 @@ func TestAllRemotesAppliesNameMatchedGroupToOverride(t *testing.T) {
 		t.Error("runtime code remote for svc-api missing from AllRemotes")
 	}
 }
+
+func TestConfigPathKeepsInaccessibleXDGConfig(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	xdg := filepath.Join(home, "xdg")
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	groveDir := filepath.Join(xdg, "grove")
+	if err := os.MkdirAll(groveDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(groveDir, "config.yaml"), []byte("profiles: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".grove.yaml"), []byte("profiles: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(groveDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(groveDir, 0o755) })
+
+	want := filepath.Join(groveDir, "config.yaml")
+	if got := ConfigPath(); got != want {
+		t.Fatalf("ConfigPath() = %q, want %q instead of the legacy file", got, want)
+	}
+	if _, _, err := Load(); err == nil {
+		t.Fatal("Load() should report the inaccessible XDG config")
+	}
+}

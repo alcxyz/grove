@@ -2,6 +2,7 @@ package forge
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -79,7 +80,7 @@ printf '[{"number":8,"title":"API via tea","user":{"login":"alc"},"state":"open"
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "api\nhttps://git.alc.xyz/api/v1/repos/alcxyz/grove/issues?state=open&type=issues&page=1&limit=50\n"
+	want := "api\n-i\nhttps://git.alc.xyz/api/v1/repos/alcxyz/grove/issues?state=open&type=issues&page=1&limit=50\n"
 	if string(args) != want {
 		t.Fatalf("unexpected tea args:\n%s\nwant:\n%s", args, want)
 	}
@@ -419,6 +420,110 @@ func TestForgejoWorkflowRunsTreatAnonymous401AsNoRuns(t *testing.T) {
 	}
 	if runs, err := provider.ListWorkflowRuns("team/repo"); err != nil || runs != nil {
 		t.Fatalf("ListWorkflowRuns = %v, %v; want nil, nil without a token", runs, err)
+	}
+}
+
+// writeFakeTea installs a tea stub on PATH that runs script with the request
+// URL in $url.
+func writeFakeTea(t *testing.T, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	body := "#!/bin/sh\nurl=\"$3\"\n" + script
+	if err := os.WriteFile(filepath.Join(dir, "tea"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func newTeaProvider(t *testing.T) *ForgejoProvider {
+	t.Helper()
+	provider, err := NewForgejoProvider(ProviderConfig{Forge: "forgejo", InstanceURL: "https://forge.invalid", AuthMode: "tea"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return provider
+}
+
+func TestForgejoTeaWorkflowRunsStatusHandling(t *testing.T) {
+	for _, tc := range []struct {
+		code    int
+		wantErr bool
+	}{
+		{http.StatusNotFound, false},
+		{http.StatusForbidden, false},
+		{http.StatusUnauthorized, true},
+		{http.StatusInternalServerError, true},
+	} {
+		writeFakeTea(t, fmt.Sprintf("echo 'HTTP/2.0 %d Status' >&2\necho '{\"message\":\"x\"}'\n", tc.code))
+		runs, err := newTeaProvider(t).ListWorkflowRuns("team/repo")
+		if (err != nil) != tc.wantErr {
+			t.Errorf("status %d: err = %v, wantErr %v", tc.code, err, tc.wantErr)
+		}
+		if runs != nil {
+			t.Errorf("status %d: runs = %v, want nil", tc.code, runs)
+		}
+	}
+}
+
+func TestForgejoTeaWorkflowRunsSurfaceTeaFailures(t *testing.T) {
+	writeFakeTea(t, "echo 'Error: connection refused' >&2\nexit 1\n")
+	if _, err := newTeaProvider(t).ListWorkflowRuns("team/repo"); err == nil {
+		t.Fatal("expected error when tea api fails")
+	}
+}
+
+func TestForgejoTeaPaginationFollowsTotalCount(t *testing.T) {
+	// The server caps pages at 30 items, below grove's limit of 50.
+	writeFakeTea(t, `echo 'HTTP/1.1 200 OK' >&2
+echo 'X-Total-Count: 45' >&2
+case "$url" in
+*page=1\&*) start=1; n=30 ;;
+*page=2\&*) start=31; n=15 ;;
+*) n=0 ;;
+esac
+printf '['
+i=0
+while [ "$i" -lt "$n" ]; do
+	[ "$i" -gt 0 ] && printf ','
+	printf '{"number":%d,"title":"pr","user":{"login":"a"},"head":{"ref":"b"},"state":"open","updated_at":"2026-05-05T12:00:00Z"}' $((start + i))
+	i=$((i + 1))
+done
+printf ']'
+`)
+	prs, err := newTeaProvider(t).ListPRs("team/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 45 {
+		t.Fatalf("got %d PRs, want 45", len(prs))
+	}
+}
+
+func TestForgejoTeaListReposFallsBackToUser(t *testing.T) {
+	for _, tc := range []struct {
+		code    int
+		wantErr bool
+	}{
+		{http.StatusNotFound, false},
+		// A token without the read:organization scope.
+		{http.StatusForbidden, false},
+		{http.StatusInternalServerError, true},
+	} {
+		writeFakeTea(t, fmt.Sprintf(`case "$url" in
+*/orgs/*) echo 'HTTP/2.0 %d Status' >&2; echo '{"message":"x"}' ;;
+*/users/*) echo 'HTTP/2.0 200 OK' >&2; echo '[{"name":"repo"}]' ;;
+esac
+`, tc.code))
+		names, err := newTeaProvider(t).ListRepos("alc", nil)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("status %d: expected error, got %v", tc.code, names)
+			}
+			continue
+		}
+		if err != nil || len(names) != 1 || names[0] != "repo" {
+			t.Errorf("status %d: ListRepos = %v, %v; want [repo]", tc.code, names, err)
+		}
 	}
 }
 

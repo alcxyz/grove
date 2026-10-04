@@ -859,3 +859,34 @@ func TestConfigPathKeepsInaccessibleXDGConfig(t *testing.T) {
 		t.Fatal("Load() should report the inaccessible XDG config")
 	}
 }
+
+func TestConfigPathKeepsInaccessibleLegacyConfig(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg"))
+	if err := os.WriteFile(filepath.Join(home, ".grove.yaml"), []byte("profiles: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(home, 0o755) })
+
+	want := filepath.Join(home, ".grove.yaml")
+	if got := ConfigPath(); got != want {
+		t.Fatalf("ConfigPath() = %q, want the inaccessible legacy file %q", got, want)
+	}
+	if NeedsBootstrap() {
+		t.Error("NeedsBootstrap() should not overwrite an inaccessible legacy config")
+	}
+	if _, _, err := Load(); err == nil {
+		t.Fatal("Load() should report the inaccessible legacy config")
+	}
+}

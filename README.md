@@ -92,7 +92,7 @@ For GitHub private repos or higher rate limits, use a fine-grained PAT scoped to
 
 Use `auth_mode: gh` for GitHub organizations that do not allow PATs. In that mode Grove shells out to `gh api` for PRs, issues, milestones, branches, CI, and repo enumeration, and `gh repo clone` for GitHub clones.
 
-Use `auth_mode: tea` for Forgejo/Gitea instances when you want Grove to reuse `tea` CLI authentication. In that mode Grove shells out to `tea api` for PRs, issues, milestones, branches, CI, and repo enumeration, and `tea clone` for Forgejo clones. Configure the login first with `tea logins add`.
+Use `auth_mode: tea` for Forgejo/Gitea instances when you want Grove to reuse `tea` CLI authentication. In that mode Grove shells out to `tea api` for PRs, issues, milestones, branches, CI, and repo enumeration, and `tea clone` for Forgejo clones. Configure the login first with `tea logins add`. Grove calls `tea api -i` to read HTTP status codes and pagination totals, so it needs a `tea` release whose `api` command supports `-i` (checked with tea 0.15).
 
 For Azure DevOps, authenticate outside grove with `az devops login` or your normal configured Azure CLI credentials. Grove does not read Azure DevOps token files directly.
 

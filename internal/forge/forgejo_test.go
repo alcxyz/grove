@@ -501,28 +501,33 @@ printf ']'
 
 func TestForgejoTeaListReposFallsBackToUser(t *testing.T) {
 	for _, tc := range []struct {
+		name    string
 		code    int
+		login   string
 		wantErr bool
 	}{
-		{http.StatusNotFound, false},
-		// A token without the read:organization scope.
-		{http.StatusForbidden, false},
-		{http.StatusInternalServerError, true},
+		{"not an org", http.StatusNotFound, "someone", false},
+		// A token without the read:organization scope, listing its own account.
+		{"own account without org scope", http.StatusForbidden, "alc", false},
+		// The same 403 for another owner may be a real org permission error.
+		{"other owner forbidden", http.StatusForbidden, "someone", true},
+		{"server error", http.StatusInternalServerError, "alc", true},
 	} {
 		writeFakeTea(t, fmt.Sprintf(`case "$url" in
 */orgs/*) echo 'HTTP/2.0 %d Status' >&2; echo '{"message":"x"}' ;;
 */users/*) echo 'HTTP/2.0 200 OK' >&2; echo '[{"name":"repo"}]' ;;
+*/user) echo 'HTTP/2.0 200 OK' >&2; echo '{"login":"%s"}' ;;
 esac
-`, tc.code))
+`, tc.code, tc.login))
 		names, err := newTeaProvider(t).ListRepos("alc", nil)
 		if tc.wantErr {
 			if err == nil {
-				t.Errorf("status %d: expected error, got %v", tc.code, names)
+				t.Errorf("%s: expected error, got %v", tc.name, names)
 			}
 			continue
 		}
 		if err != nil || len(names) != 1 || names[0] != "repo" {
-			t.Errorf("status %d: ListRepos = %v, %v; want [repo]", tc.code, names, err)
+			t.Errorf("%s: ListRepos = %v, %v; want [repo]", tc.name, names, err)
 		}
 	}
 }

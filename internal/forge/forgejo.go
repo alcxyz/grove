@@ -528,12 +528,28 @@ func forgejoWorkflowStatus(status string) (string, string) {
 	}
 }
 
+// isAuthenticatedUser reports whether owner is the account grove is signed in
+// as. Any lookup failure counts as no.
+func (f *ForgejoProvider) isAuthenticatedUser(owner string) bool {
+	data, err := f.apiGet("/user")
+	if err != nil {
+		return false
+	}
+	var u struct {
+		Login string `json:"login"`
+	}
+	return json.Unmarshal(data, &u) == nil && u.Login != "" && strings.EqualFold(u.Login, owner)
+}
+
 func (f *ForgejoProvider) ListRepos(owner string, prefixes []string) ([]string, error) {
-	// Try org endpoint first, fall back to user. A 404 means "not an org";
-	// a token without the read:organization scope gets 403 instead.
+	// Try org endpoint first, fall back to user. A 404 means "not an org".
+	// A token without the read:organization scope gets 403 even for a user
+	// account; fall back then only for the token's own account, so a real
+	// permission error on an org is not hidden behind a partial user listing.
 	items, err := f.apiGetPaginated(fmt.Sprintf("/orgs/%s/repos", owner))
 	var statusErr *forgejoStatusError
-	if errors.As(err, &statusErr) && (statusErr.code == http.StatusNotFound || statusErr.code == http.StatusForbidden) {
+	if errors.As(err, &statusErr) && (statusErr.code == http.StatusNotFound ||
+		(statusErr.code == http.StatusForbidden && f.isAuthenticatedUser(owner))) {
 		items, err = f.apiGetPaginated(fmt.Sprintf("/users/%s/repos", owner))
 	}
 	if err != nil {

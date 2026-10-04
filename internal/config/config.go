@@ -112,16 +112,16 @@ func legacyConfigPath() string {
 
 // ConfigPath returns the config file that should be read: XDG unless it is
 // missing, legacy ~/.grove.yaml as a fallback. When neither exists it returns
-// the XDG path, where a new config belongs. An XDG file that exists but cannot
-// be stat'ed is still returned, so Load reports the error instead of silently
-// reading the legacy file.
+// the XDG path, where a new config belongs. A file that exists but cannot be
+// stat'ed is still returned, so Load reports the error instead of silently
+// skipping it.
 func ConfigPath() string {
 	xdg := xdgConfigPath()
 	if _, err := os.Stat(xdg); !errors.Is(err, fs.ErrNotExist) {
 		return xdg
 	}
 	legacy := legacyConfigPath()
-	if _, err := os.Stat(legacy); err == nil {
+	if _, err := os.Stat(legacy); !errors.Is(err, fs.ErrNotExist) {
 		return legacy
 	}
 	return xdg

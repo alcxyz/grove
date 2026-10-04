@@ -778,23 +778,26 @@ func TestBranchSortByHasPR(t *testing.T) {
 	}
 }
 
-func TestWarningSurvivesTheReloadItStarts(t *testing.T) {
+func TestWarningSurvivesLoadsThatFollowIt(t *testing.T) {
 	m := newTestModel()
-	result, _ := m.Update(reposLoadedMsg{seq: 0})
+	result, _ := m.Update(warningMsg("restore main failed"))
 	m = result.(Model)
-	result, _ = m.Update(warningMsg("restore main failed"))
-	m = result.(Model)
-	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
-	m = result.(Model)
-	if m.statusMsg != "restore main failed" {
-		t.Fatalf("statusMsg = %q, want the warning kept", m.statusMsg)
+	for _, msg := range []tea.Msg{
+		reposLoadedMsg{seq: m.reposSeq},
+		branchesLoadedMsg{branches: []model.BranchInfo{{Name: "dev"}}},
+	} {
+		result, _ = m.Update(msg)
+		m = result.(Model)
+		if m.statusMsg != "restore main failed" {
+			t.Fatalf("after %T statusMsg = %q, want the warning kept", msg, m.statusMsg)
+		}
 	}
-	// A later reload may replace it.
-	m = sendKey(m, "r")
+	// Once the hold expires, load results show again.
+	m.statusHoldUntil = time.Time{}
 	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
 	m = result.(Model)
 	if m.statusMsg == "restore main failed" {
-		t.Fatal("a later reload should update the status line")
+		t.Fatal("a load after the hold should update the status line")
 	}
 }
 

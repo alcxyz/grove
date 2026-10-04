@@ -77,7 +77,6 @@ func New(o Options) Model {
 		authKind:           map[tab]string{},
 		inFlight:           map[tab]bool{},
 		reposAppliedSeq:    -1,
-		statusHoldSeq:      -1,
 		cycleIdx:           -1,
 		logPath:            o.LogPath,
 		grouped:            true,
@@ -144,10 +143,10 @@ type Model struct {
 	// starts 0) and reposAppliedSeq the latest shown.
 	reposSeq        int
 	reposAppliedSeq int
-	// statusHoldSeq is the last dashboard load that must not replace the
-	// status line with its "loaded" message.
-	statusHoldSeq int
-	logPath       string // path of the runtime log file, shown in the help bar
+	// statusHoldUntil keeps a warning on the status line until then, so load
+	// results arriving meanwhile do not replace it.
+	statusHoldUntil time.Time
+	logPath         string // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool

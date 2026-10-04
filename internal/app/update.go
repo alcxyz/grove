@@ -166,9 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repos = msg.repos
 		m.restoreSelection(selected)
 		m.loading = false
-		if msg.seq > m.statusHoldSeq {
-			m.statusMsg = fmt.Sprintf("%d repositories loaded", len(msg.repos))
-		}
+		m.setLoadStatus(fmt.Sprintf("%d repositories loaded", len(msg.repos)))
 
 	case prsLoadedMsg:
 		selected := m.selectionKey()
@@ -178,9 +176,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.prsLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d open PRs (%d repos failed)", len(msg.prs), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d open PRs (%d repos failed)", len(msg.prs), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d open PRs", len(msg.prs))
+			m.setLoadStatus(fmt.Sprintf("%d open PRs", len(msg.prs)))
 		}
 		go cache.SavePRs(m.cacheDir, m.cacheKey, msg.prs) //nolint:errcheck
 
@@ -192,9 +190,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.branchesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d branches (%d repos failed)", len(msg.branches), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d branches (%d repos failed)", len(msg.branches), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d branches", len(msg.branches))
+			m.setLoadStatus(fmt.Sprintf("%d branches", len(msg.branches)))
 		}
 		go cache.SaveBranches(m.cacheDir, m.cacheKey, msg.branches) //nolint:errcheck
 
@@ -205,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		delete(m.inFlight, tabActivity)
 		m.activityLoadedAt = time.Now()
 		m.loading = false
-		m.statusMsg = fmt.Sprintf("%d recent commits", len(msg.commits))
+		m.setLoadStatus(fmt.Sprintf("%d recent commits", len(msg.commits)))
 		go cache.SaveActivity(m.cacheDir, m.cacheKey, msg.commits) //nolint:errcheck
 
 	case runsLoadedMsg:
@@ -216,9 +214,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.runsLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d CI runs (%d repos failed)", len(msg.runs), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d CI runs (%d repos failed)", len(msg.runs), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d CI runs", len(msg.runs))
+			m.setLoadStatus(fmt.Sprintf("%d CI runs", len(msg.runs)))
 		}
 		go cache.SaveRuns(m.cacheDir, m.cacheKey, msg.runs) //nolint:errcheck
 
@@ -230,9 +228,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.issuesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d open issues (%d repos failed)", len(msg.issues), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d open issues (%d repos failed)", len(msg.issues), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d open issues", len(msg.issues))
+			m.setLoadStatus(fmt.Sprintf("%d open issues", len(msg.issues)))
 		}
 		go cache.SaveIssues(m.cacheDir, m.cacheKey, msg.issues) //nolint:errcheck
 
@@ -244,9 +242,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.milestonesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d milestones (%d repos failed)", len(msg.milestones), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d milestones (%d repos failed)", len(msg.milestones), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d milestones", len(msg.milestones))
+			m.setLoadStatus(fmt.Sprintf("%d milestones", len(msg.milestones)))
 		}
 		go cache.SaveMilestones(m.cacheDir, m.cacheKey, msg.milestones) //nolint:errcheck
 
@@ -284,11 +282,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = string(msg)
 
 	case warningMsg:
-		// Like statusMsg, but the reload it starts keeps the warning visible.
+		// Like statusMsg, but load results arriving soon after, including
+		// the reload this starts, do not replace the warning.
 		m.statusMsg = string(msg)
+		m.statusHoldUntil = time.Now().Add(warningHold)
 		m.loading = false
 		cmd := m.reloadRepos()
-		m.statusHoldSeq = m.reposSeq
 		return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
 
 	case statusMsg:
@@ -373,6 +372,19 @@ func (m *Model) setLoadErrors(t tab, errs []string) {
 	m.errLog[t] = errs
 	m.authKind[t] = authErrorKind(errs)
 	delete(m.inFlight, t)
+}
+
+// warningHold is how long a warning stays on the status line before load
+// results may replace it.
+const warningHold = 10 * time.Second
+
+// setLoadStatus shows a load result on the status line unless a recent
+// warning is being held there.
+func (m *Model) setLoadStatus(s string) {
+	if time.Now().Before(m.statusHoldUntil) {
+		return
+	}
+	m.statusMsg = s
 }
 
 // openURLCmd opens url in the browser in the background and reports a

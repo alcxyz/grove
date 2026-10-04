@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,10 @@ import (
 )
 
 var githubAPISem = make(chan struct{}, 5)
+
+// errGitHubNotFound marks a 404 response so callers can fall back between
+// endpoints without masking auth or rate-limit failures.
+var errGitHubNotFound = errors.New("not found")
 
 type GitHubProvider struct {
 	apiURL     string
@@ -90,8 +95,8 @@ func (g *GitHubProvider) apiDo(req *http.Request) ([]byte, error) {
 	req.Header.Set("User-Agent", "grove")
 
 	githubAPISem <- struct{}{}
-	resp, err := http.DefaultClient.Do(req)
-	<-githubAPISem
+	defer func() { <-githubAPISem }()
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -101,8 +106,14 @@ func (g *GitHubProvider) apiDo(req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if githubRateLimited(resp, body) {
+		return nil, fmt.Errorf("%w: github API returned %d%s%s", ErrRateLimited, resp.StatusCode, githubAPIMessage(body), githubRateLimitReset(resp))
+	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return nil, fmt.Errorf("%w: github API returned %d%s", ErrNotAuthenticated, resp.StatusCode, githubAPIMessage(body))
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: github API %s: %d%s", errGitHubNotFound, req.URL.Path, resp.StatusCode, githubAPIMessage(body))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("github API %s: %d%s", req.URL.Path, resp.StatusCode, githubAPIMessage(body))
@@ -113,16 +124,38 @@ func (g *GitHubProvider) apiDo(req *http.Request) ([]byte, error) {
 func (g *GitHubProvider) ghAPIGet(path string) ([]byte, error) {
 	githubAPISem <- struct{}{}
 	defer func() { <-githubAPISem }()
-	cmd := exec.Command("gh", "api", path)
-	out, err := cmd.Output()
+	out, stderr, err := runCLI("gh", "api", path)
 	if err == nil {
 		return out, nil
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return nil, githubCLIError(path, exitErr.Stderr)
+		return nil, githubCLIError(path, stderr)
 	}
 	return nil, err
+}
+
+// githubRateLimited reports whether a response was rejected by GitHub's
+// primary or secondary rate limits rather than for lack of access.
+func githubRateLimited(resp *http.Response, body []byte) bool {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return true
+	}
+	if resp.StatusCode != http.StatusForbidden {
+		return false
+	}
+	if resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(githubAPIMessage(body)), "rate limit")
+}
+
+func githubRateLimitReset(resp *http.Response) string {
+	reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64)
+	if err != nil || reset <= 0 {
+		return ""
+	}
+	return " (resets " + time.Unix(reset, 0).Format("15:04") + ")"
 }
 
 func githubCLIError(path string, stderr []byte) error {
@@ -131,6 +164,12 @@ func githubCLIError(path string, stderr []byte) error {
 		msg = "gh api failed"
 	}
 	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "rate limit") {
+		return fmt.Errorf("%w: gh api %s: %s", ErrRateLimited, path, msg)
+	}
+	if strings.Contains(lower, "http 404") {
+		return fmt.Errorf("%w: gh api %s: %s", errGitHubNotFound, path, msg)
+	}
 	if strings.Contains(lower, "not logged") ||
 		strings.Contains(lower, "auth login") ||
 		strings.Contains(lower, "authentication") ||
@@ -255,9 +294,12 @@ func (g *GitHubProvider) checkSummary(repoFullName, sha string) string {
 
 	if data, err := g.apiGet(fmt.Sprintf("/repos/%s/commits/%s/status", repoFullName, sha)); err == nil {
 		var status struct {
-			State string `json:"state"`
+			State      string `json:"state"`
+			TotalCount int    `json:"total_count"`
 		}
-		if json.Unmarshal(data, &status) == nil && status.State != "" {
+		// The combined status is "pending" when a commit has no legacy
+		// statuses at all, so only count it when statuses exist.
+		if json.Unmarshal(data, &status) == nil && status.State != "" && status.TotalCount > 0 {
 			hasSignal = true
 			switch strings.ToLower(status.State) {
 			case "failure", "error":
@@ -565,11 +607,24 @@ func (g *GitHubProvider) workflowPaths(repoFullName string) map[int64]string {
 
 func (g *GitHubProvider) ListRepos(owner string, prefixes []string) ([]string, error) {
 	names, err := g.listReposEndpoint("/orgs/" + owner + "/repos?type=all")
-	if err != nil {
-		names, err = g.listReposEndpoint("/users/" + owner + "/repos?type=owner")
-		if err != nil {
-			return nil, fmt.Errorf("listing repos for %s: %w", owner, err)
+	if errors.Is(err, errGitHubNotFound) {
+		// Not an org. The public user endpoint omits private repos, so use
+		// the authenticated endpoint when owner is the signed-in user.
+		// Without credentials /user answers 401, and only public repos are
+		// listable anyway; any other lookup failure must not quietly drop
+		// private repos from the result.
+		login, loginErr := g.authenticatedLogin()
+		switch {
+		case loginErr != nil && !errors.Is(loginErr, ErrNotAuthenticated):
+			err = fmt.Errorf("identify authenticated user: %w", loginErr)
+		case loginErr == nil && strings.EqualFold(login, owner):
+			names, err = g.listReposEndpoint("/user/repos?affiliation=owner")
+		default:
+			names, err = g.listReposEndpoint("/users/" + owner + "/repos?type=owner")
 		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("listing repos for %s: %w", owner, err)
 	}
 
 	if len(prefixes) == 0 {
@@ -588,6 +643,20 @@ func (g *GitHubProvider) ListRepos(owner string, prefixes []string) ([]string, e
 	}
 	sort.Strings(filtered)
 	return filtered, nil
+}
+
+func (g *GitHubProvider) authenticatedLogin() (string, error) {
+	data, err := g.apiGet("/user")
+	if err != nil {
+		return "", err
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := json.Unmarshal(data, &user); err != nil {
+		return "", err
+	}
+	return user.Login, nil
 }
 
 func (g *GitHubProvider) listReposEndpoint(path string) ([]string, error) {

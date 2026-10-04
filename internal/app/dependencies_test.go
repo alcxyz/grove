@@ -231,6 +231,31 @@ func TestDependencyWarningsReportsProviderProblems(t *testing.T) {
 	}
 }
 
+func TestDependencyWarningsCoverPathDependentRemotes(t *testing.T) {
+	withDependencyChecks(t,
+		func(string) (string, error) { return "/usr/bin/tool", nil },
+		func(string) ([]byte, error) { return nil, os.ErrNotExist },
+		func(string) string { return "" },
+		func() error { return nil },
+	)
+
+	cfg := config.Config{Profiles: []config.Profile{{
+		Name:  "test",
+		Owner: "alice",
+		Groups: []config.Group{{
+			Name:      "x",
+			MatchPath: "/src/x",
+			Code:      config.Remote{Forge: "forgejo", InstanceURL: "https://forge.example", TokenFile: "/group-token"},
+		}},
+		Repos: []config.RepoOverride{{Name: "r", Code: config.Remote{Owner: "bob"}}},
+	}}}
+
+	warnings := strings.Join(DependencyWarnings(cfg), "\n")
+	if want := "forgejo bob https://forge.example token_file /group-token cannot be read"; !strings.Contains(warnings, want) {
+		t.Fatalf("warnings missing %q: %s", want, warnings)
+	}
+}
+
 func TestDependencyWarningsGitHubGHAuthModeUsesCLI(t *testing.T) {
 	withDependencyChecks(t,
 		func(name string) (string, error) {

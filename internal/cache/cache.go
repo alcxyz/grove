@@ -79,13 +79,7 @@ func save[T any](dir, name, configKey string, data T) error {
 // file. A symlinked path is followed, and an existing file keeps its mode; a
 // new file is private to the user.
 func writeFileAtomic(path string, data []byte) error {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		path = resolved
-	} else if info, lerr := os.Lstat(path); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
-		// A dangling link: write through it so its target is recreated
-		// rather than the link replaced.
-		return os.WriteFile(path, data, 0o600)
-	}
+	path = followSymlinks(path)
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
@@ -118,6 +112,27 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// followSymlinks returns the file that path's symlink chain points to, even
+// when that file does not exist yet, so a save replaces the target rather
+// than the link.
+func followSymlinks(path string) string {
+	for i := 0; i < 40; i++ {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return path
+		}
+		dest, err := os.Readlink(path)
+		if err != nil {
+			return path
+		}
+		if !filepath.IsAbs(dest) {
+			dest = filepath.Join(filepath.Dir(path), dest)
+		}
+		path = dest
+	}
+	return path
 }
 
 func capSlice[T any](s []T, max int) []T {

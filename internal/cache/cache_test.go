@@ -151,3 +151,27 @@ func TestWriteFileAtomicRecreatesDanglingSymlinkTarget(t *testing.T) {
 		t.Fatalf("target = %q, %v; want []", got, err)
 	}
 }
+
+func TestWriteFileAtomicFollowsRelativeSymlinkChain(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// link.json -> mid.json -> data/target.json (missing)
+	if err := os.Symlink("data/target.json", filepath.Join(dir, "mid.json")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := os.Symlink("mid.json", filepath.Join(dir, "link.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(filepath.Join(dir, "link.json"), []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, "data", "target.json")); err != nil || string(got) != "[]" {
+		t.Fatalf("target = %q, %v; want []", got, err)
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "data"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("data dir should hold only the target, got %v, %v", entries, err)
+	}
+}

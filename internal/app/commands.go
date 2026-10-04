@@ -101,7 +101,19 @@ func formatRemoteError(repoName string, remote config.Remote, err error) string 
 	return fmt.Sprintf("%s [%s]: %v", repoName, remoteLabel(remote), err)
 }
 
-func loadRepos(profiles []config.Profile) tea.Cmd {
+// reloadRepos starts a dashboard load numbered after every earlier one, so a
+// slower, older load cannot overwrite newer repo state when it finishes.
+func (m *Model) reloadRepos() tea.Cmd {
+	m.reposSeq++
+	return loadRepos(m.cfg.Profiles, m.reposSeq)
+}
+
+// reposLoadPending reports whether a dashboard load has not finished yet.
+func (m Model) reposLoadPending() bool {
+	return m.reposSeq > m.reposAppliedSeq
+}
+
+func loadRepos(profiles []config.Profile, seq int) tea.Cmd {
 	return func() tea.Msg {
 		// Collect all (path, profile) pairs, deduplicated by path.
 		type pathProfile struct {
@@ -144,7 +156,7 @@ func loadRepos(profiles []config.Profile) tea.Cmd {
 		sort.Slice(repos, func(i, j int) bool {
 			return repos[i].Name < repos[j].Name
 		})
-		return reposLoadedMsg{repos}
+		return reposLoadedMsg{repos: repos, seq: seq}
 	}
 }
 
@@ -557,13 +569,69 @@ func launchLazygit(path string) tea.Cmd {
 }
 
 // editorCommand splits $EDITOR into a program and its arguments (for example
-// "code --wait"), defaulting to nvim.
+// "code --wait"), defaulting to nvim. A value that is itself an executable
+// path, such as one containing spaces, is used whole. Otherwise words are
+// split like a shell would, honouring quotes and backslashes, but nothing is
+// expanded or evaluated.
 func editorCommand() (string, []string) {
-	fields := strings.Fields(os.Getenv("EDITOR"))
-	if len(fields) == 0 {
+	value := strings.TrimSpace(os.Getenv("EDITOR"))
+	if value == "" {
 		return "nvim", nil
 	}
-	return fields[0], fields[1:]
+	if strings.ContainsRune(value, os.PathSeparator) {
+		if _, err := exec.LookPath(value); err == nil {
+			return value, nil
+		}
+	}
+	words := splitWords(value)
+	if len(words) == 0 {
+		return "nvim", nil
+	}
+	return words[0], words[1:]
+}
+
+// splitWords splits s into words at unquoted whitespace. Single quotes keep
+// their contents literally; inside double quotes a backslash escapes only "
+// and \; elsewhere a backslash escapes the next character.
+func splitWords(s string) []string {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	var quote rune
+	escaped := false
+	for _, r := range s {
+		switch {
+		case escaped:
+			if quote == '"' && r != '"' && r != '\\' {
+				word.WriteRune('\\')
+			}
+			word.WriteRune(r)
+			escaped = false
+		case r == '\\' && quote != '\'':
+			escaped = true
+			inWord = true
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(r)
+		case r == '\'' || r == '"':
+			quote = r
+			inWord = true
+		case r == ' ' || r == '\t' || r == '\n':
+			if inWord {
+				words = append(words, word.String())
+				word.Reset()
+				inWord = false
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words
 }
 
 // launchNvim suspends grove and opens nvim at the given repo directory.

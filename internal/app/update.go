@@ -66,7 +66,7 @@ func authErrorKind(errs []string) string {
 
 func (m Model) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion(m.version)}
+	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles, m.reposSeq), checkLatestVersion(m.version)}
 
 	// Background-refresh any cached data that is stale
 	for _, t := range []tab{tabPRs, tabBranches, tabActivity, tabCI, tabIssues, tabMilestones} {
@@ -155,6 +155,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adjustScroll()
 
 	case reposLoadedMsg:
+		if msg.seq < m.reposAppliedSeq {
+			// A newer load has already been shown.
+			return m, nil
+		}
+		m.reposAppliedSeq = msg.seq
 		selected := m.selectionKey()
 		m.repos = msg.repos
 		m.restoreSelection(selected)
@@ -268,23 +273,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchDoneMsg:
 		m.statusMsg = msg.msg
 		m.loading = false
-		return m, loadRepos(m.cfg.Profiles)
+		cmd := m.reloadRepos()
+		return m, cmd
 
 	case statusMsg:
 		m.statusMsg = string(msg)
 		m.loading = false
 		// Re-enable mouse after returning from an external process (ExecProcess
 		// disables mouse reporting and Bubble Tea doesn't always restore it).
-		return m, tea.Batch(loadRepos(m.cfg.Profiles), tea.EnableMouseCellMotion)
+		cmd := m.reloadRepos()
+		return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
 
 	case tickMsg:
 		if !m.autoRefresh {
 			return m, nil
 		}
-		cmds := append(m.autoRefreshCmds(),
-			loadRepos(m.cfg.Profiles),
-			tickCmd(time.Duration(m.cfg.RefreshSecs)*time.Second),
-		)
+		cmds := append(m.autoRefreshCmds(), tickCmd(time.Duration(m.cfg.RefreshSecs)*time.Second))
+		if !m.reposLoadPending() {
+			cmds = append(cmds, m.reloadRepos())
+		}
 		return m, tea.Batch(cmds...)
 
 	case gTimeoutMsg:
@@ -908,7 +915,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.activeTab == tabDashboard {
 			m.loading = true
 			m.statusMsg = "Refreshing..."
-			return m, loadRepos(m.cfg.Profiles)
+			cmd := m.reloadRepos()
+			return m, cmd
 		}
 		if cmd := m.startTabLoad(m.activeTab); cmd != nil {
 			m.loading = true

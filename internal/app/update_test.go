@@ -284,6 +284,35 @@ func TestUpdateReposLoaded(t *testing.T) {
 	}
 }
 
+func TestDashboardLoadsApplyInOrder(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabDashboard
+
+	// The Init load is still pending, so a tick does not start another.
+	result, _ := m.Update(tickMsg{})
+	m = result.(Model)
+	if m.reposSeq != 0 {
+		t.Fatalf("tick started a load while one was pending (seq %d)", m.reposSeq)
+	}
+	result, _ = m.Update(reposLoadedMsg{repos: []model.Repo{{Name: "init", Path: "/tmp/init"}}, seq: 0})
+	m = result.(Model)
+
+	// Two overlapping refreshes: the older one finishes last and is dropped.
+	result, _ = m.Update(tickMsg{})
+	m = result.(Model)
+	m = sendKey(m, "r")
+	if m.reposSeq != 2 {
+		t.Fatalf("reposSeq = %d, want 2", m.reposSeq)
+	}
+	result, _ = m.Update(reposLoadedMsg{repos: []model.Repo{{Name: "new", Path: "/tmp/new"}}, seq: 2})
+	m = result.(Model)
+	result, _ = m.Update(reposLoadedMsg{repos: []model.Repo{{Name: "old", Path: "/tmp/old"}}, seq: 1})
+	m = result.(Model)
+	if len(m.repos) != 1 || m.repos[0].Name != "new" {
+		t.Errorf("repos = %+v, want the newest load", m.repos)
+	}
+}
+
 func TestUpdatePRsLoaded(t *testing.T) {
 	m := newTestModel()
 
@@ -695,10 +724,10 @@ func TestPRBranchSetIsPerRepo(t *testing.T) {
 	m := newTestModel()
 	m.prs = []model.PR{{Repo: "org/a", RepoPath: "/src/a", Profile: "test", Branch: "dev"}}
 	set := m.prBranchSet()
-	if !set[prBranchKey("test", "org/a", "/src/a", "dev")] {
+	if !set[prBranchKey("test", "/src/a", "dev")] {
 		t.Error("repo a's dev branch should have a PR")
 	}
-	if set[prBranchKey("test", "org/b", "/src/b", "dev")] {
+	if set[prBranchKey("test", "/src/b", "dev")] {
 		t.Error("repo b's dev branch must not inherit repo a's PR")
 	}
 }
@@ -731,6 +760,24 @@ func TestReloadKeepsSelectionOnSameItem(t *testing.T) {
 	m = result.(Model)
 	if m.cursor != 0 {
 		t.Errorf("cursor = %d, want clamped to 0", m.cursor)
+	}
+}
+
+func TestReloadKeepsSelectionAcrossSameNamedRepos(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabPRs
+	m.grouped = false
+	prs := []model.PR{
+		{Repo: "work/api", RepoPath: "/work/api", Profile: "test", Number: 1, UpdatedAt: time.Unix(300, 0)},
+		{Repo: "personal/api", RepoPath: "/personal/api", Profile: "test", Number: 1, UpdatedAt: time.Unix(200, 0)},
+	}
+	result, _ := m.Update(prsLoadedMsg{prs: prs})
+	m = result.(Model)
+	m.cursor = 1
+	result, _ = m.Update(prsLoadedMsg{prs: prs})
+	m = result.(Model)
+	if pr, _ := m.prAtCursor(); pr.RepoPath != "/personal/api" {
+		t.Errorf("after reload cursor is on %s, want /personal/api", pr.RepoPath)
 	}
 }
 

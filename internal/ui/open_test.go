@@ -2,10 +2,12 @@ package ui
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fakeLauncher(t *testing.T, script string) string {
@@ -48,5 +50,23 @@ func TestOpenURLReportsLauncherFailure(t *testing.T) {
 func TestOpenURLRejectsEmptyURL(t *testing.T) {
 	if err := OpenURL(""); err == nil {
 		t.Fatal("expected error for empty URL")
+	}
+}
+
+func TestOpenURLStopsWaitingForSlowLauncher(t *testing.T) {
+	old := launcherWait
+	launcherWait = 100 * time.Millisecond
+	t.Cleanup(func() { launcherWait = old })
+	sleep, err := exec.LookPath("sleep")
+	if err != nil {
+		t.Skip("sleep not available")
+	}
+	fakeLauncher(t, "exec "+sleep+" 10\n")
+	start := time.Now()
+	if err := OpenURL("https://example.test"); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("OpenURL waited %s for a launcher that does not exit", elapsed)
 	}
 }

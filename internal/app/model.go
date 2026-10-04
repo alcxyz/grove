@@ -76,6 +76,7 @@ func New(o Options) Model {
 		errLog:             map[tab][]string{},
 		authKind:           map[tab]string{},
 		inFlight:           map[tab]bool{},
+		reposAppliedSeq:    -1,
 		cycleIdx:           -1,
 		logPath:            o.LogPath,
 		grouped:            true,
@@ -138,7 +139,11 @@ type Model struct {
 	errLog   map[tab][]string
 	authKind map[tab]string // "", "github", "forgejo", "mixed", or "unknown"
 	inFlight map[tab]bool   // data tabs with a load command running
-	logPath  string         // path of the runtime log file, shown in the help bar
+	// Dashboard loads are numbered: reposSeq is the latest started (Init
+	// starts 0) and reposAppliedSeq the latest shown.
+	reposSeq        int
+	reposAppliedSeq int
+	logPath         string // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool
@@ -225,7 +230,10 @@ type Model struct {
 }
 
 // Messages
-type reposLoadedMsg struct{ repos []model.Repo }
+type reposLoadedMsg struct {
+	repos []model.Repo
+	seq   int
+}
 type prsLoadedMsg struct {
 	prs    []model.PR
 	errors []string

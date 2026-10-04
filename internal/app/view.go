@@ -363,7 +363,7 @@ func (m Model) View() string {
 			} else {
 				prBranches := m.prBranchSet()
 				hasPR := func(br model.BranchInfo) bool {
-					return prBranches[prBranchKey(br.Profile, br.Repo, br.RepoPath, br.Name)]
+					return prBranches[prBranchKey(br.Profile, br.RepoPath, br.Name)]
 				}
 				b.WriteString(ui.RenderBranches(m.groupedBranches(), m.cursor, cw, so, sh, hasPR, hlField, hlValue))
 				if len(m.branches) == 0 && len(errLog) > 0 {

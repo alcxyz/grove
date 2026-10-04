@@ -74,8 +74,9 @@ func save[T any](dir, name, configKey string, data T) error {
 	return writeFileAtomic(filepath.Join(dir, name+".json"), b)
 }
 
-// writeFileAtomic replaces path with data via a temporary file and rename, so
-// a crash or two concurrent saves can never leave a truncated cache file.
+// writeFileAtomic replaces path with data via a synced temporary file and
+// rename, so an interrupted or concurrent save never leaves a truncated cache
+// file.
 func writeFileAtomic(path string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
@@ -83,6 +84,11 @@ func writeFileAtomic(path string, data []byte) error {
 	}
 	tmpPath := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		return err

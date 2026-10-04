@@ -1135,8 +1135,6 @@ func (m Model) repoPathAtCursor() string {
 	return ""
 }
 
-// repoAtCursor returns the repo at the cursor by walking grouped order.
-// Returns (repo, true) or (zero, false) if cursor is out of range.
 // selectionKeys returns an identity key for each row of the active tab, in
 // display order, so the selection can follow its item when data reloads.
 func (m Model) selectionKeys() []string {
@@ -1151,13 +1149,13 @@ func (m Model) selectionKeys() []string {
 	case tabPRs:
 		for _, g := range m.groupedPRs() {
 			for _, pr := range g.PRs {
-				keys = append(keys, repoDataKey(pr.Profile, localRepoName(pr.Repo, pr.RepoPath))+"#"+strconv.Itoa(pr.Number))
+				keys = append(keys, repoItemKey(pr.Profile, pr.RepoPath, strconv.Itoa(pr.Number)))
 			}
 		}
 	case tabBranches:
 		for _, g := range m.groupedBranches() {
 			for _, br := range g.Branches {
-				keys = append(keys, prBranchKey(br.Profile, br.Repo, br.RepoPath, br.Name))
+				keys = append(keys, prBranchKey(br.Profile, br.RepoPath, br.Name))
 			}
 		}
 	case tabActivity:
@@ -1169,19 +1167,19 @@ func (m Model) selectionKeys() []string {
 	case tabCI:
 		for _, g := range m.groupedRuns() {
 			for _, r := range g.Runs {
-				keys = append(keys, repoDataKey(r.Profile, localRepoName(r.Repo, r.RepoPath))+"#"+strconv.FormatInt(r.RunID, 10))
+				keys = append(keys, repoItemKey(r.Profile, r.RepoPath, strconv.FormatInt(r.RunID, 10)))
 			}
 		}
 	case tabIssues:
 		for _, g := range m.groupedIssues() {
 			for _, iss := range g.Issues {
-				keys = append(keys, repoDataKey(iss.Profile, localRepoName(iss.Repo, iss.RepoPath))+"#"+strconv.Itoa(iss.Number))
+				keys = append(keys, repoItemKey(iss.Profile, iss.RepoPath, strconv.Itoa(iss.Number)))
 			}
 		}
 	case tabMilestones:
 		for _, g := range m.groupedMilestones() {
 			for _, ms := range g.Milestones {
-				keys = append(keys, repoDataKey(ms.Profile, localRepoName(ms.Repo, ms.RepoPath))+"#"+strconv.Itoa(ms.Number))
+				keys = append(keys, repoItemKey(ms.Profile, ms.RepoPath, strconv.Itoa(ms.Number)))
 			}
 		}
 	}
@@ -1214,6 +1212,14 @@ func (m *Model) restoreSelection(key string) {
 	m.clampCursor()
 }
 
+// repoItemKey identifies one item of a repo by its local checkout, so repos
+// that share a name in different directories are kept apart.
+func repoItemKey(profile, repoPath, id string) string {
+	return profile + "\x00" + repoPath + "#" + id
+}
+
+// repoAtCursor returns the repo at the cursor by walking grouped order.
+// Returns (repo, true) or (zero, false) if cursor is out of range.
 func (m Model) repoAtCursor() (model.Repo, bool) {
 	flat := 0
 	for _, g := range m.groupedRepos() {

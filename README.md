@@ -368,7 +368,7 @@ Grove hands off to external tools via the `space` and `e` keys:
 | Detail pane (local branch) | lazygit                                             | `$EDITOR` / nvim |
 | Diff view                  | diffnav                                             | `$EDITOR` / nvim |
 
-After the Branches-tab lazygit session, grove restores your original checkout unless you switched branches inside lazygit. `$EDITOR` may include arguments, such as `code --wait`, quoted as in a shell (nothing is expanded); a path to an executable is used whole even if it contains spaces. Browser links open with `open` on macOS and `xdg-open` elsewhere.
+After the Branches-tab lazygit session, grove restores your original checkout unless you switched branches inside lazygit. `$EDITOR` may include arguments, such as `code --wait`, quoted as in a shell (nothing is expanded, and on Windows backslashes stay path separators); a path to an executable is used whole even if it contains spaces. Browser links open with `open` on macOS and `xdg-open` elsewhere.
 
 If a tool is not found on `PATH` or there is no valid target (no forge URL, no repo selected), a status message is shown instead of failing silently.
 

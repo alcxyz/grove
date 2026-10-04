@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -69,7 +70,18 @@ func TestEditorCommandHonoursQuotes(t *testing.T) {
 	}
 }
 
+func TestSplitWordsWithoutBackslashEscapes(t *testing.T) {
+	got := splitWords(`C:\tools\nvim.exe -u "C:\my init.vim"`, false)
+	want := []string{`C:\tools\nvim.exe`, "-u", `C:\my init.vim`}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("splitWords = %q, want %q", got, want)
+	}
+}
+
 func TestEditorCommandUsesExecutablePathWithSpaces(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test editor has no .exe extension")
+	}
 	dir := filepath.Join(t.TempDir(), "My Editor")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -98,7 +110,7 @@ func TestSplitWords(t *testing.T) {
 		{`x ""`, []string{"x", ""}},
 		{`$HOME`, []string{"$HOME"}},
 	} {
-		got := splitWords(tc.in)
+		got := splitWords(tc.in, true)
 		if strings.Join(got, "|") != strings.Join(tc.want, "|") || len(got) != len(tc.want) {
 			t.Errorf("splitWords(%q) = %q, want %q", tc.in, got, tc.want)
 		}

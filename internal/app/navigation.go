@@ -1213,9 +1213,10 @@ func (m *Model) restoreSelection(key string) {
 }
 
 // repoItemKey identifies one item of a repo by its local checkout, so repos
-// that share a name in different directories are kept apart.
+// that share a name in different directories are kept apart. NUL cannot occur
+// in paths or branch names, so the parts cannot run together.
 func repoItemKey(profile, repoPath, id string) string {
-	return profile + "\x00" + repoPath + "#" + id
+	return profile + "\x00" + repoPath + "\x00" + id
 }
 
 // repoAtCursor returns the repo at the cursor by walking grouped order.

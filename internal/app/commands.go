@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -578,12 +579,11 @@ func editorCommand() (string, []string) {
 	if value == "" {
 		return "nvim", nil
 	}
-	if strings.ContainsRune(value, os.PathSeparator) {
-		if _, err := exec.LookPath(value); err == nil {
-			return value, nil
-		}
+	if _, err := exec.LookPath(value); err == nil {
+		return value, nil
 	}
-	words := splitWords(value)
+	// Backslashes are path separators on Windows, not escapes.
+	words := splitWords(value, runtime.GOOS != "windows")
 	if len(words) == 0 {
 		return "nvim", nil
 	}
@@ -591,9 +591,10 @@ func editorCommand() (string, []string) {
 }
 
 // splitWords splits s into words at unquoted whitespace. Single quotes keep
-// their contents literally; inside double quotes a backslash escapes only "
-// and \; elsewhere a backslash escapes the next character.
-func splitWords(s string) []string {
+// their contents literally. With backslashEscapes, a backslash inside double
+// quotes escapes only " and \, and elsewhere escapes the next character;
+// without it, backslashes are ordinary characters.
+func splitWords(s string, backslashEscapes bool) []string {
 	var words []string
 	var word strings.Builder
 	inWord := false
@@ -607,7 +608,7 @@ func splitWords(s string) []string {
 			}
 			word.WriteRune(r)
 			escaped = false
-		case r == '\\' && quote != '\'':
+		case r == '\\' && backslashEscapes && quote != '\'':
 			escaped = true
 			inWord = true
 		case quote != 0 && r == quote:

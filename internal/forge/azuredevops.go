@@ -250,10 +250,12 @@ func (a *AzureDevOpsProvider) repoMetadata(owner, repo string) (azureDevOpsRepoM
 func (a *AzureDevOpsProvider) azJSON(args ...string) ([]byte, error) {
 	fullArgs := append([]string{}, args...)
 	fullArgs = append(fullArgs, "--output", "json", "--only-show-errors")
-	cmd := exec.Command("az", fullArgs...)
-	out, err := cmd.CombinedOutput()
+	out, stderr, err := runCLI("az", fullArgs...)
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
+		msg := strings.TrimSpace(string(stderr))
+		if msg == "" {
+			msg = strings.TrimSpace(string(out))
+		}
 		if msg == "" {
 			return nil, err
 		}

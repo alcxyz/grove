@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -81,6 +82,10 @@ func profileByName(profiles []config.Profile, name string) (config.Profile, bool
 	}
 	return config.Profile{}, false
 }
+
+// errNoProvider reports a resolved remote that has no provider; it indicates
+// a gap in config.AllRemotes rather than a user error.
+var errNoProvider = errors.New("no forge provider configured for this remote")
 
 func providerForRemote(providers map[string]forge.Provider, remote config.Remote) forge.Provider {
 	return providers[remote.Key()]
@@ -181,6 +186,9 @@ func loadPRs(profiles []config.Profile, providers map[string]forge.Provider) tea
 					}
 					prov := providerForRemote(providers, remote)
 					if prov == nil {
+						mu.Lock()
+						errs = append(errs, formatRemoteError(name, remote, errNoProvider))
+						mu.Unlock()
 						return
 					}
 					repoFull := remote.FullName(name)
@@ -230,6 +238,9 @@ func loadBranches(profiles []config.Profile, providers map[string]forge.Provider
 					}
 					prov := providerForRemote(providers, remote)
 					if prov == nil {
+						mu.Lock()
+						errs = append(errs, formatRemoteError(name, remote, errNoProvider))
+						mu.Unlock()
 						return
 					}
 					repoFull := remote.FullName(name)
@@ -356,6 +367,9 @@ func loadRuns(profiles []config.Profile, providers map[string]forge.Provider) te
 					}
 					prov := providerForRemote(providers, remote)
 					if prov == nil {
+						mu.Lock()
+						errs = append(errs, formatRemoteError(name, remote, errNoProvider))
+						mu.Unlock()
 						return
 					}
 					repoFull := remote.FullName(name)
@@ -405,6 +419,9 @@ func loadIssues(profiles []config.Profile, providers map[string]forge.Provider) 
 					}
 					prov := providerForRemote(providers, remote)
 					if prov == nil {
+						mu.Lock()
+						errs = append(errs, formatRemoteError(name, remote, errNoProvider))
+						mu.Unlock()
 						return
 					}
 					repoFull := remote.FullName(name)
@@ -454,6 +471,9 @@ func loadMilestones(profiles []config.Profile, providers map[string]forge.Provid
 					}
 					prov := providerForRemote(providers, remote)
 					if prov == nil {
+						mu.Lock()
+						errs = append(errs, formatRemoteError(name, remote, errNoProvider))
+						mu.Unlock()
 						return
 					}
 					repoFull := remote.FullName(name)

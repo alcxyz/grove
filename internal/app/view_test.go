@@ -47,10 +47,10 @@ func TestViewShowsDependencyWarnings(t *testing.T) {
 	m.depWarnings = []string{"gh not found on PATH"}
 
 	out := m.View()
-	if !strings.Contains(out, "Dependency warnings") || !strings.Contains(out, "gh not found on PATH") {
+	if !strings.Contains(out, "Startup warnings") || !strings.Contains(out, "gh not found on PATH") {
 		t.Error("View() should show dependency warnings on dashboard")
 	}
-	if !strings.Contains(out, "1 dependency warning") {
+	if !strings.Contains(out, "1 startup warning") {
 		t.Error("View() should show dependency warning count in footer")
 	}
 }

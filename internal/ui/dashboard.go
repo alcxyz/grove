@@ -708,7 +708,7 @@ func RenderDependencyWarnings(warnings []string, limit int) string {
 		limit = len(warnings)
 	}
 	var b strings.Builder
-	b.WriteString(PendingStyle.Render("  Dependency warnings") + "\n")
+	b.WriteString(PendingStyle.Render("  Startup warnings") + "\n")
 	for _, warning := range warnings[:limit] {
 		b.WriteString(DimStyle.Render("  • "+warning) + "\n")
 	}

@@ -157,9 +157,9 @@ func (m Model) infoBarParts() []string {
 		parts = append(parts, ui.DimStyle.Render("auto-refresh off"))
 	}
 	if len(m.depWarnings) > 0 {
-		label := "dependency warnings"
+		label := "startup warnings"
 		if len(m.depWarnings) == 1 {
-			label = "dependency warning"
+			label = "startup warning"
 		}
 		parts = append(parts, ui.PendingStyle.Render(fmt.Sprintf("%d %s", len(m.depWarnings), label)))
 	}

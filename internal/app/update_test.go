@@ -792,7 +792,17 @@ func TestWarningSurvivesLoadsThatFollowIt(t *testing.T) {
 			t.Fatalf("after %T statusMsg = %q, want the warning kept", msg, m.statusMsg)
 		}
 	}
+	// A user action that replaces the warning ends the hold.
+	m = sendKey(m, "r")
+	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
+	m = result.(Model)
+	if m.statusMsg == "Refreshing..." {
+		t.Fatal("a refresh started after the warning should report its result")
+	}
+
 	// Once the hold expires, load results show again.
+	result, _ = m.Update(warningMsg("restore main failed"))
+	m = result.(Model)
 	m.statusHoldUntil = time.Time{}
 	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
 	m = result.(Model)

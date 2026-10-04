@@ -285,6 +285,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Like statusMsg, but load results arriving soon after, including
 		// the reload this starts, do not replace the warning.
 		m.statusMsg = string(msg)
+		m.heldStatus = string(msg)
 		m.statusHoldUntil = time.Now().Add(warningHold)
 		m.loading = false
 		cmd := m.reloadRepos()
@@ -379,9 +380,10 @@ func (m *Model) setLoadErrors(t tab, errs []string) {
 const warningHold = 10 * time.Second
 
 // setLoadStatus shows a load result on the status line unless a recent
-// warning is being held there.
+// warning is still shown there. Once anything else has replaced the warning,
+// load results show as usual.
 func (m *Model) setLoadStatus(s string) {
-	if time.Now().Before(m.statusHoldUntil) {
+	if m.statusMsg == m.heldStatus && time.Now().Before(m.statusHoldUntil) {
 		return
 	}
 	m.statusMsg = s

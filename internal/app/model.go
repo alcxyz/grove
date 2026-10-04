@@ -143,8 +143,9 @@ type Model struct {
 	// starts 0) and reposAppliedSeq the latest shown.
 	reposSeq        int
 	reposAppliedSeq int
-	// statusHoldUntil keeps a warning on the status line until then, so load
-	// results arriving meanwhile do not replace it.
+	// heldStatus is a warning that load results arriving before
+	// statusHoldUntil must not replace while it is still shown.
+	heldStatus      string
 	statusHoldUntil time.Time
 	logPath         string // path of the runtime log file, shown in the help bar
 

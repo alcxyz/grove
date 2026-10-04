@@ -778,6 +778,26 @@ func TestBranchSortByHasPR(t *testing.T) {
 	}
 }
 
+func TestWarningSurvivesTheReloadItStarts(t *testing.T) {
+	m := newTestModel()
+	result, _ := m.Update(reposLoadedMsg{seq: 0})
+	m = result.(Model)
+	result, _ = m.Update(warningMsg("restore main failed"))
+	m = result.(Model)
+	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
+	m = result.(Model)
+	if m.statusMsg != "restore main failed" {
+		t.Fatalf("statusMsg = %q, want the warning kept", m.statusMsg)
+	}
+	// A later reload may replace it.
+	m = sendKey(m, "r")
+	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
+	m = result.(Model)
+	if m.statusMsg == "restore main failed" {
+		t.Fatal("a later reload should update the status line")
+	}
+}
+
 func TestBrowserFailureIsNotOverwrittenByReload(t *testing.T) {
 	m := newTestModel()
 	result, cmd := m.Update(browserResultMsg("open in browser failed: no URL available"))
@@ -808,22 +828,16 @@ func TestReloadKeepsSelectionAcrossSameNamedRepos(t *testing.T) {
 	}
 }
 
-func TestStaleSplashBlinkTicksAreDropped(t *testing.T) {
+func TestBlinkLoopRunsWithSplashClosed(t *testing.T) {
 	m := newTestModel()
-	m = sendKey(m, "!")
-	firstGen := m.splashGen
-	m = sendKey(m, "esc")
-	m = sendKey(m, "!")
-
-	result, cmd := m.Update(splashBlinkMsg{next: 2, gen: firstGen})
+	// The status-bar owl blinks too, so the loop must not stop when the
+	// splash is closed, and opening the splash must not start a second one.
+	result, cmd := m.Update(splashBlinkMsg{next: 0})
 	m = result.(Model)
-	if cmd != nil {
-		t.Error("a blink tick from an earlier opening should not schedule another")
+	if cmd == nil {
+		t.Error("the blink loop should continue while the splash is closed")
 	}
-	if m.splashBlink != 0 {
-		t.Errorf("splashBlink = %d, want 0", m.splashBlink)
-	}
-	if _, cmd := m.Update(splashBlinkMsg{next: 1, gen: m.splashGen}); cmd == nil {
-		t.Error("the current opening's blink loop should continue")
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")}); cmd != nil {
+		t.Error("opening the splash should not start another blink loop")
 	}
 }

@@ -254,8 +254,13 @@ func MergedRemoteBranches(path, defaultBranch string) (map[string]bool, error) {
 	return merged, nil
 }
 
-// CurrentBranch returns the current branch name (or "HEAD" if detached).
+// CurrentBranch returns the current branch name (or "HEAD" if detached). It
+// reads the full ref, because rev-parse --abbrev-ref prints "heads/<name>"
+// when a tag has the same name as the branch.
 func CurrentBranch(path string) (string, error) {
+	if ref, err := run(path, "symbolic-ref", "-q", "HEAD"); err == nil {
+		return strings.TrimPrefix(ref, "refs/heads/"), nil
+	}
 	return run(path, "rev-parse", "--abbrev-ref", "HEAD")
 }
 

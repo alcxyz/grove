@@ -104,3 +104,23 @@ func TestRunTimeoutKillsHelperProcesses(t *testing.T) {
 		t.Fatalf("run returned after %s; helper processes kept it waiting", elapsed)
 	}
 }
+
+func TestCurrentBranchWithSameNamedTag(t *testing.T) {
+	dir := t.TempDir()
+	gitCmd(t, dir, "init")
+	gitCmd(t, dir, "config", "user.email", "grove@example.test")
+	gitCmd(t, dir, "config", "user.name", "Grove Test")
+	gitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+	gitCmd(t, dir, "branch", "v1")
+	gitCmd(t, dir, "update-ref", "refs/tags/v1", "HEAD")
+	gitCmd(t, dir, "checkout", "-q", "refs/heads/v1")
+	gitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/v1")
+
+	if got, err := CurrentBranch(dir); err != nil || got != "v1" {
+		t.Fatalf("CurrentBranch = %q, %v; want v1", got, err)
+	}
+	gitCmd(t, dir, "checkout", "-q", "--detach")
+	if got, err := CurrentBranch(dir); err != nil || got != "HEAD" {
+		t.Fatalf("detached CurrentBranch = %q, %v; want HEAD", got, err)
+	}
+}

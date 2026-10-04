@@ -15,7 +15,6 @@ package cache
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -118,35 +117,28 @@ func writeFileAtomic(path string, data []byte) error {
 	return nil
 }
 
-// followSymlinks returns the file that path's symlink chain points to, even
-// when that file does not exist yet, so a save replaces the target rather
-// than the link. A chain that never ends in a file is an error.
+// followSymlinks returns the file that path's symlink chain points to, so a
+// save replaces the target rather than the link. When the chain ends in a
+// missing file, the kernel creates it (empty) by opening the link, so the
+// target is exactly the one reads would use; an empty cache file reads as a
+// miss until the save completes. A symlink loop is an error.
 func followSymlinks(path string) (string, error) {
-	for i := 0; i < 40; i++ {
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			return resolved, nil
-		}
-		info, err := os.Lstat(path)
-		if err != nil || info.Mode()&os.ModeSymlink == 0 {
-			// Missing (or unreadable, which the save will report).
-			return path, nil
-		}
-		dest, err := os.Readlink(path)
-		if err != nil {
-			return "", err
-		}
-		if !filepath.IsAbs(dest) {
-			// Resolve the link's directory first, so ".." in dest is
-			// applied to the real directory as the kernel would.
-			dir, err := filepath.EvalSymlinks(filepath.Dir(path))
-			if err != nil {
-				return "", err
-			}
-			dest = filepath.Join(dir, dest)
-		}
-		path = dest
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved, nil
 	}
-	return "", fmt.Errorf("%s: too many levels of symbolic links", path)
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		// Missing (or unreadable, which the save will report).
+		return path, nil
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
 }
 
 func capSlice[T any](s []T, max int) []T {

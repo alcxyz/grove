@@ -195,6 +195,33 @@ func TestWriteFileAtomicRejectsSymlinkLoop(t *testing.T) {
 	}
 }
 
+func TestWriteFileAtomicResolvesDotDotAfterSymlinkedComponent(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "data", "grove"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// cache/alias -> data/grove, and cache/prs.json -> alias/../shared.json,
+	// which the kernel resolves to data/shared.json (missing).
+	if err := os.Symlink(filepath.Join(root, "data", "grove"), filepath.Join(root, "cache", "alias")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := os.Symlink("alias/../shared.json", filepath.Join(root, "cache", "prs.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(filepath.Join(root, "cache", "prs.json"), []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "data", "shared.json")); err != nil || string(got) != "[]" {
+		t.Fatalf("data/shared.json = %q, %v; want []", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "cache", "shared.json")); err == nil {
+		t.Fatal("save went to the textual cleanup of the link target")
+	}
+}
+
 func TestWriteFileAtomicResolvesDotDotFromRealDirectory(t *testing.T) {
 	root := t.TempDir()
 	real := filepath.Join(root, "data", "grove")

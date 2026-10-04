@@ -727,10 +727,10 @@ func launchLazygitOnBranch(repoPath, targetBranch string) tea.Cmd {
 			return statusMsg(fmt.Sprintf("back in grove (left on %s)", cur))
 		}
 		if restoreErr := gitpkg.Checkout(repoPath, restoreRef); restoreErr != nil {
-			return statusMsg(fmt.Sprintf("restore %s failed: %v", restoreLabel, restoreErr))
+			return warningMsg(fmt.Sprintf("restore %s failed, still on %s: %v", restoreLabel, targetBranch, restoreErr))
 		}
 		if err != nil {
-			return statusMsg(fmt.Sprintf("lazygit exited: %v", err))
+			return warningMsg(fmt.Sprintf("lazygit exited: %v", err))
 		}
 		return statusMsg(fmt.Sprintf("back in grove (restored %s)", restoreLabel))
 	})
@@ -995,12 +995,13 @@ func idleCheckCmd() tea.Cmd {
 	return tea.Tick(30*time.Second, func(time.Time) tea.Msg { return idleCheckMsg{} })
 }
 
-// splashBlinkCmd schedules the next eye-blink frame for the ! splash overlay.
+// splashBlinkCmd schedules the next eye-blink frame for the owl in the status
+// bar and the ! splash overlay.
 //
 //   - When current==0 (eyes open): wait 1.5–4 s, then randomly blink one eye
 //     or both (states 1, 2, 3).
 //   - When current!=0 (eyes closed): wait 80–150 ms, then reopen (state 0).
-func splashBlinkCmd(current, gen int) tea.Cmd {
+func splashBlinkCmd(current int) tea.Cmd {
 	var d time.Duration
 	var next int
 	if current == 0 {
@@ -1010,7 +1011,7 @@ func splashBlinkCmd(current, gen int) tea.Cmd {
 		d = time.Duration(80+rand.Intn(70)) * time.Millisecond
 		next = 0
 	}
-	return tea.Tick(d, func(time.Time) tea.Msg { return splashBlinkMsg{next: next, gen: gen} })
+	return tea.Tick(d, func(time.Time) tea.Msg { return splashBlinkMsg{next: next} })
 }
 
 // tabStale reports whether a tab's data is missing or older than the refresh

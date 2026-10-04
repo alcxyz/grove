@@ -77,6 +77,7 @@ func New(o Options) Model {
 		authKind:           map[tab]string{},
 		inFlight:           map[tab]bool{},
 		reposAppliedSeq:    -1,
+		statusHoldSeq:      -1,
 		cycleIdx:           -1,
 		logPath:            o.LogPath,
 		grouped:            true,
@@ -143,7 +144,10 @@ type Model struct {
 	// starts 0) and reposAppliedSeq the latest shown.
 	reposSeq        int
 	reposAppliedSeq int
-	logPath         string // path of the runtime log file, shown in the help bar
+	// statusHoldSeq is the last dashboard load that must not replace the
+	// status line with its "loaded" message.
+	statusHoldSeq int
+	logPath       string // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool
@@ -189,7 +193,6 @@ type Model struct {
 	// Splash/about overlay (! key) with blink animation
 	showSplash  bool
 	splashBlink int // 0=both open 1=left closed 2=right closed 3=both closed
-	splashGen   int // incremented per opening; stale blink ticks are dropped
 
 	// Profile switching: index into cfg.Profiles, or -1 for "All"
 	activeProfile int
@@ -245,6 +248,10 @@ type branchesLoadedMsg struct {
 type activityLoadedMsg struct{ commits []model.Commit }
 type fetchDoneMsg struct{ msg string }
 type statusMsg string
+
+// warningMsg is a statusMsg that the repo reload it triggers must not
+// overwrite, such as a failure to restore the original branch.
+type warningMsg string
 
 // browserResultMsg reports a failed browser launch. Unlike statusMsg it does
 // not reload repos, whose "loaded" message would overwrite the error.
@@ -303,6 +310,6 @@ type detailItem struct {
 
 type versionCheckMsg struct{ latest string }
 type gTimeoutMsg struct{}
-type ssTickMsg struct{}                     // screensaver animation frame
-type idleCheckMsg struct{}                  // periodic idle-time check
-type splashBlinkMsg struct{ next, gen int } // next blink state; gen ties it to one splash opening
+type ssTickMsg struct{}                // screensaver animation frame
+type idleCheckMsg struct{}             // periodic idle-time check
+type splashBlinkMsg struct{ next int } // next blink state

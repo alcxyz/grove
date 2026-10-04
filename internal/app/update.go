@@ -66,7 +66,9 @@ func authErrorKind(errs []string) string {
 
 func (m Model) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles, m.reposSeq), checkLatestVersion(m.version)}
+	// One blink loop runs for the whole session: it animates the status-bar
+	// owl as well as the splash.
+	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles, m.reposSeq), checkLatestVersion(m.version), splashBlinkCmd(0)}
 
 	// Background-refresh any cached data that is stale
 	for _, t := range []tab{tabPRs, tabBranches, tabActivity, tabCI, tabIssues, tabMilestones} {
@@ -164,7 +166,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.repos = msg.repos
 		m.restoreSelection(selected)
 		m.loading = false
-		m.statusMsg = fmt.Sprintf("%d repositories loaded", len(msg.repos))
+		if msg.seq > m.statusHoldSeq {
+			m.statusMsg = fmt.Sprintf("%d repositories loaded", len(msg.repos))
+		}
 
 	case prsLoadedMsg:
 		selected := m.selectionKey()
@@ -279,6 +283,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case browserResultMsg:
 		m.statusMsg = string(msg)
 
+	case warningMsg:
+		// Like statusMsg, but the reload it starts keeps the warning visible.
+		m.statusMsg = string(msg)
+		m.loading = false
+		cmd := m.reloadRepos()
+		m.statusHoldSeq = m.reposSeq
+		return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
+
 	case statusMsg:
 		m.statusMsg = string(msg)
 		m.loading = false
@@ -323,11 +335,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, idleCheckCmd()
 
 	case splashBlinkMsg:
-		if !m.showSplash || msg.gen != m.splashGen {
-			return m, nil
-		}
 		m.splashBlink = msg.next
-		return m, splashBlinkCmd(msg.next, m.splashGen)
+		return m, splashBlinkCmd(msg.next)
 
 	case ssTickMsg:
 		if !m.ssActive {
@@ -781,9 +790,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// "!" opens splash (only when not filtering)
 	if key == "!" && !m.filtering {
 		m.showSplash = true
-		m.splashBlink = 0
-		m.splashGen++
-		return m, splashBlinkCmd(0, m.splashGen)
+		return m, nil
 	}
 
 	// "?" opens help (only when not filtering)

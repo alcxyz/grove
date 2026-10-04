@@ -15,6 +15,7 @@ package cache
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -79,7 +80,10 @@ func save[T any](dir, name, configKey string, data T) error {
 // file. A symlinked path is followed, and an existing file keeps its mode; a
 // new file is private to the user.
 func writeFileAtomic(path string, data []byte) error {
-	path = followSymlinks(path)
+	path, err := followSymlinks(path)
+	if err != nil {
+		return err
+	}
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
@@ -116,23 +120,33 @@ func writeFileAtomic(path string, data []byte) error {
 
 // followSymlinks returns the file that path's symlink chain points to, even
 // when that file does not exist yet, so a save replaces the target rather
-// than the link.
-func followSymlinks(path string) string {
+// than the link. A chain that never ends in a file is an error.
+func followSymlinks(path string) (string, error) {
 	for i := 0; i < 40; i++ {
+		if resolved, err := filepath.EvalSymlinks(path); err == nil {
+			return resolved, nil
+		}
 		info, err := os.Lstat(path)
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
-			return path
+			// Missing (or unreadable, which the save will report).
+			return path, nil
 		}
 		dest, err := os.Readlink(path)
 		if err != nil {
-			return path
+			return "", err
 		}
 		if !filepath.IsAbs(dest) {
-			dest = filepath.Join(filepath.Dir(path), dest)
+			// Resolve the link's directory first, so ".." in dest is
+			// applied to the real directory as the kernel would.
+			dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+			if err != nil {
+				return "", err
+			}
+			dest = filepath.Join(dir, dest)
 		}
 		path = dest
 	}
-	return path
+	return "", fmt.Errorf("%s: too many levels of symbolic links", path)
 }
 
 func capSlice[T any](s []T, max int) []T {

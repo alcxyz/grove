@@ -175,3 +175,49 @@ func TestWriteFileAtomicFollowsRelativeSymlinkChain(t *testing.T) {
 		t.Fatalf("data dir should hold only the target, got %v, %v", entries, err)
 	}
 }
+
+func TestWriteFileAtomicRejectsSymlinkLoop(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.json"), filepath.Join(dir, "b.json")
+	if err := os.Symlink(b, a); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := os.Symlink(a, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(a, []byte("[]")); err == nil {
+		t.Fatal("expected an error for a symlink loop")
+	}
+	for _, p := range []string{a, b} {
+		if info, err := os.Lstat(p); err != nil || info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("%s was replaced: %v, %v", p, info, err)
+		}
+	}
+}
+
+func TestWriteFileAtomicResolvesDotDotFromRealDirectory(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "data", "grove")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "home"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// home/grove -> data/grove, and its prs.json -> ../shared.json (missing).
+	if err := os.Symlink(real, filepath.Join(root, "home", "grove")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := os.Symlink("../shared.json", filepath.Join(real, "prs.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(filepath.Join(root, "home", "grove", "prs.json"), []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(root, "data", "shared.json")); err != nil || string(got) != "[]" {
+		t.Fatalf("data/shared.json = %q, %v; want []", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "home", "shared.json")); err == nil {
+		t.Fatal("save went to the textual ../ of the symlinked directory")
+	}
+}

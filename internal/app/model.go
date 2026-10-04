@@ -73,6 +73,10 @@ func New(o Options) Model {
 		loading:            true,
 		scrollOffset:       map[tab]int{},
 		tabSort:            map[tab]tabSortState{},
+		errLog:             map[tab][]string{},
+		authKind:           map[tab]string{},
+		inFlight:           map[tab]bool{},
+		reposAppliedSeq:    -1,
 		cycleIdx:           -1,
 		logPath:            o.LogPath,
 		grouped:            true,
@@ -131,10 +135,19 @@ type Model struct {
 	issuesLoadedAt     time.Time
 	milestonesLoadedAt time.Time
 
-	// Load errors — shown in view when a tab has no data
-	errLog   []string
-	authKind string // "", "github", "forgejo", or "mixed"
-	logPath  string // path of the runtime log file, shown in the help bar
+	// Load errors per tab — shown in view when a tab has no data
+	errLog   map[tab][]string
+	authKind map[tab]string // "", "github", "forgejo", "mixed", or "unknown"
+	inFlight map[tab]bool   // data tabs with a load command running
+	// Dashboard loads are numbered: reposSeq is the latest started (Init
+	// starts 0) and reposAppliedSeq the latest shown.
+	reposSeq        int
+	reposAppliedSeq int
+	// heldStatus is a warning that load results arriving before
+	// statusHoldUntil must not replace while it is still shown.
+	heldStatus      string
+	statusHoldUntil time.Time
+	logPath         string // path of the runtime log file, shown in the help bar
 
 	// Filter
 	filtering   bool
@@ -220,7 +233,10 @@ type Model struct {
 }
 
 // Messages
-type reposLoadedMsg struct{ repos []model.Repo }
+type reposLoadedMsg struct {
+	repos []model.Repo
+	seq   int
+}
 type prsLoadedMsg struct {
 	prs    []model.PR
 	errors []string
@@ -232,6 +248,14 @@ type branchesLoadedMsg struct {
 type activityLoadedMsg struct{ commits []model.Commit }
 type fetchDoneMsg struct{ msg string }
 type statusMsg string
+
+// warningMsg is a statusMsg that the repo reload it triggers must not
+// overwrite, such as a failure to restore the original branch.
+type warningMsg string
+
+// browserResultMsg reports a failed browser launch. Unlike statusMsg it does
+// not reload repos, whose "loaded" message would overwrite the error.
+type browserResultMsg string
 type tickMsg time.Time
 
 type detailLoadedMsg struct {

@@ -284,6 +284,35 @@ func TestUpdateReposLoaded(t *testing.T) {
 	}
 }
 
+func TestDashboardLoadsApplyInOrder(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabDashboard
+
+	// The Init load is still pending, so a tick does not start another.
+	result, _ := m.Update(tickMsg{})
+	m = result.(Model)
+	if m.reposSeq != 0 {
+		t.Fatalf("tick started a load while one was pending (seq %d)", m.reposSeq)
+	}
+	result, _ = m.Update(reposLoadedMsg{repos: []model.Repo{{Name: "init", Path: "/tmp/init"}}, seq: 0})
+	m = result.(Model)
+
+	// Two overlapping refreshes: the older one finishes last and is dropped.
+	result, _ = m.Update(tickMsg{})
+	m = result.(Model)
+	m = sendKey(m, "r")
+	if m.reposSeq != 2 {
+		t.Fatalf("reposSeq = %d, want 2", m.reposSeq)
+	}
+	result, _ = m.Update(reposLoadedMsg{repos: []model.Repo{{Name: "new", Path: "/tmp/new"}}, seq: 2})
+	m = result.(Model)
+	result, _ = m.Update(reposLoadedMsg{repos: []model.Repo{{Name: "old", Path: "/tmp/old"}}, seq: 1})
+	m = result.(Model)
+	if len(m.repos) != 1 || m.repos[0].Name != "new" {
+		t.Errorf("repos = %+v, want the newest load", m.repos)
+	}
+}
+
 func TestUpdatePRsLoaded(t *testing.T) {
 	m := newTestModel()
 
@@ -317,8 +346,8 @@ func TestUpdateBranchesLoadedWithErrors(t *testing.T) {
 	if len(m.branches) != 1 {
 		t.Errorf("branches count = %d, want 1", len(m.branches))
 	}
-	if len(m.errLog) != 1 {
-		t.Errorf("errLog count = %d, want 1", len(m.errLog))
+	if len(m.errLog[tabBranches]) != 1 {
+		t.Errorf("errLog count = %d, want 1", len(m.errLog[tabBranches]))
 	}
 }
 
@@ -604,5 +633,224 @@ func TestIsReleaseVersion(t *testing.T) {
 	}
 	if IsReleaseVersion("dev") || IsReleaseVersion("0.9") || IsReleaseVersion("0.9.0-beta") {
 		t.Error("non-release versions should not be recognized")
+	}
+}
+
+func TestLoadErrorsStayWithTheirTab(t *testing.T) {
+	m := newTestModel()
+	result, _ := m.Update(prsLoadedMsg{errors: []string{"repo [github]: not authenticated: github API returned 401"}})
+	m = result.(Model)
+	result, _ = m.Update(milestonesLoadedMsg{})
+	m = result.(Model)
+
+	if got := len(m.errLog[tabPRs]); got != 1 {
+		t.Errorf("PR errors = %d, want 1 after milestones finished cleanly", got)
+	}
+	if m.authKind[tabPRs] != "github" {
+		t.Errorf("PR authKind = %q, want github", m.authKind[tabPRs])
+	}
+	if len(m.errLog[tabMilestones]) != 0 || m.authKind[tabMilestones] != "" {
+		t.Errorf("milestones should have no errors, got %v / %q", m.errLog[tabMilestones], m.authKind[tabMilestones])
+	}
+}
+
+func TestTabLoadsDoNotOverlap(t *testing.T) {
+	m := newTestModel()
+	if cmd := m.startTabLoad(tabCI); cmd == nil {
+		t.Fatal("first CI load should start")
+	}
+	if cmd := m.startTabLoad(tabCI); cmd != nil {
+		t.Fatal("second CI load should be skipped while the first is in flight")
+	}
+	result, _ := m.Update(runsLoadedMsg{})
+	m = result.(Model)
+	if cmd := m.startTabLoad(tabCI); cmd == nil {
+		t.Fatal("CI load should start again after the previous one finished")
+	}
+}
+
+func TestRefreshKeyReportsLoadInProgress(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabIssues
+	m.startTabLoad(tabIssues)
+	m = sendKey(m, "r")
+	if m.statusMsg != "Refresh already in progress" {
+		t.Errorf("statusMsg = %q", m.statusMsg)
+	}
+}
+
+func TestAutoRefreshReloadsActiveTabData(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabCI
+	m.runs = []model.WorkflowRun{{Repo: "org/repo"}}
+	m.runsLoadedAt = time.Now()
+
+	result, _ := m.Update(tickMsg(time.Now()))
+	m = result.(Model)
+	if !m.inFlight[tabCI] {
+		t.Error("auto-refresh tick should reload CI runs on the CI tab even when fresh")
+	}
+	if m.inFlight[tabMilestones] {
+		t.Error("auto-refresh tick should not reload tabs that are not visible")
+	}
+}
+
+func TestAutoRefreshOnDashboardReloadsSummaryData(t *testing.T) {
+	m := newTestModel()
+	result, _ := m.Update(tickMsg(time.Now()))
+	m = result.(Model)
+	for _, tb := range []tab{tabPRs, tabCI, tabIssues} {
+		if !m.inFlight[tb] {
+			t.Errorf("dashboard tick should reload tab %d", tb)
+		}
+	}
+}
+
+func TestNumberKeysResetScroll(t *testing.T) {
+	m := newTestModel()
+	m.scrollOffset[tabActivity] = 7
+	m.activity = []model.Commit{{Hash: "abc"}}
+	m.activityLoadedAt = time.Now()
+	m = sendKey(m, "5")
+	if m.activeTab != tabActivity {
+		t.Fatalf("activeTab = %d, want activity", m.activeTab)
+	}
+	if m.scrollOffset[tabActivity] != 0 {
+		t.Errorf("scrollOffset = %d, want 0", m.scrollOffset[tabActivity])
+	}
+}
+
+func TestPRBranchSetIsPerRepo(t *testing.T) {
+	m := newTestModel()
+	m.prs = []model.PR{{Repo: "org/a", RepoPath: "/src/a", Profile: "test", Branch: "dev"}}
+	set := m.prBranchSet()
+	if !set[prBranchKey("test", "/src/a", "dev")] {
+		t.Error("repo a's dev branch should have a PR")
+	}
+	if set[prBranchKey("test", "/src/b", "dev")] {
+		t.Error("repo b's dev branch must not inherit repo a's PR")
+	}
+}
+
+func TestReloadKeepsSelectionOnSameItem(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabPRs
+	m.grouped = false
+	old := []model.PR{
+		{Repo: "org/a", RepoPath: "/tmp/a", Profile: "test", Number: 1, UpdatedAt: time.Unix(300, 0)},
+		{Repo: "org/b", RepoPath: "/tmp/b", Profile: "test", Number: 2, UpdatedAt: time.Unix(200, 0)},
+	}
+	result, _ := m.Update(prsLoadedMsg{prs: old})
+	m = result.(Model)
+	m.cursor = 1
+	if pr, _ := m.prAtCursor(); pr.Number != 2 {
+		t.Fatalf("setup: cursor on PR %d, want 2", pr.Number)
+	}
+
+	// A new PR sorts first and shifts the selected one down.
+	fresh := append([]model.PR{{Repo: "org/c", RepoPath: "/tmp/c", Profile: "test", Number: 3, UpdatedAt: time.Unix(400, 0)}}, old...)
+	result, _ = m.Update(prsLoadedMsg{prs: fresh})
+	m = result.(Model)
+	if pr, _ := m.prAtCursor(); pr.Number != 2 {
+		t.Errorf("after reload cursor is on PR %d, want 2", pr.Number)
+	}
+
+	// When the selected PR disappears, the cursor stays in range.
+	result, _ = m.Update(prsLoadedMsg{prs: fresh[:1]})
+	m = result.(Model)
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want clamped to 0", m.cursor)
+	}
+}
+
+func TestBranchSortByHasPR(t *testing.T) {
+	m := newTestModel()
+	m.activeProfile = -1
+	m.branches = []model.BranchInfo{
+		{Name: "a", Repo: "org/r", RepoPath: "/src/r", Profile: "test"},
+		{Name: "b", Repo: "org/r", RepoPath: "/src/r", Profile: "test"},
+	}
+	m.prs = []model.PR{{Repo: "org/r", RepoPath: "/src/r", Profile: "test", Branch: "b"}}
+	m.tabSort[tabBranches] = tabSortState{Field: "prcount", Order: sortDesc}
+	got := m.filteredBranches()
+	if len(got) != 2 || got[0].Name != "b" {
+		t.Fatalf("branches with a PR should sort first, got %+v", got)
+	}
+}
+
+func TestWarningSurvivesLoadsThatFollowIt(t *testing.T) {
+	m := newTestModel()
+	result, _ := m.Update(warningMsg("restore main failed"))
+	m = result.(Model)
+	for _, msg := range []tea.Msg{
+		reposLoadedMsg{seq: m.reposSeq},
+		branchesLoadedMsg{branches: []model.BranchInfo{{Name: "dev"}}},
+	} {
+		result, _ = m.Update(msg)
+		m = result.(Model)
+		if m.statusMsg != "restore main failed" {
+			t.Fatalf("after %T statusMsg = %q, want the warning kept", msg, m.statusMsg)
+		}
+	}
+	// A user action that replaces the warning ends the hold.
+	m = sendKey(m, "r")
+	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
+	m = result.(Model)
+	if m.statusMsg == "Refreshing..." {
+		t.Fatal("a refresh started after the warning should report its result")
+	}
+
+	// Once the hold expires, load results show again.
+	result, _ = m.Update(warningMsg("restore main failed"))
+	m = result.(Model)
+	m.statusHoldUntil = time.Time{}
+	result, _ = m.Update(reposLoadedMsg{seq: m.reposSeq})
+	m = result.(Model)
+	if m.statusMsg == "restore main failed" {
+		t.Fatal("a load after the hold should update the status line")
+	}
+}
+
+func TestBrowserFailureIsNotOverwrittenByReload(t *testing.T) {
+	m := newTestModel()
+	result, cmd := m.Update(browserResultMsg("open in browser failed: no URL available"))
+	m = result.(Model)
+	if cmd != nil {
+		t.Error("a browser failure should not start a reload")
+	}
+	if m.statusMsg != "open in browser failed: no URL available" {
+		t.Errorf("statusMsg = %q", m.statusMsg)
+	}
+}
+
+func TestReloadKeepsSelectionAcrossSameNamedRepos(t *testing.T) {
+	m := newTestModel()
+	m.activeTab = tabPRs
+	m.grouped = false
+	prs := []model.PR{
+		{Repo: "work/api", RepoPath: "/work/api", Profile: "test", Number: 1, UpdatedAt: time.Unix(300, 0)},
+		{Repo: "personal/api", RepoPath: "/personal/api", Profile: "test", Number: 1, UpdatedAt: time.Unix(200, 0)},
+	}
+	result, _ := m.Update(prsLoadedMsg{prs: prs})
+	m = result.(Model)
+	m.cursor = 1
+	result, _ = m.Update(prsLoadedMsg{prs: prs})
+	m = result.(Model)
+	if pr, _ := m.prAtCursor(); pr.RepoPath != "/personal/api" {
+		t.Errorf("after reload cursor is on %s, want /personal/api", pr.RepoPath)
+	}
+}
+
+func TestBlinkLoopRunsWithSplashClosed(t *testing.T) {
+	m := newTestModel()
+	// The status-bar owl blinks too, so the loop must not stop when the
+	// splash is closed, and opening the splash must not start a second one.
+	result, cmd := m.Update(splashBlinkMsg{next: 0})
+	m = result.(Model)
+	if cmd == nil {
+		t.Error("the blink loop should continue while the splash is closed")
+	}
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("!")}); cmd != nil {
+		t.Error("opening the splash should not start another blink loop")
 	}
 }

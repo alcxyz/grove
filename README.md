@@ -368,6 +368,8 @@ Grove hands off to external tools via the `space` and `e` keys:
 | Detail pane (local branch) | lazygit                                             | `$EDITOR` / nvim |
 | Diff view                  | diffnav                                             | `$EDITOR` / nvim |
 
+After the Branches-tab lazygit session, grove restores your original checkout unless you switched branches inside lazygit. `$EDITOR` may include arguments, such as `code --wait`, quoted as in a shell (nothing is expanded, and on Windows backslashes stay path separators); a path to an executable is used whole even if it contains spaces. Browser links open with `open` on macOS and `xdg-open` elsewhere.
+
 If a tool is not found on `PATH` or there is no valid target (no forge URL, no repo selected), a status message is shown instead of failing silently.
 
 ## Mouse
@@ -400,7 +402,7 @@ Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string
 
 **Startup** — all six data cache files are read before the TUI launches. The UI renders immediately with the cached data; fresh data loads in the background and replaces it without any visual flicker. The last active profile is restored from `state.json`.
 
-**TTL** — controlled by `refresh_secs` in config (default 300 s). On startup and on every tab switch, grove checks whether the data for that tab is older than the TTL. If so, a background fetch is triggered automatically. Auto-refresh (toggled with `R`) repeats this on a timer.
+**TTL** — controlled by `refresh_secs` in config (default 300 s). On startup and on every tab switch, grove checks whether the data for that tab is older than the TTL. If so, a background fetch is triggered automatically. Auto-refresh (toggled with `R`, on by default) reloads local repo state every `refresh_secs`, along with the active tab's forge data; on the Dashboard it reloads PRs, CI runs, and issues. Only one load per tab runs at a time.
 
 **Cache invalidation** — each file stores a `config_key` derived from the resolved remote config and prefixes of all configured profiles. If the config changes (new profile, different owner, changed prefixes, or different concern-specific remotes), the key changes and all cached data is treated as a miss, forcing a full refresh on next launch.
 

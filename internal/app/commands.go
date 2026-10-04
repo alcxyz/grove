@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -106,7 +107,19 @@ func formatRemoteError(repoName string, remote config.Remote, err error) string 
 	return fmt.Sprintf("%s [%s]: %v", repoName, remoteLabel(remote), err)
 }
 
-func loadRepos(profiles []config.Profile) tea.Cmd {
+// reloadRepos starts a dashboard load numbered after every earlier one, so a
+// slower, older load cannot overwrite newer repo state when it finishes.
+func (m *Model) reloadRepos() tea.Cmd {
+	m.reposSeq++
+	return loadRepos(m.cfg.Profiles, m.reposSeq)
+}
+
+// reposLoadPending reports whether a dashboard load has not finished yet.
+func (m Model) reposLoadPending() bool {
+	return m.reposSeq > m.reposAppliedSeq
+}
+
+func loadRepos(profiles []config.Profile, seq int) tea.Cmd {
 	return func() tea.Msg {
 		// Collect all (path, profile) pairs, deduplicated by path.
 		type pathProfile struct {
@@ -149,7 +162,7 @@ func loadRepos(profiles []config.Profile) tea.Cmd {
 		sort.Slice(repos, func(i, j int) bool {
 			return repos[i].Name < repos[j].Name
 		})
-		return reposLoadedMsg{repos}
+		return reposLoadedMsg{repos: repos, seq: seq}
 	}
 }
 
@@ -576,19 +589,82 @@ func launchLazygit(path string) tea.Cmd {
 	})
 }
 
+// editorCommand splits $EDITOR into a program and its arguments (for example
+// "code --wait"), defaulting to nvim. A value that is itself an executable
+// path, such as one containing spaces, is used whole. Otherwise words are
+// split like a shell would, honouring quotes and backslashes, but nothing is
+// expanded or evaluated.
+func editorCommand() (string, []string) {
+	value := strings.TrimSpace(os.Getenv("EDITOR"))
+	if value == "" {
+		return "nvim", nil
+	}
+	if _, err := exec.LookPath(value); err == nil {
+		return value, nil
+	}
+	// Backslashes are path separators on Windows, not escapes.
+	words := splitWords(value, runtime.GOOS != "windows")
+	if len(words) == 0 {
+		return "nvim", nil
+	}
+	return words[0], words[1:]
+}
+
+// splitWords splits s into words at unquoted whitespace. Single quotes keep
+// their contents literally. With backslashEscapes, a backslash inside double
+// quotes escapes only " and \, and elsewhere escapes the next character;
+// without it, backslashes are ordinary characters.
+func splitWords(s string, backslashEscapes bool) []string {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	var quote rune
+	escaped := false
+	for _, r := range s {
+		switch {
+		case escaped:
+			if quote == '"' && r != '"' && r != '\\' {
+				word.WriteRune('\\')
+			}
+			word.WriteRune(r)
+			escaped = false
+		case r == '\\' && backslashEscapes && quote != '\'':
+			escaped = true
+			inWord = true
+		case quote != 0 && r == quote:
+			quote = 0
+		case quote != 0:
+			word.WriteRune(r)
+		case r == '\'' || r == '"':
+			quote = r
+			inWord = true
+		case r == ' ' || r == '\t' || r == '\n':
+			if inWord {
+				words = append(words, word.String())
+				word.Reset()
+				inWord = false
+			}
+		default:
+			word.WriteRune(r)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words
+}
+
 // launchNvim suspends grove and opens nvim at the given repo directory.
 func launchNvim(path string) tea.Cmd {
 	if path == "" {
 		return func() tea.Msg { return statusMsg("no repo selected") }
 	}
-	bin := os.Getenv("EDITOR")
-	if bin == "" {
-		bin = "nvim"
-	}
+	bin, args := editorCommand()
 	if _, err := exec.LookPath(bin); err != nil {
 		return func() tea.Msg { return statusMsg(fmt.Sprintf("%s not found on PATH", bin)) }
 	}
-	c := exec.Command(bin, ".")
+	c := exec.Command(bin, append(args, ".")...)
 	c.Dir = path
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
@@ -617,7 +693,8 @@ func launchGhDash(path string) tea.Cmd {
 }
 
 // launchLazygitOnBranch checks out the target branch, opens lazygit, and
-// restores the original branch when lazygit exits.
+// restores the original checkout when lazygit exits, unless the user moved to
+// another branch inside lazygit.
 func launchLazygitOnBranch(repoPath, targetBranch string) tea.Cmd {
 	if repoPath == "" {
 		return func() tea.Msg { return statusMsg("no repo selected") }
@@ -629,17 +706,33 @@ func launchLazygitOnBranch(repoPath, targetBranch string) tea.Cmd {
 	if err != nil {
 		return func() tea.Msg { return statusMsg(fmt.Sprintf("could not get current branch: %v", err)) }
 	}
+	if origBranch == targetBranch {
+		return launchLazygit(repoPath)
+	}
+	// A detached HEAD is restored by commit, since "HEAD" names no branch.
+	restoreRef, restoreLabel := origBranch, origBranch
+	if origBranch == "HEAD" {
+		commit, err := gitpkg.HeadCommit(repoPath)
+		if err != nil {
+			return func() tea.Msg { return statusMsg(fmt.Sprintf("could not get current commit: %v", err)) }
+		}
+		restoreRef, restoreLabel = commit, "detached "+commit[:min(12, len(commit))]
+	}
 	if err := gitpkg.Checkout(repoPath, targetBranch); err != nil {
 		return func() tea.Msg { return statusMsg(fmt.Sprintf("checkout %s failed: %v", targetBranch, err)) }
 	}
 	c := exec.Command("lazygit", "-p", repoPath)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
-		// Always restore the original branch, even if lazygit errored.
-		_ = gitpkg.Checkout(repoPath, origBranch)
-		if err != nil {
-			return statusMsg(fmt.Sprintf("lazygit exited: %v", err))
+		if cur, curErr := gitpkg.CurrentBranch(repoPath); curErr == nil && cur != targetBranch {
+			return statusMsg(fmt.Sprintf("back in grove (left on %s)", cur))
 		}
-		return statusMsg(fmt.Sprintf("back in grove (restored %s)", origBranch))
+		if restoreErr := gitpkg.Checkout(repoPath, restoreRef); restoreErr != nil {
+			return warningMsg(fmt.Sprintf("restore %s failed, still on %s: %v", restoreLabel, targetBranch, restoreErr))
+		}
+		if err != nil {
+			return warningMsg(fmt.Sprintf("lazygit exited: %v", err))
+		}
+		return statusMsg(fmt.Sprintf("back in grove (restored %s)", restoreLabel))
 	})
 }
 
@@ -648,14 +741,11 @@ func launchEditorAt(filePath string) tea.Cmd {
 	if filePath == "" {
 		return func() tea.Msg { return statusMsg("no file to open") }
 	}
-	bin := os.Getenv("EDITOR")
-	if bin == "" {
-		bin = "nvim"
-	}
+	bin, args := editorCommand()
 	if _, err := exec.LookPath(bin); err != nil {
 		return func() tea.Msg { return statusMsg(fmt.Sprintf("%s not found on PATH", bin)) }
 	}
-	c := exec.Command(bin, filePath)
+	c := exec.Command(bin, append(args, filePath)...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
 			return statusMsg(fmt.Sprintf("%s exited: %v", bin, err))
@@ -716,8 +806,11 @@ func launchDiffnav(repoPath, hash string) tea.Cmd {
 	if _, err := exec.LookPath("diffnav"); err != nil {
 		return func() tea.Msg { return statusMsg("diffnav not found on PATH") }
 	}
-	// pipe git show into diffnav
-	c := exec.Command("bash", "-c", fmt.Sprintf("cd %q && git show %s | diffnav", repoPath, hash))
+	// Pipe git show into diffnav. The hash is passed as a positional
+	// parameter so the shell never interprets it.
+	// Run from the repo so diffnav resolves repo-relative paths correctly.
+	c := exec.Command("sh", "-c", `git show "$1" | diffnav`, "sh", hash)
+	c.Dir = repoPath
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
 			return statusMsg(fmt.Sprintf("diffnav exited: %v", err))
@@ -902,7 +995,8 @@ func idleCheckCmd() tea.Cmd {
 	return tea.Tick(30*time.Second, func(time.Time) tea.Msg { return idleCheckMsg{} })
 }
 
-// splashBlinkCmd schedules the next eye-blink frame for the ! splash overlay.
+// splashBlinkCmd schedules the next eye-blink frame for the owl in the status
+// bar and the ! splash overlay.
 //
 //   - When current==0 (eyes open): wait 1.5–4 s, then randomly blink one eye
 //     or both (states 1, 2, 3).
@@ -920,47 +1014,95 @@ func splashBlinkCmd(current int) tea.Cmd {
 	return tea.Tick(d, func(time.Time) tea.Msg { return splashBlinkMsg{next: next} })
 }
 
+// tabStale reports whether a tab's data is missing or older than the refresh
+// TTL. The dashboard reads local repo state, which is loaded separately.
+func (m Model) tabStale(t tab) bool {
+	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
+	switch t {
+	case tabPRs:
+		return len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl
+	case tabBranches:
+		return len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl
+	case tabActivity:
+		return len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl
+	case tabCI:
+		return len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl
+	case tabIssues:
+		return len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl
+	case tabMilestones:
+		return len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl
+	}
+	return false
+}
+
+// startTabLoad returns the load command for a data tab, or nil when that tab
+// is already loading. At most one load per tab is in flight, so overlapping
+// refreshes cannot duplicate API calls or deliver results out of order.
+// inFlight is a map shared by Model copies, so this also works from Init.
+func (m Model) startTabLoad(t tab) tea.Cmd {
+	if m.inFlight[t] {
+		return nil
+	}
+	var cmd tea.Cmd
+	switch t {
+	case tabPRs:
+		cmd = loadPRs(m.cfg.Profiles, m.providers)
+	case tabBranches:
+		cmd = loadBranches(m.cfg.Profiles, m.providers)
+	case tabActivity:
+		cmd = loadActivity(m.cfg.Profiles)
+	case tabCI:
+		cmd = loadRuns(m.cfg.Profiles, m.providers)
+	case tabIssues:
+		cmd = loadIssues(m.cfg.Profiles, m.providers)
+	case tabMilestones:
+		cmd = loadMilestones(m.cfg.Profiles, m.providers)
+	default:
+		return nil
+	}
+	if m.inFlight != nil {
+		m.inFlight[t] = true
+	}
+	return cmd
+}
+
+// tabLoadingStatus is the status line shown while a tab's data loads.
+var tabLoadingStatus = map[tab]string{
+	tabPRs:        "Loading PRs...",
+	tabBranches:   "Loading branches...",
+	tabActivity:   "Loading activity...",
+	tabCI:         "Loading CI runs...",
+	tabIssues:     "Loading issues...",
+	tabMilestones: "Loading milestones...",
+}
+
 // loadTabIfNeeded returns a load command when the active tab's data is stale
 // or missing.  Returns nil if no fetch is required.
 func (m *Model) loadTabIfNeeded() tea.Cmd {
-	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	switch m.activeTab {
-	case tabPRs:
-		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading PRs..."
-			return loadPRs(m.cfg.Profiles, m.providers)
-		}
-	case tabBranches:
-		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading branches..."
-			return loadBranches(m.cfg.Profiles, m.providers)
-		}
-	case tabActivity:
-		if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading activity..."
-			return loadActivity(m.cfg.Profiles)
-		}
-	case tabCI:
-		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading CI runs..."
-			return loadRuns(m.cfg.Profiles, m.providers)
-		}
-	case tabIssues:
-		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading issues..."
-			return loadIssues(m.cfg.Profiles, m.providers)
-		}
-	case tabMilestones:
-		if len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading milestones..."
-			return loadMilestones(m.cfg.Profiles, m.providers)
+	if !m.tabStale(m.activeTab) {
+		return nil
+	}
+	cmd := m.startTabLoad(m.activeTab)
+	if cmd != nil {
+		m.loading = true
+		m.statusMsg = tabLoadingStatus[m.activeTab]
+	}
+	return cmd
+}
+
+// autoRefreshCmds reloads the data visible on the active tab. The dashboard
+// summarises PRs, CI runs, and issues; its branch counts refresh on startup
+// and when the Branches tab is visited.
+func (m Model) autoRefreshCmds() []tea.Cmd {
+	tabs := []tab{m.activeTab}
+	if m.activeTab == tabDashboard {
+		tabs = []tab{tabPRs, tabCI, tabIssues}
+	}
+	var cmds []tea.Cmd
+	for _, t := range tabs {
+		if cmd := m.startTabLoad(t); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
 	}
-	return nil
+	return cmds
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/alcxyz/grove/internal/config"
+	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
 )
 
@@ -316,6 +317,7 @@ func (m Model) View() string {
 		so := m.scrollOffset[m.activeTab]
 		sh := m.scrollHeight()
 		hlField, hlValue := m.highlightField, m.blockHighlightValue()
+		errLog, authKind := m.errLog[m.activeTab], m.authKind[m.activeTab]
 		switch m.activeTab {
 		case tabDashboard:
 			if len(m.depWarnings) > 0 {
@@ -347,54 +349,54 @@ func (m Model) View() string {
 			}
 			b.WriteString(ui.RenderDashboard(m.groupedRepos(), m.cursor, cw, so, sh, prCounts, branchCounts, issueCounts, ciStatus, hlField, hlValue))
 		case tabPRs:
-			if m.authKind != "" && len(m.prs) == 0 {
-				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
+			if authKind != "" && len(m.prs) == 0 {
+				b.WriteString(ui.RenderAuthError(authKind, errLog))
 			} else {
 				b.WriteString(ui.RenderPRs(m.groupedPRs(), m.cursor, cw, so, sh, hlField, hlValue))
-				if len(m.prs) == 0 && len(m.errLog) > 0 {
-					b.WriteString(ui.RenderErrors(m.errLog))
+				if len(m.prs) == 0 && len(errLog) > 0 {
+					b.WriteString(ui.RenderErrors(errLog))
 				}
 			}
 		case tabBranches:
-			if m.authKind != "" && len(m.branches) == 0 {
-				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
+			if authKind != "" && len(m.branches) == 0 {
+				b.WriteString(ui.RenderAuthError(authKind, errLog))
 			} else {
-				prBranches := map[string]bool{}
-				for _, pr := range m.prs {
-					prBranches[pr.Branch] = true
+				prBranches := m.prBranchSet()
+				hasPR := func(br model.BranchInfo) bool {
+					return prBranches[prBranchKey(br.Profile, br.RepoPath, br.Name)]
 				}
-				b.WriteString(ui.RenderBranches(m.groupedBranches(), m.cursor, cw, so, sh, prBranches, hlField, hlValue))
-				if len(m.branches) == 0 && len(m.errLog) > 0 {
-					b.WriteString(ui.RenderErrors(m.errLog))
+				b.WriteString(ui.RenderBranches(m.groupedBranches(), m.cursor, cw, so, sh, hasPR, hlField, hlValue))
+				if len(m.branches) == 0 && len(errLog) > 0 {
+					b.WriteString(ui.RenderErrors(errLog))
 				}
 			}
 		case tabActivity:
 			b.WriteString(ui.RenderActivity(m.groupedActivity(), m.cursor, cw, so, sh, hlField, hlValue))
 		case tabCI:
-			if m.authKind != "" && len(m.runs) == 0 {
-				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
+			if authKind != "" && len(m.runs) == 0 {
+				b.WriteString(ui.RenderAuthError(authKind, errLog))
 			} else {
 				b.WriteString(ui.RenderCI(m.groupedRuns(), m.cursor, cw, so, sh, hlField, hlValue))
-				if len(m.runs) == 0 && len(m.errLog) > 0 {
-					b.WriteString(ui.RenderErrors(m.errLog))
+				if len(m.runs) == 0 && len(errLog) > 0 {
+					b.WriteString(ui.RenderErrors(errLog))
 				}
 			}
 		case tabIssues:
-			if m.authKind != "" && len(m.issues) == 0 {
-				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
+			if authKind != "" && len(m.issues) == 0 {
+				b.WriteString(ui.RenderAuthError(authKind, errLog))
 			} else {
 				b.WriteString(ui.RenderIssues(m.groupedIssues(), m.cursor, cw, so, sh, hlField, hlValue))
-				if len(m.issues) == 0 && len(m.errLog) > 0 {
-					b.WriteString(ui.RenderErrors(m.errLog))
+				if len(m.issues) == 0 && len(errLog) > 0 {
+					b.WriteString(ui.RenderErrors(errLog))
 				}
 			}
 		case tabMilestones:
-			if m.authKind != "" && len(m.milestones) == 0 {
-				b.WriteString(ui.RenderAuthError(m.authKind, m.errLog))
+			if authKind != "" && len(m.milestones) == 0 {
+				b.WriteString(ui.RenderAuthError(authKind, errLog))
 			} else {
 				b.WriteString(ui.RenderMilestones(m.groupedMilestones(), m.cursor, cw, so, sh, hlField, hlValue))
-				if len(m.milestones) == 0 && len(m.errLog) > 0 {
-					b.WriteString(ui.RenderErrors(m.errLog))
+				if len(m.milestones) == 0 && len(errLog) > 0 {
+					b.WriteString(ui.RenderErrors(errLog))
 				}
 			}
 		}

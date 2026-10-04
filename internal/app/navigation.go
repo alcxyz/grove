@@ -2,6 +2,7 @@ package app
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1132,6 +1133,90 @@ func (m Model) repoPathAtCursor() string {
 		}
 	}
 	return ""
+}
+
+// selectionKeys returns an identity key for each row of the active tab, in
+// display order, so the selection can follow its item when data reloads.
+func (m Model) selectionKeys() []string {
+	var keys []string
+	switch m.activeTab {
+	case tabDashboard:
+		for _, g := range m.groupedRepos() {
+			for _, r := range g.Repos {
+				keys = append(keys, modelRepoKey(r)+"\x00"+r.Path)
+			}
+		}
+	case tabPRs:
+		for _, g := range m.groupedPRs() {
+			for _, pr := range g.PRs {
+				keys = append(keys, repoItemKey(pr.Profile, pr.RepoPath, strconv.Itoa(pr.Number)))
+			}
+		}
+	case tabBranches:
+		for _, g := range m.groupedBranches() {
+			for _, br := range g.Branches {
+				keys = append(keys, prBranchKey(br.Profile, br.RepoPath, br.Name))
+			}
+		}
+	case tabActivity:
+		for _, g := range m.groupedActivity() {
+			for _, c := range g.Commits {
+				keys = append(keys, c.RepoPath+"@"+c.Hash)
+			}
+		}
+	case tabCI:
+		for _, g := range m.groupedRuns() {
+			for _, r := range g.Runs {
+				keys = append(keys, repoItemKey(r.Profile, r.RepoPath, strconv.FormatInt(r.RunID, 10)))
+			}
+		}
+	case tabIssues:
+		for _, g := range m.groupedIssues() {
+			for _, iss := range g.Issues {
+				keys = append(keys, repoItemKey(iss.Profile, iss.RepoPath, strconv.Itoa(iss.Number)))
+			}
+		}
+	case tabMilestones:
+		for _, g := range m.groupedMilestones() {
+			for _, ms := range g.Milestones {
+				keys = append(keys, repoItemKey(ms.Profile, ms.RepoPath, strconv.Itoa(ms.Number)))
+			}
+		}
+	}
+	return keys
+}
+
+// selectionKey returns the identity key of the row under the cursor, or ""
+// when the cursor is on no row.
+func (m Model) selectionKey() string {
+	keys := m.selectionKeys()
+	if m.cursor < 0 || m.cursor >= len(keys) {
+		return ""
+	}
+	return keys[m.cursor]
+}
+
+// restoreSelection moves the cursor back onto the row identified by key after
+// a reload re-sorted or changed the list. If that row is gone, the cursor
+// stays at its position, clamped to the new list.
+func (m *Model) restoreSelection(key string) {
+	if key != "" {
+		for i, k := range m.selectionKeys() {
+			if k == key {
+				m.cursor = i
+				m.adjustScroll()
+				return
+			}
+		}
+	}
+	m.clampCursor()
+}
+
+// repoItemKey identifies one item of a repo by its local checkout, so repos
+// that share a name in different directories are kept apart. NUL cannot occur
+// in paths or branch names, so the parts cannot run together.
+func repoItemKey(profile, repoPath, id string) string {
+	return profile + "\x00" + repoPath + "\x00" + id
 }
 
 // repoAtCursor returns the repo at the cursor by walking grouped order.

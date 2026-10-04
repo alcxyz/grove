@@ -71,7 +71,74 @@ func save[T any](dir, name, configKey string, data T) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, name+".json"), b, 0o644)
+	return writeFileAtomic(filepath.Join(dir, name+".json"), b)
+}
+
+// writeFileAtomic replaces path with data via a synced temporary file and
+// rename, so an interrupted or concurrent save never leaves a truncated cache
+// file. A symlinked path is followed, and an existing file keeps its mode; a
+// new file is private to the user.
+func writeFileAtomic(path string, data []byte) error {
+	path, err := followSymlinks(path)
+	if err != nil {
+		return err
+	}
+	mode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	fail := func(err error) error {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+// followSymlinks returns the file that path's symlink chain points to, so a
+// save replaces the target rather than the link. When the chain ends in a
+// missing file, the kernel creates it (empty) by opening the link, so the
+// target is exactly the one reads would use; an empty cache file reads as a
+// miss until the save completes. A symlink loop is an error.
+func followSymlinks(path string) (string, error) {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved, nil
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		// Missing (or unreadable, which the save will report).
+		return path, nil
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(path)
 }
 
 func capSlice[T any](s []T, max int) []T {
@@ -106,7 +173,7 @@ func SaveState(dir string, s UIState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "state.json"), b, 0o644)
+	return writeFileAtomic(filepath.Join(dir, "state.json"), b)
 }
 
 func LoadPRs(dir, configKey string) ([]model.PR, time.Time, error) {

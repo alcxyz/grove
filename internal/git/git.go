@@ -1,6 +1,9 @@
 package git
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,14 +15,63 @@ import (
 	"github.com/alcxyz/grove/internal/model"
 )
 
+// Timeouts for git invocations. Network operations get longer because large
+// fetches and pushes are legitimately slow. Variables so tests can shorten them.
+var (
+	localTimeout   = time.Minute
+	networkTimeout = 5 * time.Minute
+)
+
 func run(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	return runWithTimeout(localTimeout, dir, args...)
+}
+
+// runWithTimeout runs git without access to the terminal: grove owns it while
+// the TUI is active, so prompts would hang the command or corrupt the screen.
+// Errors include git's own explanation from stderr.
+func runWithTimeout(timeout time.Duration, dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	detachFromTerminal(cmd)
+	// Stop waiting on output pipes shortly after cancellation even if a
+	// helper process survived the kill.
+	cmd.WaitDelay = 5 * time.Second
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		cmdLine := strings.Join(args, " ")
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("git %s: timed out after %s", cmdLine, timeout)
+		}
+		if msg := stderrSummary(stderr.String()); msg != "" {
+			return "", fmt.Errorf("git %s: %s", cmdLine, msg)
+		}
+		return "", fmt.Errorf("git %s: %w", cmdLine, err)
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// stderrSummary picks the most useful line of git's stderr: the first
+// "fatal:" or "error:" line, otherwise the first line that is not a hint.
+func stderrSummary(stderr string) string {
+	first := ""
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "hint:") {
+			continue
+		}
+		if strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "error:") {
+			return line
+		}
+		if first == "" {
+			first = line
+		}
+	}
+	return first
 }
 
 func GetRepoStatus(path string) (model.Repo, error) {
@@ -202,26 +254,37 @@ func MergedRemoteBranches(path, defaultBranch string) (map[string]bool, error) {
 	return merged, nil
 }
 
-// CurrentBranch returns the current branch name (or "HEAD" if detached).
+// CurrentBranch returns the current branch name (or "HEAD" if detached). It
+// reads the full ref, because rev-parse --abbrev-ref prints "heads/<name>"
+// when a tag has the same name as the branch.
 func CurrentBranch(path string) (string, error) {
+	if ref, err := run(path, "symbolic-ref", "-q", "HEAD"); err == nil {
+		return strings.TrimPrefix(ref, "refs/heads/"), nil
+	}
 	return run(path, "rev-parse", "--abbrev-ref", "HEAD")
 }
 
-// Checkout switches to the named branch.
+// HeadCommit returns the full hash of the commit HEAD points to.
+func HeadCommit(path string) (string, error) {
+	return run(path, "rev-parse", "HEAD")
+}
+
+// Checkout switches to the named branch. It gets the network timeout because
+// hooks and LFS smudge filters may download content.
 func Checkout(path, branch string) error {
-	_, err := run(path, "checkout", branch)
+	_, err := runWithTimeout(networkTimeout, path, "checkout", branch)
 	return err
 }
 
 func Fetch(path string) error {
-	_, err := run(path, "fetch", "--quiet")
+	_, err := runWithTimeout(networkTimeout, path, "fetch", "--quiet")
 	return err
 }
 
 func Pull(path string) (string, error) {
-	return run(path, "pull", "--ff-only")
+	return runWithTimeout(networkTimeout, path, "pull", "--ff-only")
 }
 
 func Push(path string) (string, error) {
-	return run(path, "push")
+	return runWithTimeout(networkTimeout, path, "push")
 }

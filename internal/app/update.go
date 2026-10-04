@@ -66,26 +66,17 @@ func authErrorKind(errs []string) string {
 
 func (m Model) Init() tea.Cmd {
 	ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles), checkLatestVersion(m.version), splashBlinkCmd(0)}
+	// One blink loop runs for the whole session: it animates the status-bar
+	// owl as well as the splash.
+	cmds := []tea.Cmd{loadRepos(m.cfg.Profiles, m.reposSeq), checkLatestVersion(m.version), splashBlinkCmd(0)}
 
 	// Background-refresh any cached data that is stale
-	if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
-		cmds = append(cmds, loadPRs(m.cfg.Profiles, m.providers))
-	}
-	if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-		cmds = append(cmds, loadBranches(m.cfg.Profiles, m.providers))
-	}
-	if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
-		cmds = append(cmds, loadActivity(m.cfg.Profiles))
-	}
-	if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
-		cmds = append(cmds, loadRuns(m.cfg.Profiles, m.providers))
-	}
-	if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
-		cmds = append(cmds, loadIssues(m.cfg.Profiles, m.providers))
-	}
-	if len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl {
-		cmds = append(cmds, loadMilestones(m.cfg.Profiles, m.providers))
+	for _, t := range []tab{tabPRs, tabBranches, tabActivity, tabCI, tabIssues, tabMilestones} {
+		if m.tabStale(t) {
+			if cmd := m.startTabLoad(t); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
 	}
 
 	if m.autoRefresh {
@@ -166,79 +157,94 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adjustScroll()
 
 	case reposLoadedMsg:
+		if msg.seq < m.reposAppliedSeq {
+			// A newer load has already been shown.
+			return m, nil
+		}
+		m.reposAppliedSeq = msg.seq
+		selected := m.selectionKey()
 		m.repos = msg.repos
+		m.restoreSelection(selected)
 		m.loading = false
-		m.statusMsg = fmt.Sprintf("%d repositories loaded", len(msg.repos))
+		m.setLoadStatus(fmt.Sprintf("%d repositories loaded", len(msg.repos)))
 
 	case prsLoadedMsg:
+		selected := m.selectionKey()
 		m.prs = msg.prs
-		m.errLog = msg.errors
-		m.authKind = authErrorKind(msg.errors)
+		m.restoreSelection(selected)
+		m.setLoadErrors(tabPRs, msg.errors)
 		m.prsLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d open PRs (%d repos failed)", len(msg.prs), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d open PRs (%d repos failed)", len(msg.prs), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d open PRs", len(msg.prs))
+			m.setLoadStatus(fmt.Sprintf("%d open PRs", len(msg.prs)))
 		}
 		go cache.SavePRs(m.cacheDir, m.cacheKey, msg.prs) //nolint:errcheck
 
 	case branchesLoadedMsg:
+		selected := m.selectionKey()
 		m.branches = msg.branches
-		m.errLog = msg.errors
-		m.authKind = authErrorKind(msg.errors)
+		m.restoreSelection(selected)
+		m.setLoadErrors(tabBranches, msg.errors)
 		m.branchesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d branches (%d repos failed)", len(msg.branches), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d branches (%d repos failed)", len(msg.branches), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d branches", len(msg.branches))
+			m.setLoadStatus(fmt.Sprintf("%d branches", len(msg.branches)))
 		}
 		go cache.SaveBranches(m.cacheDir, m.cacheKey, msg.branches) //nolint:errcheck
 
 	case activityLoadedMsg:
+		selected := m.selectionKey()
 		m.activity = msg.commits
+		m.restoreSelection(selected)
+		delete(m.inFlight, tabActivity)
 		m.activityLoadedAt = time.Now()
 		m.loading = false
-		m.statusMsg = fmt.Sprintf("%d recent commits", len(msg.commits))
+		m.setLoadStatus(fmt.Sprintf("%d recent commits", len(msg.commits)))
 		go cache.SaveActivity(m.cacheDir, m.cacheKey, msg.commits) //nolint:errcheck
 
 	case runsLoadedMsg:
+		selected := m.selectionKey()
 		m.runs = msg.runs
-		m.errLog = msg.errors
-		m.authKind = authErrorKind(msg.errors)
+		m.restoreSelection(selected)
+		m.setLoadErrors(tabCI, msg.errors)
 		m.runsLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d CI runs (%d repos failed)", len(msg.runs), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d CI runs (%d repos failed)", len(msg.runs), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d CI runs", len(msg.runs))
+			m.setLoadStatus(fmt.Sprintf("%d CI runs", len(msg.runs)))
 		}
 		go cache.SaveRuns(m.cacheDir, m.cacheKey, msg.runs) //nolint:errcheck
 
 	case issuesLoadedMsg:
+		selected := m.selectionKey()
 		m.issues = msg.issues
-		m.errLog = msg.errors
-		m.authKind = authErrorKind(msg.errors)
+		m.restoreSelection(selected)
+		m.setLoadErrors(tabIssues, msg.errors)
 		m.issuesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d open issues (%d repos failed)", len(msg.issues), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d open issues (%d repos failed)", len(msg.issues), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d open issues", len(msg.issues))
+			m.setLoadStatus(fmt.Sprintf("%d open issues", len(msg.issues)))
 		}
 		go cache.SaveIssues(m.cacheDir, m.cacheKey, msg.issues) //nolint:errcheck
 
 	case milestonesLoadedMsg:
+		selected := m.selectionKey()
 		m.milestones = msg.milestones
-		m.errLog = msg.errors
-		m.authKind = authErrorKind(msg.errors)
+		m.restoreSelection(selected)
+		m.setLoadErrors(tabMilestones, msg.errors)
 		m.milestonesLoadedAt = time.Now()
 		m.loading = false
 		if len(msg.errors) > 0 {
-			m.statusMsg = fmt.Sprintf("%d milestones (%d repos failed)", len(msg.milestones), len(msg.errors))
+			m.setLoadStatus(fmt.Sprintf("%d milestones (%d repos failed)", len(msg.milestones), len(msg.errors)))
 		} else {
-			m.statusMsg = fmt.Sprintf("%d milestones", len(msg.milestones))
+			m.setLoadStatus(fmt.Sprintf("%d milestones", len(msg.milestones)))
 		}
 		go cache.SaveMilestones(m.cacheDir, m.cacheKey, msg.milestones) //nolint:errcheck
 
@@ -269,23 +275,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchDoneMsg:
 		m.statusMsg = msg.msg
 		m.loading = false
-		return m, loadRepos(m.cfg.Profiles)
+		cmd := m.reloadRepos()
+		return m, cmd
+
+	case browserResultMsg:
+		m.statusMsg = string(msg)
+
+	case warningMsg:
+		// Like statusMsg, but load results arriving soon after, including
+		// the reload this starts, do not replace the warning.
+		m.statusMsg = string(msg)
+		m.heldStatus = string(msg)
+		m.statusHoldUntil = time.Now().Add(warningHold)
+		m.loading = false
+		cmd := m.reloadRepos()
+		return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
 
 	case statusMsg:
 		m.statusMsg = string(msg)
 		m.loading = false
 		// Re-enable mouse after returning from an external process (ExecProcess
 		// disables mouse reporting and Bubble Tea doesn't always restore it).
-		return m, tea.Batch(loadRepos(m.cfg.Profiles), tea.EnableMouseCellMotion)
+		cmd := m.reloadRepos()
+		return m, tea.Batch(cmd, tea.EnableMouseCellMotion)
 
 	case tickMsg:
 		if !m.autoRefresh {
 			return m, nil
 		}
-		return m, tea.Batch(
-			loadRepos(m.cfg.Profiles),
-			tickCmd(time.Duration(m.cfg.RefreshSecs)*time.Second),
-		)
+		cmds := append(m.autoRefreshCmds(), tickCmd(time.Duration(m.cfg.RefreshSecs)*time.Second))
+		if !m.reposLoadPending() {
+			cmds = append(cmds, m.reloadRepos())
+		}
+		return m, tea.Batch(cmds...)
 
 	case gTimeoutMsg:
 		if m.prevKey == "g" {
@@ -339,6 +361,56 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// setLoadErrors records the errors from a finished data-tab load and marks
+// the tab as no longer loading.
+func (m *Model) setLoadErrors(t tab, errs []string) {
+	if m.errLog == nil {
+		m.errLog = map[tab][]string{}
+	}
+	if m.authKind == nil {
+		m.authKind = map[tab]string{}
+	}
+	m.errLog[t] = errs
+	m.authKind[t] = authErrorKind(errs)
+	delete(m.inFlight, t)
+}
+
+// warningHold is how long a warning stays on the status line before load
+// results may replace it.
+const warningHold = 10 * time.Second
+
+// setLoadStatus shows a load result on the status line unless a recent
+// warning is still shown there. Once anything else has replaced the warning,
+// load results show as usual.
+func (m *Model) setLoadStatus(s string) {
+	if m.statusMsg == m.heldStatus && time.Now().Before(m.statusHoldUntil) {
+		return
+	}
+	m.statusMsg = s
+}
+
+// openURLCmd opens url in the browser in the background and reports a
+// failure, including a launcher that exits unsuccessfully, in the status line.
+func openURLCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		if err := ui.OpenURL(url); err != nil {
+			return browserResultMsg(fmt.Sprintf("open in browser failed: %v", err))
+		}
+		return nil
+	}
+}
+
+// switchTab activates a tab, resets its cursor, filters, and scroll, and
+// loads its data when stale.
+func (m Model) switchTab(t tab) (tea.Model, tea.Cmd) {
+	m.activeTab = t
+	m.cursor = 0
+	m.filterQuery = ""
+	m.clearCycleFilter()
+	m.scrollOffset[t] = 0
+	return m, m.loadTabIfNeeded()
+}
+
 // handleSplashKey handles key input when the splash overlay is active.
 func (m Model) handleSplashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
@@ -350,7 +422,9 @@ func (m Model) handleSplashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ssY = max(0, (m.height-ui.SplashArtHeight)/2)
 		m.ssDX, m.ssDY = 1, 1
 		m.ssColor = 0
-		return m, tea.Batch(idleCheckCmd(), ssTickCmd())
+		// The idle-check loop from Init is already running when enabled;
+		// starting another here would duplicate it on every launch.
+		return m, ssTickCmd()
 	}
 	m.showSplash = false
 	return m, nil
@@ -464,7 +538,7 @@ func (m Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 					remote := profile.CodeRemote(r.Name, r.Path)
 					if prov := providerForRemote(m.providers, remote); prov != nil {
-						_ = ui.OpenURL(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
+						return m, openURLCmd(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
 					}
 				}
 			} else {
@@ -582,7 +656,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
 						remote := profile.CodeRemote(repo.Name, repo.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							_ = ui.OpenURL(prov.BranchURL(remote.Owner, remote.RepoName(repo.Name), branches[item.Index].Name))
+							return m, openURLCmd(prov.BranchURL(remote.Owner, remote.RepoName(repo.Name), branches[item.Index].Name))
 						}
 					}
 				} else {
@@ -590,16 +664,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			case detailPR:
 				if item.Index < len(m.detailPRs) {
-					_ = ui.OpenURL(m.detailPRs[item.Index].URL)
+					return m, openURLCmd(m.detailPRs[item.Index].URL)
 				}
 			case detailIssue:
 				if item.Index < len(m.detailIssues) {
-					_ = ui.OpenURL(m.detailIssues[item.Index].URL)
+					return m, openURLCmd(m.detailIssues[item.Index].URL)
 				}
 			case detailCIRun:
 				runs := m.detailCIRuns()
 				if item.Index < len(runs) {
-					_ = ui.OpenURL(runs[item.Index].URL)
+					return m, openURLCmd(runs[item.Index].URL)
 				}
 			case detailCommit:
 				if item.Index < len(m.detailCommits) && repo.Owner != "" {
@@ -607,7 +681,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, repo.Profile); ok {
 						remote := profile.CodeRemote(repo.Name, repo.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							_ = ui.OpenURL(prov.CommitURL(remote.Owner, remote.RepoName(repo.Name), c.Hash))
+							return m, openURLCmd(prov.CommitURL(remote.Owner, remote.RepoName(repo.Name), c.Hash))
 						}
 					}
 				} else {
@@ -790,97 +864,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.highlightField = ""
 		}
 	case "h":
-		m.activeTab = tab((int(m.activeTab) + tabCount - 1) % tabCount)
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		m.scrollOffset[m.activeTab] = 0
-		return m, m.loadTabIfNeeded()
+		return m.switchTab(tab((int(m.activeTab) + tabCount - 1) % tabCount))
 	case "l":
-		m.activeTab = tab((int(m.activeTab) + 1) % tabCount)
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		m.scrollOffset[m.activeTab] = 0
-		return m, m.loadTabIfNeeded()
+		return m.switchTab(tab((int(m.activeTab) + 1) % tabCount))
 	case "tab":
 		m.tabJump(+1)
 		return m, nil
 	case "shift+tab":
 		m.tabJump(-1)
 		return m, nil
-	case "1":
-		m.activeTab = tabDashboard
-		m.cursor = 0
-		m.filterQuery = ""
-		m.scrollOffset[tabDashboard] = 0
-		m.clearCycleFilter()
-	case "2":
-		m.activeTab = tabPRs
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-		if len(m.prs) == 0 || time.Since(m.prsLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading PRs..."
-			return m, loadPRs(m.cfg.Profiles, m.providers)
-		}
-	case "3":
-		m.activeTab = tabCI
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-		if len(m.runs) == 0 || time.Since(m.runsLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading CI runs..."
-			return m, loadRuns(m.cfg.Profiles, m.providers)
-		}
-	case "4":
-		m.activeTab = tabBranches
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-		if len(m.branches) == 0 || time.Since(m.branchesLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading branches..."
-			return m, loadBranches(m.cfg.Profiles, m.providers)
-		}
-	case "5":
-		m.activeTab = tabActivity
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-		if len(m.activity) == 0 || time.Since(m.activityLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading activity..."
-			return m, loadActivity(m.cfg.Profiles)
-		}
-	case "6":
-		m.activeTab = tabIssues
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-		if len(m.issues) == 0 || time.Since(m.issuesLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading issues..."
-			return m, loadIssues(m.cfg.Profiles, m.providers)
-		}
-	case "7":
-		m.activeTab = tabMilestones
-		m.cursor = 0
-		m.filterQuery = ""
-		m.clearCycleFilter()
-		ttl := time.Duration(m.cfg.RefreshSecs) * time.Second
-		if len(m.milestones) == 0 || time.Since(m.milestonesLoadedAt) > ttl {
-			m.loading = true
-			m.statusMsg = "Loading milestones..."
-			return m, loadMilestones(m.cfg.Profiles, m.providers)
-		}
+	case "1", "2", "3", "4", "5", "6", "7":
+		return m.switchTab(tab(key[0] - '1'))
 	case "enter":
 		// enter = open in-app view: detail pane (tabs 1-4), diff (tab 5).
 		openDetail := func(repo model.Repo) (Model, tea.Cmd) {
@@ -942,24 +936,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "r":
-		m.loading = true
-		m.statusMsg = "Refreshing..."
-		switch m.activeTab {
-		case tabDashboard:
-			return m, loadRepos(m.cfg.Profiles)
-		case tabPRs:
-			return m, loadPRs(m.cfg.Profiles, m.providers)
-		case tabBranches:
-			return m, loadBranches(m.cfg.Profiles, m.providers)
-		case tabActivity:
-			return m, loadActivity(m.cfg.Profiles)
-		case tabCI:
-			return m, loadRuns(m.cfg.Profiles, m.providers)
-		case tabIssues:
-			return m, loadIssues(m.cfg.Profiles, m.providers)
-		case tabMilestones:
-			return m, loadMilestones(m.cfg.Profiles, m.providers)
+		if m.activeTab == tabDashboard {
+			m.loading = true
+			m.statusMsg = "Refreshing..."
+			cmd := m.reloadRepos()
+			return m, cmd
 		}
+		if cmd := m.startTabLoad(m.activeTab); cmd != nil {
+			m.loading = true
+			m.statusMsg = "Refreshing..."
+			return m, cmd
+		}
+		m.statusMsg = "Refresh already in progress"
 	case "R":
 		m.autoRefresh = !m.autoRefresh
 		if m.autoRefresh {
@@ -1200,7 +1188,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 						remote := profile.CodeRemote(r.Name, r.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							_ = ui.OpenURL(prov.RepoURL(remote.Owner, remote.RepoName(r.Name)))
+							return m, openURLCmd(prov.RepoURL(remote.Owner, remote.RepoName(r.Name)))
 						}
 					}
 				} else {
@@ -1211,7 +1199,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabPRs:
 			if pr, ok := m.prAtCursor(); ok {
-				_ = ui.OpenURL(pr.URL)
+				return m, openURLCmd(pr.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
@@ -1222,7 +1210,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					repoPath := br.RepoPath
 					remote := profile.CodeRemote(name, repoPath)
 					if prov := providerForRemote(m.providers, remote); prov != nil {
-						_ = ui.OpenURL(prov.BranchURL(remote.Owner, remote.RepoName(name), br.Name))
+						return m, openURLCmd(prov.BranchURL(remote.Owner, remote.RepoName(name), br.Name))
 					}
 				}
 			} else {
@@ -1234,7 +1222,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					if profile, ok := profileByName(m.cfg.Profiles, r.Profile); ok {
 						remote := profile.CodeRemote(r.Name, r.Path)
 						if prov := providerForRemote(m.providers, remote); prov != nil {
-							_ = ui.OpenURL(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
+							return m, openURLCmd(prov.CommitURL(remote.Owner, remote.RepoName(r.Name), c.Hash))
 						}
 					}
 				} else {
@@ -1245,19 +1233,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case tabCI:
 			if r, ok := m.runAtCursor(); ok {
-				_ = ui.OpenURL(r.URL)
+				return m, openURLCmd(r.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
 		case tabIssues:
 			if iss, ok := m.issueAtCursor(); ok {
-				_ = ui.OpenURL(iss.URL)
+				return m, openURLCmd(iss.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
 		case tabMilestones:
 			if ms, ok := m.milestoneAtCursor(); ok {
-				_ = ui.OpenURL(ms.URL)
+				return m, openURLCmd(ms.URL)
 			} else {
 				m.statusMsg = "nothing selected"
 			}
@@ -1350,17 +1338,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			tabRows := ui.TabRows(tabNames, m.width)
 			tabEndY := tabStartY + tabRows // exclusive
 
-			switchTab := func(t int) (Model, tea.Cmd) {
+			switchTab := func(t int) (tea.Model, tea.Cmd) {
 				m.showDiff = false
 				m.showDetail = false
 				m.showHelp = false
 				m.showSplash = false
-				m.activeTab = tab(t)
-				m.cursor = 0
-				m.filterQuery = ""
-				m.clearCycleFilter()
-				m.scrollOffset[m.activeTab] = 0
-				return m, m.loadTabIfNeeded()
+				return m.switchTab(tab(t))
 			}
 
 			if m.showProfileBar() && msg.Y == 2 {

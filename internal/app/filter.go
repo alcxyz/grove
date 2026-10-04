@@ -94,11 +94,17 @@ func (m Model) repoLatestCI() map[string]string {
 	return ci
 }
 
-// prBranchSet returns the set of branch names that have an open PR.
+// prBranchKey identifies a branch within one local checkout, so that
+// same-named branches in different repos are not conflated.
+func prBranchKey(profile, repoPath, branch string) string {
+	return repoItemKey(profile, repoPath, branch)
+}
+
+// prBranchSet returns the prBranchKey of every branch with an open PR.
 func (m Model) prBranchSet() map[string]bool {
 	set := map[string]bool{}
 	for _, pr := range m.prs {
-		set[pr.Branch] = true
+		set[prBranchKey(pr.Profile, pr.RepoPath, pr.Branch)] = true
 	}
 	return set
 }
@@ -497,7 +503,7 @@ func (m Model) filteredBranches() []model.BranchInfo {
 		}
 		if prBranchesMap != nil {
 			bucket := "no PR"
-			if prBranchesMap[br.Name] {
+			if prBranchesMap[prBranchKey(br.Profile, br.RepoPath, br.Name)] {
 				bucket = "has PR"
 			}
 			if !m.cycleMatch("prcount", bucket) {
@@ -518,7 +524,8 @@ func (m Model) filteredBranches() []model.BranchInfo {
 		pb := m.prBranchSet()
 		asc := ts.Order == sortAsc
 		sort.SliceStable(out, func(i, j int) bool {
-			hi, hj := pb[out[i].Name], pb[out[j].Name]
+			hi := pb[prBranchKey(out[i].Profile, out[i].RepoPath, out[i].Name)]
+			hj := pb[prBranchKey(out[j].Profile, out[j].RepoPath, out[j].Name)]
 			if asc {
 				return !hi && hj
 			}
@@ -1016,7 +1023,7 @@ func (m Model) collectCycleValues(field string) []string {
 				if !match(br.Repo, br.Name, br.Author) {
 					continue
 				}
-				if prBranches[br.Name] {
+				if prBranches[prBranchKey(br.Profile, br.RepoPath, br.Name)] {
 					seenYes = true
 				} else {
 					seenNo = true

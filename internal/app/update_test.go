@@ -763,6 +763,33 @@ func TestReloadKeepsSelectionOnSameItem(t *testing.T) {
 	}
 }
 
+func TestBranchSortByHasPR(t *testing.T) {
+	m := newTestModel()
+	m.activeProfile = -1
+	m.branches = []model.BranchInfo{
+		{Name: "a", Repo: "org/r", RepoPath: "/src/r", Profile: "test"},
+		{Name: "b", Repo: "org/r", RepoPath: "/src/r", Profile: "test"},
+	}
+	m.prs = []model.PR{{Repo: "org/r", RepoPath: "/src/r", Profile: "test", Branch: "b"}}
+	m.tabSort[tabBranches] = tabSortState{Field: "prcount", Order: sortDesc}
+	got := m.filteredBranches()
+	if len(got) != 2 || got[0].Name != "b" {
+		t.Fatalf("branches with a PR should sort first, got %+v", got)
+	}
+}
+
+func TestBrowserFailureIsNotOverwrittenByReload(t *testing.T) {
+	m := newTestModel()
+	result, cmd := m.Update(browserResultMsg("open in browser failed: no URL available"))
+	m = result.(Model)
+	if cmd != nil {
+		t.Error("a browser failure should not start a reload")
+	}
+	if m.statusMsg != "open in browser failed: no URL available" {
+		t.Errorf("statusMsg = %q", m.statusMsg)
+	}
+}
+
 func TestReloadKeepsSelectionAcrossSameNamedRepos(t *testing.T) {
 	m := newTestModel()
 	m.activeTab = tabPRs

@@ -245,6 +245,10 @@ type branchesLoadedMsg struct {
 type activityLoadedMsg struct{ commits []model.Commit }
 type fetchDoneMsg struct{ msg string }
 type statusMsg string
+
+// browserResultMsg reports a failed browser launch. Unlike statusMsg it does
+// not reload repos, whose "loaded" message would overwrite the error.
+type browserResultMsg string
 type tickMsg time.Time
 
 type detailLoadedMsg struct {

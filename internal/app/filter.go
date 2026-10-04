@@ -524,7 +524,8 @@ func (m Model) filteredBranches() []model.BranchInfo {
 		pb := m.prBranchSet()
 		asc := ts.Order == sortAsc
 		sort.SliceStable(out, func(i, j int) bool {
-			hi, hj := pb[out[i].Name], pb[out[j].Name]
+			hi := pb[prBranchKey(out[i].Profile, out[i].RepoPath, out[i].Name)]
+			hj := pb[prBranchKey(out[j].Profile, out[j].RepoPath, out[j].Name)]
 			if asc {
 				return !hi && hj
 			}

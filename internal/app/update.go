@@ -276,6 +276,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.reloadRepos()
 		return m, cmd
 
+	case browserResultMsg:
+		m.statusMsg = string(msg)
+
 	case statusMsg:
 		m.statusMsg = string(msg)
 		m.loading = false
@@ -368,7 +371,7 @@ func (m *Model) setLoadErrors(t tab, errs []string) {
 func openURLCmd(url string) tea.Cmd {
 	return func() tea.Msg {
 		if err := ui.OpenURL(url); err != nil {
-			return statusMsg(fmt.Sprintf("open in browser failed: %v", err))
+			return browserResultMsg(fmt.Sprintf("open in browser failed: %v", err))
 		}
 		return nil
 	}

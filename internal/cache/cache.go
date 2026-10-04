@@ -76,28 +76,36 @@ func save[T any](dir, name, configKey string, data T) error {
 
 // writeFileAtomic replaces path with data via a synced temporary file and
 // rename, so an interrupted or concurrent save never leaves a truncated cache
-// file.
+// file. A symlinked path is followed, and an existing file keeps its mode; a
+// new file is private to the user.
 func writeFileAtomic(path string, data []byte) error {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	mode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
 	if err != nil {
 		return err
 	}
 	tmpPath := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
+	fail := func(err error) error {
 		_ = tmp.Close()
 		_ = os.Remove(tmpPath)
 		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fail(err)
 	}
 	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-		return err
+		return fail(err)
 	}
 	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
 	}

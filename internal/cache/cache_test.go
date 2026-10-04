@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -81,5 +82,54 @@ func TestStateRoundTrip(t *testing.T) {
 	}
 	if st.ActiveProfile != -1 {
 		t.Fatalf("ActiveProfile = %d, want -1", st.ActiveProfile)
+	}
+}
+
+func TestWriteFileAtomicModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no Unix permission bits")
+	}
+	dir := t.TempDir()
+	fresh := filepath.Join(dir, "fresh.json")
+	if err := writeFileAtomic(fresh, []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(fresh); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("new file mode = %v, %v; want 0600", info.Mode().Perm(), err)
+	}
+
+	existing := filepath.Join(dir, "existing.json")
+	if err := os.WriteFile(existing, []byte("{}"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(existing, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileAtomic(existing, []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(existing); err != nil || info.Mode().Perm() != 0o640 {
+		t.Fatalf("existing file mode = %v, %v; want 0640 kept", info.Mode().Perm(), err)
+	}
+}
+
+func TestWriteFileAtomicFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := writeFileAtomic(link, []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link was replaced: %v, %v", info, err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "[]" {
+		t.Fatalf("target = %q, %v; want []", got, err)
 	}
 }

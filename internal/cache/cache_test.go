@@ -133,3 +133,21 @@ func TestWriteFileAtomicFollowsSymlink(t *testing.T) {
 		t.Fatalf("target = %q, %v; want []", got, err)
 	}
 }
+
+func TestWriteFileAtomicRecreatesDanglingSymlinkTarget(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	link := filepath.Join(dir, "link.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if err := writeFileAtomic(link, []byte("[]")); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link was replaced: %v, %v", info, err)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "[]" {
+		t.Fatalf("target = %q, %v; want []", got, err)
+	}
+}

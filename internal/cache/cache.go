@@ -81,6 +81,10 @@ func save[T any](dir, name, configKey string, data T) error {
 func writeFileAtomic(path string, data []byte) error {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
+	} else if info, lerr := os.Lstat(path); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
+		// A dangling link: write through it so its target is recreated
+		// rather than the link replaced.
+		return os.WriteFile(path, data, 0o600)
 	}
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {

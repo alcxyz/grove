@@ -12,3 +12,5 @@
   checks the release snapshot and Nix build. See [.github/workflows/ci.yml](.github/workflows/ci.yml).
 - `VERSION` drives releases. Follow the `dev` to `main` promotion and post-release version flow in
   [CONTRIBUTING.md](CONTRIBUTING.md); do not hand-create a parallel release on the mirror.
+- Canopy (`alcxyz/canopy`) is a sister TUI with the same stack (bubbletea, lipgloss, Catppuccin Mocha). Keep CI, code
+  patterns and UI conventions aligned: when a change sets a better pattern here, check whether canopy should adopt it.

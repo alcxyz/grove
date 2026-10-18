@@ -275,7 +275,7 @@ func TestDependencyWarningsGitHubGHAuthModeUsesCLI(t *testing.T) {
 
 	cfg := config.Config{Profiles: []config.Profile{{
 		Name:     "test",
-		Owner:    "bn-apps",
+		Owner:    "example-org",
 		Forge:    "github",
 		AuthMode: "gh",
 	}}}
@@ -301,7 +301,7 @@ func TestDependencyWarningsGitHubGHAuthModeReportsMissingAuth(t *testing.T) {
 
 	cfg := config.Config{Profiles: []config.Profile{{
 		Name:     "test",
-		Owner:    "bn-apps",
+		Owner:    "example-org",
 		Forge:    "github",
 		AuthMode: "gh",
 	}}}

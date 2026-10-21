@@ -450,7 +450,7 @@ func (f *ForgejoProvider) ListMilestones(repoFullName string) ([]model.Milestone
 			CreatedAt:    raw.CreatedAt,
 			UpdatedAt:    raw.UpdatedAt,
 			ClosedAt:     raw.ClosedAt,
-			URL:          fmt.Sprintf("%s/milestones/%d", f.repoWebURL(repoFullName), raw.ID),
+			URL:          fmt.Sprintf("%s/milestone/%d", f.repoWebURL(repoFullName), raw.ID),
 		})
 	}
 	return milestones, nil

@@ -254,7 +254,7 @@ func TestForgejoListMilestonesUsesMilestonesEndpoint(t *testing.T) {
 	if ms.DueOn == nil || !ms.DueOn.Equal(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("DueOn = %v, want 2026-06-30", ms.DueOn)
 	}
-	if ms.URL != server.URL+"/alcxyz/grove/milestones/4" {
+	if ms.URL != server.URL+"/alcxyz/grove/milestone/4" {
 		t.Fatalf("URL = %q", ms.URL)
 	}
 }

@@ -27,6 +27,12 @@ type ForgejoProvider struct {
 	tokenOnce sync.Once
 	token     string
 	tokenErr  error
+
+	teaLoginMu  sync.Mutex
+	teaLogin    string
+	teaLoginURL string
+	teaLoginErr error
+	teaLoginAt  time.Time
 }
 
 // forgejoPageLimit is the page size grove requests; Forgejo's default
@@ -135,16 +141,88 @@ func (f *ForgejoProvider) apiGetPage(path string) ([]byte, int, error) {
 	return body, total, nil
 }
 
+// teaLoginRetry is how long a failed tea login lookup is reused before tea
+// is asked again, so one refresh's many requests do not each rerun it.
+const teaLoginRetry = 30 * time.Second
+
+// teaLoginFor returns the tea login whose URL is this provider's
+// instance_url (ignoring case and a trailing slash, as the startup check
+// does) and that URL as tea stores it. tea api otherwise uses the login of
+// the working directory's repo or the default login, and refuses absolute
+// URLs whose host differs from the login's, compared exactly. A successful
+// lookup is kept; a failed one is retried after teaLoginRetry so a login
+// added later is picked up.
+func (f *ForgejoProvider) teaLoginFor() (string, string, error) {
+	f.teaLoginMu.Lock()
+	defer f.teaLoginMu.Unlock()
+	if f.teaLogin != "" {
+		return f.teaLogin, f.teaLoginURL, nil
+	}
+	if f.teaLoginErr != nil && time.Since(f.teaLoginAt) < teaLoginRetry {
+		return "", "", f.teaLoginErr
+	}
+	name, loginURL, err := f.lookupTeaLogin()
+	if err != nil {
+		f.teaLoginErr, f.teaLoginAt = err, time.Now()
+		return "", "", err
+	}
+	f.teaLogin, f.teaLoginURL, f.teaLoginErr = name, loginURL, nil
+	return name, loginURL, nil
+}
+
+func (f *ForgejoProvider) lookupTeaLogin() (string, string, error) {
+	out, stderr, err := runCLI("tea", "logins", "list", "--output", "json")
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", "", newForgejoTeaError("logins list", stderr)
+		}
+		return "", "", err
+	}
+	var logins []struct {
+		Name    string `json:"name"`
+		URL     string `json:"url"`
+		Default string `json:"default"`
+	}
+	if err := json.Unmarshal(out, &logins); err != nil {
+		return "", "", fmt.Errorf("parse tea logins: %w", err)
+	}
+	want := normaliseTeaURL(f.baseURL)
+	name, loginURL := "", ""
+	for _, login := range logins {
+		if login.Name == "" || normaliseTeaURL(login.URL) != want {
+			continue
+		}
+		if name == "" || login.Default == "true" {
+			name, loginURL = login.Name, strings.TrimRight(strings.TrimSpace(login.URL), "/")
+		}
+	}
+	if name == "" {
+		return "", "", fmt.Errorf("%w: no tea login for %s; add one with tea logins add", ErrNotAuthenticated, f.baseURL)
+	}
+	return name, loginURL, nil
+}
+
+func normaliseTeaURL(u string) string {
+	return strings.TrimRight(strings.ToLower(strings.TrimSpace(u)), "/")
+}
+
 // teaAPIGet runs tea api with -i, which writes the HTTP status line and
 // response headers to stderr. tea exits 0 on HTTP error statuses, so the
 // status is read from there.
 func (f *ForgejoProvider) teaAPIGet(path string) ([]byte, int, error) {
-	url := f.baseURL + "/api/v1" + path
-	out, stderr, err := runCLI("tea", "api", "-i", url)
+	login, loginURL, err := f.teaLoginFor()
+	if err != nil {
+		return nil, -1, err
+	}
+	// Build the URL from the login's own spelling so tea's host check
+	// passes.
+	url := loginURL + "/api/v1" + path
+	out, stderr, err := runCLI("tea", "api", "--login", login, "-i", url)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			return nil, -1, newForgejoTeaError(path, stderr)
+			return nil, -1, newForgejoTeaError("api "+path, stderr)
 		}
 		return nil, -1, err
 	}
@@ -179,19 +257,19 @@ func parseTeaHeaders(stderr []byte) (int, int) {
 	return code, total
 }
 
-// forgejoTeaError reports a failed tea api call. tea does not expose the
+// forgejoTeaError reports a failed tea command. tea does not expose the
 // HTTP status, so the kind of failure is inferred from its message.
 type forgejoTeaError struct {
-	path string
+	cmd  string // tea subcommand and arguments, such as "api /user"
 	msg  string
 	auth bool
 }
 
 func (e *forgejoTeaError) Error() string {
 	if e.auth {
-		return fmt.Sprintf("%v: tea api %s: %s", ErrNotAuthenticated, e.path, e.msg)
+		return fmt.Sprintf("%v: tea %s: %s", ErrNotAuthenticated, e.cmd, e.msg)
 	}
-	return fmt.Sprintf("tea api %s: %s", e.path, e.msg)
+	return fmt.Sprintf("tea %s: %s", e.cmd, e.msg)
 }
 
 func (e *forgejoTeaError) Unwrap() error {
@@ -201,10 +279,10 @@ func (e *forgejoTeaError) Unwrap() error {
 	return nil
 }
 
-func newForgejoTeaError(path string, stderr []byte) error {
+func newForgejoTeaError(cmd string, stderr []byte) error {
 	msg := strings.TrimSpace(string(stderr))
 	if msg == "" {
-		msg = "tea api failed"
+		msg = "tea " + cmd + " failed"
 	}
 	lower := strings.ToLower(msg)
 	auth := strings.Contains(lower, "no available login") ||
@@ -213,7 +291,7 @@ func newForgejoTeaError(path string, stderr []byte) error {
 		strings.Contains(lower, "authentication") ||
 		strings.Contains(lower, "unauthorized") ||
 		strings.Contains(lower, "forbidden")
-	return &forgejoTeaError{path: path, msg: msg, auth: auth}
+	return &forgejoTeaError{cmd: cmd, msg: msg, auth: auth}
 }
 
 func (f *ForgejoProvider) apiGetPaginated(pathFmt string) ([]json.RawMessage, error) {

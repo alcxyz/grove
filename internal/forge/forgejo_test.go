@@ -51,7 +51,15 @@ func TestForgejoTeaAuthModeUsesTeaAPI(t *testing.T) {
 	dir := t.TempDir()
 	argsPath := filepath.Join(dir, "args")
 	teaPath := filepath.Join(dir, "tea")
+	// The default login is for another host, so grove must name the
+	// git.alc.xyz login explicitly. tea compares hosts exactly, so the
+	// request uses the login's own spelling of the URL. A login on another
+	// path of the same host is a different instance.
 	script := `#!/bin/sh
+if [ "$1" = logins ]; then
+  echo '[{"name":"codeberg","url":"https://codeberg.org","default":"true"},{"name":"sub","url":"https://git.alc.xyz/sub","default":"false"},{"name":"alc","url":"https://GIT.alc.xyz/","default":"false"}]'
+  exit 0
+fi
 printf '%s\n' "$@" > "` + argsPath + `"
 printf '[{"number":8,"title":"API via tea","user":{"login":"alc"},"state":"open","updated_at":"2026-05-05T12:00:00Z","html_url":"https://git.alc.xyz/alcxyz/grove/issues/8"}]'
 `
@@ -80,36 +88,78 @@ printf '[{"number":8,"title":"API via tea","user":{"login":"alc"},"state":"open"
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "api\n-i\nhttps://git.alc.xyz/api/v1/repos/alcxyz/grove/issues?state=open&type=issues&page=1&limit=50\n"
+	want := "api\n--login\nalc\n-i\nhttps://GIT.alc.xyz/api/v1/repos/alcxyz/grove/issues?state=open&type=issues&page=1&limit=50\n"
 	if string(args) != want {
 		t.Fatalf("unexpected tea args:\n%s\nwant:\n%s", args, want)
 	}
 }
 
 func TestForgejoTeaAuthModeWrapsAuthFailures(t *testing.T) {
-	dir := t.TempDir()
-	teaPath := filepath.Join(dir, "tea")
-	script := `#!/bin/sh
+	for _, tc := range []struct {
+		name   string
+		script string
+	}{
+		{"tea api", `if [ "$1" = logins ]; then
+  echo '[{"name":"alc","url":"https://git.alc.xyz","default":"true"}]'
+  exit 0
+fi
 echo "Error: no available login" >&2
 exit 1
+`},
+		{"tea logins list", `echo "Error: no available login" >&2
+exit 1
+`},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "tea"), []byte("#!/bin/sh\n"+tc.script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+		provider, err := NewForgejoProvider(ProviderConfig{
+			Forge:       "forgejo",
+			InstanceURL: "https://git.alc.xyz",
+			AuthMode:    "tea",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = provider.ListIssues("alcxyz/grove")
+		if !errors.Is(err, ErrNotAuthenticated) {
+			t.Errorf("%s: expected ErrNotAuthenticated, got %v", tc.name, err)
+		}
+	}
+}
+
+func TestForgejoTeaReusesFailedLoginLookup(t *testing.T) {
+	dir := t.TempDir()
+	countPath := filepath.Join(dir, "count")
+	script := `#!/bin/sh
+if [ "$1" = logins ]; then
+  echo x >> "` + countPath + `"
+  echo '[]'
+  exit 0
+fi
+exit 1
 `
-	if err := os.WriteFile(teaPath, []byte(script), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "tea"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	provider, err := NewForgejoProvider(ProviderConfig{
-		Forge:       "forgejo",
-		InstanceURL: "https://git.alc.xyz",
-		AuthMode:    "tea",
-	})
+	provider := newTeaProvider(t)
+	for i := 0; i < 3; i++ {
+		if _, err := provider.ListIssues("team/repo"); !errors.Is(err, ErrNotAuthenticated) {
+			t.Fatalf("call %d: err = %v, want ErrNotAuthenticated", i, err)
+		}
+	}
+	data, err := os.ReadFile(countPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, err = provider.ListIssues("alcxyz/grove")
-	if !errors.Is(err, ErrNotAuthenticated) {
-		t.Fatalf("expected ErrNotAuthenticated, got %v", err)
+	if n := strings.Count(string(data), "x"); n != 1 {
+		t.Fatalf("tea logins list ran %d times, want 1", n)
 	}
 }
 
@@ -423,12 +473,20 @@ func TestForgejoWorkflowRunsTreatAnonymous401AsNoRuns(t *testing.T) {
 	}
 }
 
-// writeFakeTea installs a tea stub on PATH that runs script with the request
-// URL in $url.
+// fakeTeaLogins answers tea logins list with a login for forge.invalid.
+const fakeTeaLogins = `if [ "$1" = logins ]; then
+  echo '[{"name":"forge","url":"https://forge.invalid","default":"true"}]'
+  exit 0
+fi
+`
+
+// writeFakeTea installs a tea stub on PATH that lists a forge.invalid login
+// and runs script for api calls with the request URL, the last argument, in
+// $url.
 func writeFakeTea(t *testing.T, script string) {
 	t.Helper()
 	dir := t.TempDir()
-	body := "#!/bin/sh\nurl=\"$3\"\n" + script
+	body := "#!/bin/sh\n" + fakeTeaLogins + "for url; do :; done\n" + script
 	if err := os.WriteFile(filepath.Join(dir, "tea"), []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -529,6 +587,27 @@ esac
 		if err != nil || len(names) != 1 || names[0] != "repo" {
 			t.Errorf("%s: ListRepos = %v, %v; want [repo]", tc.name, names, err)
 		}
+	}
+}
+
+func TestForgejoTeaWithoutMatchingLoginIsAuthFailure(t *testing.T) {
+	dir := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1" = logins ]; then
+  echo '[{"name":"codeberg","url":"https://codeberg.org","default":"true"}]'
+  exit 0
+fi
+echo "unexpected tea call: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(filepath.Join(dir, "tea"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := newTeaProvider(t).ListIssues("team/repo")
+	if !errors.Is(err, ErrNotAuthenticated) || !strings.Contains(err.Error(), "forge.invalid") {
+		t.Fatalf("err = %v, want ErrNotAuthenticated naming forge.invalid", err)
 	}
 }
 

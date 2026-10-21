@@ -52,17 +52,22 @@ release:
   draft: false
   prerelease: auto
 
-brews:
+homebrew_casks:
   - name: grove
     repository:
       owner: alcxyz
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/alcxyz/grove
     description: Terminal UI for monitoring git forge repositories
     license: MIT
-    install: |
-      bin.install "grove"
+    hooks:
+      post:
+        # The binaries are not signed or notarized.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/grove"]
+          end
 
 aurs:
   - name: grove-tui-bin
@@ -72,14 +77,15 @@ aurs:
       - alcxyz <alcxyz@users.noreply.github.com>
     license: MIT
     private_key: "{{ .Env.AUR_KEY }}"
+    # Only trust the pinned AUR host keys the release job writes to known_hosts.
+    git_ssh_command: "ssh -i {{ .KeyPath }} -o StrictHostKeyChecking=yes -F /dev/null"
     git_url: ssh://aur@aur.archlinux.org/grove-tui-bin.git
     provides:
       - grove
     conflicts:
       - grove
-    depends:
-      - glibc
     package: |-
       install -Dm755 "./grove" "${pkgdir}/usr/bin/grove"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
       install -Dm644 "./README.md" "${pkgdir}/usr/share/doc/grove/README.md"
       install -Dm644 "./config.example.yaml" "${pkgdir}/usr/share/doc/grove/config.example.yaml"

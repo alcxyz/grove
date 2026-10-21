@@ -1,8 +1,8 @@
 # ADR-008: Release pipeline structure
 
 **Status:** Accepted
-**Date:** 2026-04-29 (revised 2026-09-23)
-**Applies to:** `.github/workflows/ci.yml`, `flake.nix`
+**Date:** 2026-04-29 (revised 2026-09-23, 2026-10-21)
+**Applies to:** `.github/workflows/ci.yml`, `.goreleaser.yaml`, `flake.nix`
 
 ## Context
 
@@ -32,6 +32,14 @@ Grove also requires its promotion policy because `dev` is its explicit
 development branch and `main` is release-only. The `release.yml` fallback
 workflow (triggered by manual tag push) is removed; `ci.yml` handles everything.
 
+The release publishes Homebrew as a cask (`homebrew_casks`) in
+`alcxyz/homebrew-tap`, with macOS and Linux builds and a post-install
+hook that clears the macOS quarantine flag because the binaries are unsigned.
+The release job mints a short-lived tap token from the `alcxyz-release-tap`
+GitHub App, which can only write that repository's contents, instead of reading
+a long-lived personal access token. The AUR package uses the shared `AUR_KEY`
+secret. The other released Go applications follow the same channel setup.
+
 ADR-011 identifies GitHub as Grove's integration authority. The `main` push
 auto-tag flow therefore runs against the same protected history that passed the
 promotion checks.
@@ -42,6 +50,14 @@ promotion checks.
 installation adds about a minute to the release job even when the hash has not
 changed. Rejected so Nix validation remains independently visible while branch
 protection can still require it before promotion.
+
+**Homebrew formulas (`brews`)**: GoReleaser deprecated its generated binary
+formulas in favour of casks, and `goreleaser check` rejects them. Rejected for
+the supported cask path, at the cost of the quarantine hook and a one-time
+`tap_migrations.json` move for existing formula users.
+
+**Per-repository tap tokens**: each app held a personal access token with write
+access beyond the tap. Rejected for one App scoped to the tap's contents.
 
 **Committed vendor/ directory with `vendorHash = null`**: eliminates the hash problem entirely, but adds significant repo bloat for projects with many transitive dependencies. Rejected for cleanliness.
 

@@ -84,7 +84,7 @@ To cut a release:
 4. Merge the promotion with a merge commit, not a squash; CI creates the tag and publishes the release
 5. Bump `dev` to the next development version like `0.10.1-dev`
 
-This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).
+This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the cask in the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).
 
 ### Version numbering
 

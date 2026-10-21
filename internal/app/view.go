@@ -320,13 +320,8 @@ func (m Model) View() string {
 		errLog, authKind := m.errLog[m.activeTab], m.authKind[m.activeTab]
 		switch m.activeTab {
 		case tabDashboard:
-			if len(m.depWarnings) > 0 {
-				b.WriteString(ui.RenderDependencyWarnings(m.depWarnings, 3))
-				sh -= ui.DependencyWarningLines(m.depWarnings, 3)
-				if sh < 1 {
-					sh = 1
-				}
-			}
+			// scrollHeight already leaves room for this block.
+			b.WriteString(ui.RenderDependencyWarnings(m.depWarnings, depWarningLimit))
 			prCounts := map[string]int{}
 			for _, pr := range m.prs {
 				prCounts[repoDataKey(pr.Profile, localRepoName(pr.Repo, pr.RepoPath))]++

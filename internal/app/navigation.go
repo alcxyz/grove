@@ -347,11 +347,25 @@ func (m *Model) tabJump(dir int) {
 	m.clampCursor()
 }
 
+// depWarningLimit is how many startup warnings the dashboard lists before
+// summarising the rest.
+const depWarningLimit = 3
+
+// listPrefixLines returns the number of lines drawn above the active tab's
+// column header: the dashboard's startup-warning block.
+func (m Model) listPrefixLines() int {
+	if m.activeTab != tabDashboard {
+		return 0
+	}
+	return ui.DependencyWarningLines(m.depWarnings, depWarningLimit)
+}
+
 // scrollHeight returns the number of lines available for scrollable list items
-// after subtracting the fixed column header that each Render* function emits.
-// Detail and diff views don't have a column header — use contentHeight() there.
+// after subtracting the fixed column header that each Render* function emits
+// and any block drawn above it. Detail and diff views don't have a column
+// header — use contentHeight() there.
 func (m Model) scrollHeight() int {
-	h := m.contentHeight() - 1 // -1 for the column header line
+	h := m.contentHeight() - 1 - m.listPrefixLines() // -1 for the column header line
 	if h < 1 {
 		return 1
 	}
@@ -469,7 +483,7 @@ func (m Model) maxScrollOffset() int {
 // item index, or -1 if the row is part of the chrome (title, tabs, col header)
 // or a non-selectable visual line (group header / blank separator).
 //
-// Chrome layout without profile bar (rows 0-4):
+// Chrome layout without profile bar, with the tabs on one row (rows 0-4):
 //
 //	0  title "grove"
 //	1  blank
@@ -479,11 +493,14 @@ func (m Model) maxScrollOffset() int {
 //	5+ scrollable content
 //
 // With profile bar, rows shift down by 1 (profile bar is row 2, content tabs row 3).
+// Tabs wrapped onto more rows (ui.TabRows) and a block drawn above the column
+// header (listPrefixLines) shift them further.
 func (m Model) termRowToCursor(termRow int) int {
-	headerRows := 5
+	headerRows := 4 + ui.TabRows(tabNames, m.width)
 	if m.showProfileBar() {
-		headerRows = 6
+		headerRows++
 	}
+	headerRows += m.listPrefixLines()
 	if termRow < headerRows {
 		return -1
 	}

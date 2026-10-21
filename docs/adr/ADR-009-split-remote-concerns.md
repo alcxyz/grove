@@ -23,7 +23,7 @@ Treating the entire profile as one remote forces bad compromises:
 
 ADR-003 remote profiles are out of scope here. This is about already-cloned local repos whose remote concerns differ.
 
-Operationally, split concerns do not mean the same change should be integrated on every configured forge. ADR-011 defines the integration authority rule: one explicit authority creates the `main` merge commit, while GitHub or other public surfaces may remain social, CI, release, or intake mirrors.
+Operationally, split concerns do not mean the same change should be integrated on every configured forge. ADR-011 defines the integration authority rule: one explicit authority advances `main`, while GitHub or other public surfaces may remain social, CI, release, or intake mirrors.
 
 ## Decision
 

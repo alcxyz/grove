@@ -1,7 +1,7 @@
 # ADR-011: Explicit integration authority and public intake mirrors
 
 **Status:** Accepted
-**Date:** 2026-05-03 (revised 2026-09-23, 2026-09-30)
+**Date:** 2026-05-03 (revised 2026-09-23, 2026-09-30, 2026-10-21)
 **Applies to:** repository workflow, release workflow, split remote concern configuration
 
 ## Context
@@ -27,10 +27,13 @@ Grove chooses GitHub as that authority. GitHub owns Grove's canonical branches,
 pull requests, CI, and releases. `dev` is the default branch for development;
 feature pull requests target `dev`. Protected `main` contains releases and
 accepts promotion pull requests only from the same repository's `dev` branch.
-Promotion pull requests are merged with a merge commit after their version,
-tests, and release snapshot pass, so later promotions share history without a
-back-merge. The 2026-09-30 revision replaced squash promotions and their
-required back-merge into `dev`.
+Promotion pull requests are merged by fast-forward after their version, tests,
+and release snapshot pass: the promotion's head is pushed to `main`, which
+GitHub records as merging the pull request. `main` then equals `dev` at each
+promotion and changes only through `dev`, so no back-merge is needed and no
+forge-written commit enters the history. The 2026-09-30 revision replaced squash promotions and
+their required back-merge into `dev`; the 2026-10-21 revision replaced
+promotion merge commits with fast-forward.
 
 Other hosting services are secondary continuity mirrors for Grove. They copy
 GitHub's branches and tags in the GitHub-to-mirror direction and do not create
@@ -101,7 +104,7 @@ Tags are part of protected history:
 ## Consequences
 
 - There is one authoritative PR or merge record per integration.
-- There is one merge commit per integration.
+- Integration writes no merge commit: `main` and `dev` advance by fast-forward to the reviewed head.
 - GitHub can keep public reach without being trusted for protected history.
 - GitHub PRs become patch suggestions unless the repo explicitly selects GitHub as integration authority.
 - Mirror hosts remain useful for browsing, cloning, issue intake, PR suggestions, and distribution, but they do not create integration commits.

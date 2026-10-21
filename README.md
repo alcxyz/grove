@@ -449,9 +449,11 @@ Feature pull requests target `dev`. To publish a new version:
 2. Open a same-repository pull request from `dev` to `main`.
 3. Wait for the promotion policy, code checks, release snapshot, and Nix build
    to pass.
-4. Merge the promotion with a merge commit, not a squash. CI creates the
-   version tag and publishes the GitHub release, Homebrew cask, and AUR
-   package from `main`.
+4. Merge the promotion by fast-forward: push the pull request's head to
+   `main`, which GitHub records as merging it. GitHub's merge, squash and
+   rebase buttons write new commits; do not use them. CI creates the version
+   tag and publishes the GitHub release, Homebrew cask, and AUR package from
+   `main`.
 5. Set the next development version on `dev`, such as `0.10.1-dev`.
 
 The promotion policy rejects feature branches, fork branches named `dev`,

@@ -43,7 +43,7 @@ go vet ./...
 3. Add or update tests as needed
 4. Run `go test ./...` and `go vet ./...`
 5. Open a GitHub pull request targeting `dev`
-6. Squash-merge after all checks pass
+6. Merge by fast-forward once all checks pass on a branch based on the current `dev`: push the PR's head to `dev` (`git push origin <head sha>:dev`), which GitHub records as merging it. If `dev` has moved, rebase onto it, push the rebased branch to the PR and wait for its checks before merging
 
 CI runs build, vet, and tests. All checks must pass before merging.
 
@@ -81,7 +81,7 @@ To cut a release:
 1. Bump the `VERSION` file on `dev` to a new plain release version like `0.10.0`
 2. Open a same-repository pull request from `dev` to `main`
 3. Wait for the promotion policy, code checks, release snapshot, and Nix build to pass
-4. Merge the promotion with a merge commit, not a squash; CI creates the tag and publishes the release
+4. Merge the promotion by fast-forward: push the pull request's head to `main` (`git push origin <head sha>:main`), which GitHub records as merging it; never use GitHub's merge, squash or rebase buttons. CI creates the tag and publishes the release
 5. Bump `dev` to the next development version like `0.10.1-dev`
 
 This builds binaries for linux/darwin x amd64/arm64, creates a GitHub release with changelog, updates the cask in the [Homebrew tap](https://github.com/alcxyz/homebrew-tap), and publishes to the [AUR](https://aur.archlinux.org/packages/grove-tui-bin) (`grove-tui-bin`).

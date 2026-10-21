@@ -509,6 +509,24 @@ func TestUpdateConfigPreviewOverlay(t *testing.T) {
 	}
 }
 
+func TestConfigPreviewShowsAzureDevOpsProject(t *testing.T) {
+	var b strings.Builder
+	writeProfilePreview(&b, config.Profile{
+		Name:        "work",
+		Owner:       "acme",
+		Forge:       "azuredevops",
+		InstanceURL: "https://dev.azure.com/acme",
+		Project:     "Platform",
+		Groups:      []config.Group{{Name: "data", Match: "data-", Code: config.Remote{Project: "Data"}}},
+	})
+	out := b.String()
+	for _, want := range []string{"    project: Platform\n", "    code override: project=Data\n"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("config preview missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestUpdateDetailConfigPreviewUsesRepo(t *testing.T) {
 	m := newTestModel()
 	m.loading = false

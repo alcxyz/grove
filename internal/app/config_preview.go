@@ -147,6 +147,9 @@ func writeRemotePreview(b *strings.Builder, label string, r config.Remote, local
 	if r.InstanceURL != "" {
 		fmt.Fprintf(b, "    instance: %s\n", r.InstanceURL)
 	}
+	if r.Project != "" {
+		fmt.Fprintf(b, "    project: %s\n", r.Project)
+	}
 	if r.TokenFile != "" {
 		fmt.Fprintf(b, "    token_file: %s\n", compactHome(r.TokenFile))
 	}
@@ -165,9 +168,6 @@ func writeRemotePreview(b *strings.Builder, label string, r config.Remote, local
 }
 
 func writeRemoteOverridePreview(b *strings.Builder, label string, r config.Remote) {
-	if r.Key() == "|||||||" {
-		return
-	}
 	parts := remoteOverrideParts(r)
 	if len(parts) == 0 {
 		return
@@ -188,6 +188,9 @@ func remoteOverrideParts(r config.Remote) []string {
 	}
 	if r.InstanceURL != "" {
 		parts = append(parts, "instance="+r.InstanceURL)
+	}
+	if r.Project != "" {
+		parts = append(parts, "project="+r.Project)
 	}
 	if r.TokenFile != "" {
 		parts = append(parts, "token_file="+compactHome(r.TokenFile))

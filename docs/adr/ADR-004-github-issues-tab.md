@@ -28,7 +28,7 @@ A new `Issue` struct in `internal/model/repo.go`:
 
 ### Fetching
 
-`GitHubProvider.ListIssues` fetches open issues per repo via GitHub's REST API, following the same provider-level concurrency cap as PR fetching. Default: open issues only, limit 50. GitHub's issues API can return pull requests, so Grove filters responses with a `pull_request` key.
+`GitHubProvider.ListIssues` fetches open issues per repo via GitHub's REST API, following the same provider-level concurrency cap as PR fetching. It fetches all open issues, following pagination; the earlier 50-issue limit came from the retired `gh issue list --limit 50` call. GitHub's issues API can return pull requests, so Grove filters responses with a `pull_request` key.
 
 ### Caching
 

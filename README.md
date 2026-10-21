@@ -414,7 +414,7 @@ Each data file is a JSON object `{ "cached_at": <RFC3339>, "config_key": <string
 
 ## Rate limiting
 
-GitHub and Forgejo calls use direct HTTP requests with token auth. GitHub-backed API calls are limited to **5 concurrent requests** at a time to stay inside rate limits. When GitHub reports an exhausted rate limit, grove shows it as a rate-limit error (with the reset time when known) rather than an authentication failure.
+GitHub and Forgejo calls use direct HTTP requests with token auth, or go through `gh api` and `tea api` with `auth_mode: gh` and `auth_mode: tea`. GitHub PR review status comes from GraphQL (one query per 50 open PRs in a repo, skipped when it has none), which honours required reviews; GraphQL needs credentials, so without a token grove derives it from each PR's reviews and cannot show "review required". GitHub-backed API calls are limited to **5 concurrent requests** at a time to stay inside rate limits. When GitHub reports an exhausted rate limit, grove shows it as a rate-limit error (with the reset time when known) rather than an authentication failure.
 
 API requests time out after 30 seconds, and `gh`, `tea`, and `az` reads after two minutes, so a stalled connection cannot hang a refresh.
 

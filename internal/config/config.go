@@ -524,6 +524,12 @@ func mergeRemote(base, override Remote) Remote {
 		base.Forge = override.Forge
 	}
 	if override.InstanceURL != "" {
+		// Credentials belong to an instance. Apply only credentials supplied
+		// by this override after changing the instance.
+		if base.EffectiveForge() != "github" && strings.TrimRight(base.InstanceURL, "/") != strings.TrimRight(override.InstanceURL, "/") {
+			base.TokenFile = ""
+			base.AuthMode = ""
+		}
 		base.InstanceURL = override.InstanceURL
 	}
 	if override.Project != "" {

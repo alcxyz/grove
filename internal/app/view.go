@@ -196,7 +196,7 @@ func (m Model) View() string {
 	// Indicator line: text filter + cycle filter + sort
 	if m.filtering {
 		fmt.Fprintf(&b, "  %s%s▏",
-			ui.DimStyle.Render("filter: "), ui.HeaderStyle.Render(m.filterQuery))
+			ui.DimStyle.Render("filter: "), ui.HeaderStyle.Render(ui.LineText(m.filterQuery)))
 	} else if m.filterQuery != "" {
 		b.WriteString(ui.RenderFilter(m.filterQuery))
 	}

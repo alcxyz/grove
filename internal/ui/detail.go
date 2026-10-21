@@ -43,7 +43,7 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 	lineNum := 0
 
 	// Repo header
-	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s", repo.Name)))
+	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s", OneLine(repo.Name))))
 	b.WriteString("\n")
 	lineNum++
 	b.WriteString(DimStyle.Render(strings.Repeat("─", min(width, 90))))
@@ -69,13 +69,13 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 		syncInfo = CleanStyle.Render("up to date")
 	}
 
-	fmt.Fprintf(&b, "  Branch:  %s\n", HeaderStyle.Render(repo.Branch))
+	fmt.Fprintf(&b, "  Branch:  %s\n", HeaderStyle.Render(OneLine(repo.Branch)))
 	lineNum++
 	fmt.Fprintf(&b, "  Status:  %s\n", status)
 	lineNum++
 	fmt.Fprintf(&b, "  Sync:    %s\n", syncInfo)
 	lineNum++
-	fmt.Fprintf(&b, "  Path:    %s\n", DimStyle.Render(repo.Path))
+	fmt.Fprintf(&b, "  Path:    %s\n", DimStyle.Render(OneLine(repo.Path)))
 	lineNum++
 	if stats.CommitCount > 0 || stats.Contributors > 0 {
 		fmt.Fprintf(&b, "  Commits: %s", HeaderStyle.Render(fmt.Sprintf("%d", stats.CommitCount)))
@@ -99,7 +99,7 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 			if br == repo.Branch {
 				marker = SelectedStyle.Render("* ")
 			}
-			write(fmt.Sprintf("  %s%s", marker, br))
+			write(fmt.Sprintf("  %s%s", marker, OneLine(br)))
 		}
 	}
 	b.WriteString("\n")
@@ -147,7 +147,7 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 		for _, pr := range prs {
 			title := truncate(pr.Title, 52)
 			write(fmt.Sprintf("  #%-4d %s  %s  %s",
-				pr.Number, title, formatReview(pr.ReviewDecision), DimStyle.Render(pr.Author)))
+				pr.Number, title, formatReview(pr.ReviewDecision), DimStyle.Render(OneLine(pr.Author))))
 		}
 	}
 	b.WriteString("\n")
@@ -166,7 +166,7 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 				labels = DimStyle.Render(truncate(strings.Join(iss.Labels, ", "), 20))
 			}
 			write(fmt.Sprintf("  #%-4d %s  %s  %s",
-				iss.Number, title, labels, DimStyle.Render(iss.Author)))
+				iss.Number, title, labels, DimStyle.Render(OneLine(iss.Author))))
 		}
 	}
 	b.WriteString("\n")
@@ -198,8 +198,8 @@ func RenderRepoDetail(repo model.Repo, commits []model.Commit, prs []model.PR, i
 		for _, c := range commits {
 			subject := truncate(c.Subject, 50)
 			ago := timeAgo(c.Date)
-			write("  " + cell(DimStyle.Render(c.Hash), 9) +
-				cell(subject, 52) + cell(DimStyle.Render(c.Author), 16) + DimStyle.Render(ago))
+			write("  " + cell(DimStyle.Render(OneLine(c.Hash)), 9) +
+				cell(subject, 52) + cell(DimStyle.Render(OneLine(c.Author)), 16) + DimStyle.Render(ago))
 		}
 	}
 
@@ -290,7 +290,7 @@ func RenderBottomArea(statusMsg string, loading bool, infoParts []string, blinkS
 	if loading {
 		s = "⏳ " + s
 	}
-	return RenderOwlEyes(blinkState) + " " + StatusBarStyle.Render(s) + "\n" + RenderInfoBar(infoParts)
+	return RenderOwlEyes(blinkState) + " " + StatusBarStyle.Render(LineText(s)) + "\n" + RenderInfoBar(infoParts)
 }
 
 // renderSplashLine renders one line of the ASCII art.
@@ -350,12 +350,12 @@ func RenderFilter(query string) string {
 	if query == "" {
 		return ""
 	}
-	return fmt.Sprintf(" %s %s", DimStyle.Render("/"), HeaderStyle.Render(query))
+	return fmt.Sprintf(" %s %s", DimStyle.Render("/"), HeaderStyle.Render(LineText(query)))
 }
 
 // RenderCycleFilter shows the active quick-cycle filter pill.
 func RenderCycleFilter(field, value string, pos, total int) string {
-	return "  " + CycleStyle.Render(fmt.Sprintf("◉ %s: %s", field, value)) +
+	return "  " + CycleStyle.Render(fmt.Sprintf("◉ %s: %s", OneLine(field), OneLine(value))) +
 		DimStyle.Render(fmt.Sprintf(" %d/%d", pos, total))
 }
 
@@ -547,6 +547,7 @@ func RenderHelp(width, page int, version string) string {
 
 // RenderConfigPreview renders a human-readable view of the active config.
 func RenderConfigPreview(content string, width int) string {
+	content = PlainText(content)
 	boxW := min(width-4, 100)
 	if boxW < 40 {
 		boxW = width
@@ -595,7 +596,7 @@ func RenderInfoBar(parts []string) string {
 // and colorDiffLine is skipped.
 func RenderDiff(repoName, hash, content string, preColored bool) string {
 	var b strings.Builder
-	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s  %s", repoName, hash)))
+	b.WriteString(HeaderStyle.Render(fmt.Sprintf("  %s  %s", OneLine(repoName), OneLine(hash))))
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  " + strings.Repeat("─", 86)))
 	b.WriteString("\n")
@@ -612,6 +613,7 @@ func RenderDiff(repoName, hash, content string, preColored bool) string {
 }
 
 func colorDiffLine(line string) string {
+	line = PlainText(line)
 	switch {
 	case strings.HasPrefix(line, "diff --git") ||
 		strings.HasPrefix(line, "new file") ||

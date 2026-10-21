@@ -9,6 +9,7 @@ import (
 	"github.com/alcxyz/grove/internal/config"
 	"github.com/alcxyz/grove/internal/model"
 	"github.com/alcxyz/grove/internal/ui"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) listLen() int {
@@ -249,7 +250,7 @@ func (m Model) profileAtX(x int) int {
 	names := m.profileTabNames()
 	cur := 0
 	for i, name := range names {
-		w := len(name) + 2 // padding(0,1) = 1 each side
+		w := lipgloss.Width(ui.OneLine(name)) + 2 // padding(0,1) = 1 each side
 		if x >= cur && x < cur+w {
 			if i == len(names)-1 {
 				return -1 // "All"

@@ -9,6 +9,7 @@ import (
 
 	"github.com/alcxyz/grove/internal/model"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // selRow applies the selected-row background across an entire pre-rendered row.
@@ -48,11 +49,10 @@ func timeAgo(t time.Time) string {
 }
 
 func truncate(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
+	if n <= 0 {
+		return ""
 	}
-	return string(runes[:n-1]) + "…"
+	return ansi.Truncate(OneLine(s), n, "…")
 }
 
 // prefixWord extracts the leading word/prefix used for block-jump grouping.
@@ -123,6 +123,7 @@ func BuildGroups(repos []model.Repo, groupFor func(string) string, groupOrder fu
 
 // groupHeader renders the separator line for a named group.
 func groupHeader(name string, width int) string {
+	name = OneLine(name)
 	return GroupHeaderStyle.Render(fmt.Sprintf("── %s ", strings.ToUpper(name))) +
 		DimStyle.Render(strings.Repeat("─", max(0, width-4-len(name))))
 }
@@ -345,6 +346,7 @@ func RenderDashboard(groups []RepoGroup, cursor, width, scrollOffset, maxLines i
 // ── CI row ────────────────────────────────────────────────────────────────
 
 func formatCIStatus(status, conclusion string) string {
+	status, conclusion = OneLine(status), OneLine(conclusion)
 	if status != "completed" {
 		return PendingStyle.Render("● " + status)
 	}
@@ -659,7 +661,7 @@ func RenderActivity(groups []CommitGroup, cursor, width, scrollOffset, maxLines 
 			repoStyled := hlText(repo, "repo", hlField, hlValue)
 			subjectStyled := hlText(subject, "subject", hlField, hlValue)
 			row := "  " +
-				cell(repoStyled, repoW) + cell(DimStyle.Render(c.Hash), 9) +
+				cell(repoStyled, repoW) + cell(DimStyle.Render(OneLine(c.Hash)), 9) +
 				cell(subjectStyled, msgW) + cell(DimStyle.Render(author), authorW) +
 				cell(DimStyle.Render(ago), agoW)
 			if flatIdx == cursor {
@@ -681,7 +683,7 @@ func RenderErrors(errs []string) string {
 	var b strings.Builder
 	b.WriteString(DirtyStyle.Render(fmt.Sprintf("\n  Failed to load from %d repo(s):\n", len(errs))))
 	for _, e := range errs {
-		b.WriteString(DimStyle.Render("  • "+e) + "\n")
+		b.WriteString(DimStyle.Render("  • "+OneLine(e)) + "\n")
 	}
 	return b.String()
 }
@@ -710,7 +712,7 @@ func RenderDependencyWarnings(warnings []string, limit int) string {
 	var b strings.Builder
 	b.WriteString(PendingStyle.Render("  Startup warnings") + "\n")
 	for _, warning := range warnings[:limit] {
-		b.WriteString(DimStyle.Render("  • "+warning) + "\n")
+		b.WriteString(DimStyle.Render("  • "+OneLine(warning)) + "\n")
 	}
 	if len(warnings) > limit {
 		b.WriteString(DimStyle.Render(fmt.Sprintf("  • %d more", len(warnings)-limit)) + "\n")
@@ -749,7 +751,7 @@ func RenderAuthError(kind string, errs []string) string {
 			limit = 4
 		}
 		for _, e := range errs[:limit] {
-			b.WriteString(DimStyle.Render("  • "+e) + "\n")
+			b.WriteString(DimStyle.Render("  • "+OneLine(e)) + "\n")
 		}
 	}
 	return b.String()
@@ -842,7 +844,7 @@ func formatMilestoneState(state string) string {
 	case "open", "":
 		return PendingStyle.Render("open")
 	default:
-		return DimStyle.Render(state)
+		return DimStyle.Render(OneLine(state))
 	}
 }
 
@@ -962,8 +964,8 @@ func RenderTabs(tabs []string, active, width int) string {
 	// Find the longest tab label to set a uniform column width.
 	colW := 0
 	for _, t := range tabs {
-		if len(t) > colW {
-			colW = len(t)
+		if n := len(OneLine(t)); n > colW {
+			colW = n
 		}
 	}
 
@@ -988,7 +990,7 @@ func RenderTabs(tabs []string, active, width int) string {
 		end := min(start+perRow, len(tabs))
 		var row []string
 		for i := start; i < end; i++ {
-			label := fmt.Sprintf("%-*s", colW, tabs[i])
+			label := fmt.Sprintf("%-*s", colW, OneLine(tabs[i]))
 			if i == active {
 				row = append(row, ActiveTabStyle.Render(label))
 			} else {
@@ -1006,8 +1008,8 @@ func RenderTabs(tabs []string, active, width int) string {
 func TabHitTest(tabs []string, x, row, width int) int {
 	colW := 0
 	for _, t := range tabs {
-		if len(t) > colW {
-			colW = len(t)
+		if n := len(OneLine(t)); n > colW {
+			colW = n
 		}
 	}
 	cellW := lipgloss.Width(TabStyle.Render(fmt.Sprintf("%-*s", colW, "")))
@@ -1045,8 +1047,8 @@ func TabHitTest(tabs []string, x, row, width int) int {
 func TabRows(tabs []string, width int) int {
 	colW := 0
 	for _, t := range tabs {
-		if len(t) > colW {
-			colW = len(t)
+		if n := len(OneLine(t)); n > colW {
+			colW = n
 		}
 	}
 	cellW := lipgloss.Width(TabStyle.Render(fmt.Sprintf("%-*s", colW, "")))
@@ -1070,9 +1072,9 @@ func RenderProfileTabs(tabs []string, active int) string {
 	var rendered []string
 	for i, t := range tabs {
 		if i == active {
-			rendered = append(rendered, ActiveProfileTabStyle.Render(t))
+			rendered = append(rendered, ActiveProfileTabStyle.Render(OneLine(t)))
 		} else {
-			rendered = append(rendered, ProfileTabStyle.Render(t))
+			rendered = append(rendered, ProfileTabStyle.Render(OneLine(t)))
 		}
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, rendered...)

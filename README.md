@@ -202,6 +202,10 @@ Remote resolution is concern-specific:
 - `ssh_host` overrides the SSH clone host when it differs from the forge web/API host
 
 Resolution order is: profile defaults, then matching group override, then per-repo override.
+For non-GitHub forges, an override that changes `instance_url` resets inherited `token_file` and
+`auth_mode` settings. Configure either explicitly in that override when needed
+for the new instance. An unchanged URL (including a trailing slash) retains
+those defaults.
 
 The legacy single-profile format (`base_path`, `org`, `prefixes` at the top level) is still supported and auto-migrates to a single profile.
 

@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -218,6 +219,16 @@ func (g *GitHubProvider) ListPRs(repoFullName string) ([]model.PR, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(items) == 0 {
+		return []model.PR{}, nil
+	}
+
+	// The GraphQL decision honours required reviews; without it (GraphQL
+	// needs credentials) fall back to deriving one from each PR's reviews.
+	decisions, err := g.reviewDecisions(repoFullName)
+	if err != nil {
+		decisions = nil
+	}
 
 	prs := make([]model.PR, 0, len(items))
 	for _, item := range items {
@@ -236,6 +247,10 @@ func (g *GitHubProvider) ListPRs(repoFullName string) ([]model.PR, error) {
 		if err := json.Unmarshal(item, &raw); err != nil {
 			return nil, fmt.Errorf("parse PRs for %s: %w", repoFullName, err)
 		}
+		review, ok := decisions[raw.Number]
+		if !ok {
+			review = g.reviewDecision(repoFullName, raw.Number)
+		}
 		prs = append(prs, model.PR{
 			Repo:           repoFullName,
 			Number:         raw.Number,
@@ -244,7 +259,7 @@ func (g *GitHubProvider) ListPRs(repoFullName string) ([]model.PR, error) {
 			Branch:         raw.Head.Ref,
 			State:          raw.State,
 			Checks:         g.checkSummary(repoFullName, raw.Head.SHA),
-			ReviewDecision: g.reviewDecision(repoFullName, raw.Number),
+			ReviewDecision: review,
 			UpdatedAt:      raw.UpdatedAt,
 			URL:            raw.HTMLURL,
 		})
@@ -252,11 +267,159 @@ func (g *GitHubProvider) ListPRs(repoFullName string) ([]model.PR, error) {
 	return prs, nil
 }
 
+// githubReviewQuery fetches each open PR's effective review decision, which
+// GitHub derives from the base branch's review requirements (required
+// approvals, code owners). It is null when the branch requires no reviews, so
+// the latest approving or change-requesting review per reviewer is fetched too.
+const githubReviewQuery = `query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number
+        reviewDecision
+        latestOpinionatedReviews(first: 50) { pageInfo { hasNextPage } nodes { state } }
+      }
+    }
+  }
+}`
+
+// reviewDecisions returns the review decision of every open PR in a repo,
+// keyed by PR number.
+func (g *GitHubProvider) reviewDecisions(repoFullName string) (map[int]string, error) {
+	owner, name := splitRepoFullName(repoFullName)
+	decisions := map[int]string{}
+	after := ""
+	for {
+		vars := map[string]string{"owner": owner, "name": name}
+		if after != "" {
+			vars["after"] = after
+		}
+		data, err := g.graphQL(githubReviewQuery, vars)
+		if err != nil {
+			return nil, err
+		}
+		var resp struct {
+			Repository *struct {
+				PullRequests struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []struct {
+						Number                   int    `json:"number"`
+						ReviewDecision           string `json:"reviewDecision"`
+						LatestOpinionatedReviews struct {
+							PageInfo struct {
+								HasNextPage bool `json:"hasNextPage"`
+							} `json:"pageInfo"`
+							Nodes []struct {
+								State string `json:"state"`
+							} `json:"nodes"`
+						} `json:"latestOpinionatedReviews"`
+					} `json:"nodes"`
+				} `json:"pullRequests"`
+			} `json:"repository"`
+		}
+		if err := json.Unmarshal(data, &resp); err != nil {
+			return nil, fmt.Errorf("parse review decisions for %s: %w", repoFullName, err)
+		}
+		if resp.Repository == nil {
+			return nil, fmt.Errorf("%w: github graphql repository %s", errGitHubNotFound, repoFullName)
+		}
+		for _, pr := range resp.Repository.PullRequests.Nodes {
+			decision := strings.ToUpper(pr.ReviewDecision)
+			if decision == "" {
+				// More reviewers than one page: leave the PR out so the
+				// caller reads all of its reviews over REST.
+				if pr.LatestOpinionatedReviews.PageInfo.HasNextPage {
+					continue
+				}
+				states := make([]string, 0, len(pr.LatestOpinionatedReviews.Nodes))
+				for _, review := range pr.LatestOpinionatedReviews.Nodes {
+					states = append(states, review.State)
+				}
+				decision = summarizeReviews(states)
+			}
+			decisions[pr.Number] = decision
+		}
+		page := resp.Repository.PullRequests.PageInfo
+		if !page.HasNextPage || page.EndCursor == "" {
+			return decisions, nil
+		}
+		after = page.EndCursor
+	}
+}
+
+// graphQL runs a GitHub GraphQL query and returns its data object.
+func (g *GitHubProvider) graphQL(query string, vars map[string]string) ([]byte, error) {
+	var body []byte
+	if g.authMode == "gh" {
+		args := []string{"api", "graphql", "-f", "query=" + query}
+		keys := make([]string, 0, len(vars))
+		for key := range vars {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			args = append(args, "-f", key+"="+vars[key])
+		}
+		githubAPISem <- struct{}{}
+		out, stderr, err := runCLI("gh", args...)
+		<-githubAPISem
+		if err != nil {
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				return nil, githubCLIError("graphql", stderr)
+			}
+			return nil, err
+		}
+		body = out
+	} else {
+		// GitHub's GraphQL API rejects anonymous requests.
+		if token, err := g.loadToken(); err != nil || token == "" {
+			return nil, fmt.Errorf("%w: github graphql needs a token", ErrNotAuthenticated)
+		}
+		payload, err := json.Marshal(map[string]any{"query": query, "variables": vars})
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequest(http.MethodPost, g.apiURL+"/graphql", bytes.NewReader(payload))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if body, err = g.apiDo(req); err != nil {
+			return nil, err
+		}
+	}
+
+	var resp struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parse github graphql response: %w", err)
+	}
+	if len(resp.Errors) > 0 {
+		return nil, fmt.Errorf("github graphql: %s", resp.Errors[0].Message)
+	}
+	return resp.Data, nil
+}
+
+// reviewDecision derives a PR's review decision from its REST reviews, the
+// fallback when GraphQL is unavailable. It cannot see the base branch's
+// review requirements, so it never reports REVIEW_REQUIRED.
 func (g *GitHubProvider) reviewDecision(repoFullName string, number int) string {
 	items, err := g.apiGetPaginated(fmt.Sprintf("/repos/%s/pulls/%d/reviews", repoFullName, number), 100)
 	if err != nil {
 		return ""
 	}
+	// Reviews arrive oldest first. Comment-only and pending reviews leave a
+	// reviewer's earlier approval or change request in force; a dismissal
+	// withdraws it.
 	latestByUser := map[string]string{}
 	for _, item := range items {
 		var review struct {
@@ -268,11 +431,26 @@ func (g *GitHubProvider) reviewDecision(repoFullName string, number int) string 
 		if json.Unmarshal(item, &review) != nil || review.User.Login == "" {
 			continue
 		}
-		latestByUser[review.User.Login] = strings.ToUpper(review.State)
+		switch state := strings.ToUpper(review.State); state {
+		case "APPROVED", "CHANGES_REQUESTED":
+			latestByUser[review.User.Login] = state
+		case "DISMISSED":
+			delete(latestByUser, review.User.Login)
+		}
 	}
-	hasApproval := false
+	states := make([]string, 0, len(latestByUser))
 	for _, state := range latestByUser {
-		switch state {
+		states = append(states, state)
+	}
+	return summarizeReviews(states)
+}
+
+// summarizeReviews combines reviewers' latest decisions: any change request
+// outweighs approvals.
+func summarizeReviews(states []string) string {
+	hasApproval := false
+	for _, state := range states {
+		switch strings.ToUpper(state) {
 		case "CHANGES_REQUESTED":
 			return "CHANGES_REQUESTED"
 		case "APPROVED":

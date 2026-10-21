@@ -500,6 +500,153 @@ func TestGitHubListReposDoesNotMaskOrgErrors(t *testing.T) {
 	}
 }
 
+func TestGitHubListPRsUsesGraphQLReviewDecision(t *testing.T) {
+	t.Setenv("GH_TOKEN", "env-token")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/alcxyz/grove/pulls":
+			writeJSON(t, w, []map[string]any{{"number": 1}, {"number": 2}, {"number": 3}, {"number": 4}})
+		case "/graphql":
+			if r.Method != http.MethodPost {
+				t.Errorf("graphql method = %s, want POST", r.Method)
+			}
+			var req struct {
+				Variables map[string]string `json:"variables"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatal(err)
+			}
+			if req.Variables["owner"] != "alcxyz" || req.Variables["name"] != "grove" {
+				t.Errorf("variables = %v", req.Variables)
+			}
+			page := map[string]any{
+				"pageInfo": map[string]any{"hasNextPage": true, "endCursor": "c1"},
+				"nodes": []map[string]any{
+					// One approval of two required.
+					{"number": 1, "reviewDecision": "REVIEW_REQUIRED", "latestOpinionatedReviews": map[string]any{
+						"nodes": []map[string]any{{"state": "APPROVED"}},
+					}},
+					// No required reviews: fall back to the reviews themselves.
+					{"number": 2, "reviewDecision": nil, "latestOpinionatedReviews": map[string]any{
+						"nodes": []map[string]any{{"state": "APPROVED"}, {"state": "CHANGES_REQUESTED"}},
+					}},
+					// More reviewers than one page: read them over REST.
+					{"number": 4, "reviewDecision": nil, "latestOpinionatedReviews": map[string]any{
+						"pageInfo": map[string]any{"hasNextPage": true},
+						"nodes":    []map[string]any{{"state": "APPROVED"}},
+					}},
+				},
+			}
+			if req.Variables["after"] == "c1" {
+				page = map[string]any{
+					"pageInfo": map[string]any{"hasNextPage": false, "endCursor": "c2"},
+					"nodes": []map[string]any{
+						{"number": 3, "reviewDecision": "APPROVED", "latestOpinionatedReviews": map[string]any{"nodes": []any{}}},
+					},
+				}
+			}
+			writeJSON(t, w, map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": page}}})
+		case "/repos/alcxyz/grove/pulls/1/reviews", "/repos/alcxyz/grove/pulls/2/reviews", "/repos/alcxyz/grove/pulls/3/reviews":
+			t.Errorf("unexpected REST review lookup %s", r.URL.Path)
+			writeJSON(t, w, []any{})
+		case "/repos/alcxyz/grove/pulls/4/reviews":
+			writeJSON(t, w, []map[string]any{
+				{"state": "APPROVED", "user": map[string]any{"login": "bob"}},
+				{"state": "CHANGES_REQUESTED", "user": map[string]any{"login": "carol"}},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	prs, err := provider.ListPRs("alcxyz/grove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int]string{}
+	for _, pr := range prs {
+		got[pr.Number] = pr.ReviewDecision
+	}
+	want := map[int]string{1: "REVIEW_REQUIRED", 2: "CHANGES_REQUESTED", 3: "APPROVED", 4: "CHANGES_REQUESTED"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("review decisions = %v, want %v", got, want)
+	}
+}
+
+func TestGitHubGHAuthModeQueriesReviewDecisionsWithGHGraphQL(t *testing.T) {
+	dir := t.TempDir()
+	ghPath := filepath.Join(dir, "gh")
+	recordPath := filepath.Join(dir, "args")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "` + recordPath + `"
+printf '{"data":{"repository":{"pullRequests":{"pageInfo":{"hasNextPage":false},"nodes":[{"number":7,"reviewDecision":"REVIEW_REQUIRED","latestOpinionatedReviews":{"nodes":[]}}]}}}}'
+`
+	if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	provider := NewGitHubProvider(ProviderConfig{AuthMode: "gh"})
+	decisions, err := provider.reviewDecisions("alcxyz/grove")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decisions[7] != "REVIEW_REQUIRED" {
+		t.Fatalf("decisions = %v, want PR 7 REVIEW_REQUIRED", decisions)
+	}
+	data, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := string(data)
+	for _, want := range []string{"api\ngraphql\n", "-f\nname=grove\n", "-f\nowner=alcxyz\n"} {
+		if !strings.Contains(args, want) {
+			t.Fatalf("gh args missing %q:\n%s", want, args)
+		}
+	}
+}
+
+func TestGitHubReviewDecisionKeepsDecisionAcrossCommentReviews(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	reviews := map[string][]map[string]any{
+		// Alice's comment does not withdraw her change request.
+		"/repos/alcxyz/grove/pulls/1/reviews": {
+			{"state": "CHANGES_REQUESTED", "user": map[string]any{"login": "alice"}},
+			{"state": "APPROVED", "user": map[string]any{"login": "bob"}},
+			{"state": "COMMENTED", "user": map[string]any{"login": "alice"}},
+		},
+		// A dismissed change request no longer blocks Bob's approval. GitHub
+		// marks the dismissed review itself as DISMISSED.
+		"/repos/alcxyz/grove/pulls/2/reviews": {
+			{"state": "DISMISSED", "user": map[string]any{"login": "alice"}},
+			{"state": "APPROVED", "user": map[string]any{"login": "bob"}},
+		},
+		"/repos/alcxyz/grove/pulls/3/reviews": {
+			{"state": "COMMENTED", "user": map[string]any{"login": "alice"}},
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if list, ok := reviews[r.URL.Path]; ok {
+			writeJSON(t, w, list)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	provider := NewGitHubProvider(ProviderConfig{})
+	provider.apiURL = server.URL
+	for number, want := range map[int]string{1: "CHANGES_REQUESTED", 2: "APPROVED", 3: ""} {
+		if got := provider.reviewDecision("alcxyz/grove", number); got != want {
+			t.Errorf("PR %d review decision = %q, want %q", number, got, want)
+		}
+	}
+}
+
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

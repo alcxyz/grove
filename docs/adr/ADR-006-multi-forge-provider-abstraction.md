@@ -1,29 +1,25 @@
 # ADR-006: Multi-forge provider abstraction
 
 **Status:** Accepted
-**Date:** 2026-05-01 (proposed 2026-04-29)
+**Date:** 2026-05-01 (proposed 2026-04-29, revised 2026-05-05, 2026-06-04)
 **Applies to:** `internal/forge/`, `internal/model/repo.go`, `internal/config/config.go`, `internal/app/commands.go`, `internal/clone/clone.go`
-
-**Revision 2026-05-05:** GitHub now uses the same direct HTTP provider model as Forgejo. The `gh` CLI is no longer a provider dependency for PRs, issues, branches, CI, repo enumeration, or clone routing.
-
-**Revision 2026-06-04:** The provider contract includes first-class repository milestones for GitHub and Forgejo; issue rows still retain labels, assignees, and milestone names as issue metadata.
+**History:** [replaced text](archive/ADR-006-multi-forge-provider-abstraction-history.md)
 
 ## Context
 
 Grove started tightly coupled to GitHub at every layer of the stack. Data fetching went through the `gh` CLI wrapper in `internal/gh/gh.go`, model types in `internal/model/repo.go` assumed GitHub semantics, and the `grove clone` subcommand called the GitHub REST API directly.
 
-Users increasingly self-host git forges — Forgejo, Gitea, GitLab — alongside or instead of GitHub. Supporting these would make grove useful to a much broader audience. Even without adding new providers immediately, extracting a provider abstraction would improve testability (the current `gh` package cannot be mocked without exec-level patching).
-
-The branding and about text have been updated to reflect the intent: grove is a "multi-repo git forge monitoring TUI" that is currently GitHub-native.
+Users increasingly self-host git forges (Forgejo, Gitea, GitLab) alongside or instead of GitHub. Supporting these would make grove useful to a much broader audience. A provider abstraction also improves testability: the `gh` wrapper could not be mocked without exec-level patching.
 
 Forgejo (a community fork of Gitea) is the priority second target. Codeberg — a major public hosting service — runs Forgejo, so a single `forgejo` provider covers both Codeberg and self-hosted Forgejo instances. Modern Gitea (which shares the same v1 REST API) is also covered as a side effect, but Gitea-specific compatibility is a non-goal.
 
 ## Decision
 
-**Option B then C:** First extract a `Provider` interface with GitHub as the sole implementation (Phase 1), then add a `forgejo` provider targeting Forgejo 1.20+ (Phase 2).
+**Option B then C:** a `Provider` interface with a `GitHubProvider` implementation, then a `forgejo` provider targeting Forgejo 1.20+.
 
-- **Phase 1** — Create `internal/forge/forge.go` with a `Provider` interface. Move GitHub API access behind a `GitHubProvider` implementation. Add a `forge` field to `config.Profile` (default `"github"`). Wire `commands.go` to call through the interface. Models stay mostly as-is; GitHub-specific fields (`ReviewDecision`, `WorkflowRun` details) become optional/nullable for forges that don't support them.
-- **Phase 2** — Implement `ForgejoProvider` using Forgejo's v1 REST API with token-based auth. Config gains an `instance_url` field for non-GitHub profiles. Feature-detect Actions support (graceful nil if unavailable on older instances).
+- **Provider interface:** `internal/forge/forge.go` defines `Provider`. Its contract covers pull requests, issues, repository milestones (ADR-012), branches, workflow runs, repository listing, cloning, and repo, commit, and branch browser URLs. `commands.go` calls through the interface. A `forge` field on `config.Profile` selects the provider (default `"github"`). Models stay mostly as-is; GitHub-specific fields (`ReviewDecision`, `WorkflowRun` details) are optional/nullable for forges that don't support them.
+- **GitHub:** `GitHubProvider` calls GitHub's REST API over direct HTTP, the same provider model as Forgejo. The `gh` CLI is not a provider dependency for PRs, issues, branches, CI, repo enumeration, or clone routing; it is used only when a remote selects `auth_mode: gh` (see Auth below).
+- **Forgejo:** `ForgejoProvider` uses Forgejo's v1 REST API with token-based auth. Config has an `instance_url` field for non-GitHub profiles. Actions support is feature-detected (graceful nil if unavailable on older instances). Codeberg, a public Forgejo instance, is the primary validation target.
 
 **Provider naming:** The second provider is called `forgejo`, not `gitea` or `forgejo_compat`. It targets Forgejo and Codeberg directly; Gitea compatibility is incidental.
 
@@ -78,13 +74,7 @@ GitHub caps authenticated REST API requests at 5,000 req/hr for normal user toke
 `grove clone` uses `Provider.CloneRepo()`. GitHub and Forgejo both shell out to `git clone` with provider-specific HTTPS or SSH URLs. Private HTTPS clones depend on the user's git credential setup; `clone_proto: ssh` is preferred when API auth and git transport auth should remain separate.
 
 **Labels, assignees, milestones on issues:**
-Forgejo's model is very close to GitHub's. Mappable to a shared model with minimal loss of fidelity. GitLab is out of scope for now.
-
-## Implementation Plan
-
-1. **Phase 1:** Extract `Provider` interface in `internal/forge/forge.go`, implement direct HTTP `GitHubProvider`
-2. **Phase 2:** Implement `ForgejoProvider` using Forgejo v1 REST API, add `forge` and `instance_url` config fields
-3. Validate against Codeberg (public Forgejo instance) as the primary test target
+Forgejo's model is very close to GitHub's. Mappable to a shared model with minimal loss of fidelity. Issue rows keep labels, assignees, and milestone names as issue metadata; repository milestones themselves come from the provider's milestone listing (ADR-012). GitLab is out of scope for now.
 
 ## Consequences
 

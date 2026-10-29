@@ -1,9 +1,9 @@
 # ADR-010: Azure DevOps provider support
 
 **Status:** Accepted
-**Date:** 2026-05-03
-**Revision 2026-05-12:** Initial implementation uses Azure CLI authentication only.
+**Date:** 2026-05-03 (revised 2026-05-12)
 **Applies to:** `internal/forge/`, `internal/config/config.go`, `internal/app/commands.go`, `internal/clone/`
+**History:** [replaced text](archive/ADR-010-azure-devops-provider-history.md)
 
 ## Context
 
@@ -17,7 +17,7 @@ Azure DevOps is not just another GitHub-like forge:
 - Azure Repos is the code-hosting concern.
 - Azure Boards work items are issue-like but not identical to GitHub/Forgejo issues.
 - Azure Pipelines builds are CI-like but are modeled differently from GitHub Actions and Forgejo Actions.
-- Authentication is handled through the Azure DevOps CLI for the initial provider.
+- Authentication is handled through the Azure DevOps CLI.
 - Clone URLs are returned by Azure DevOps metadata and may be HTTPS or SSH depending on organization policy.
 
 This intersects with ADR-003 remote profiles. Remote discovery will need richer repo
@@ -27,7 +27,7 @@ more than a simple `owner/name` string.
 
 ## Decision
 
-Add Azure DevOps as a provider named `azuredevops`. The first implementation is
+Add Azure DevOps as a provider named `azuredevops`. The provider is
 intentionally Azure CLI-only: grove shells out to the `az` DevOps extension and
 does not manage Azure DevOps PAT files directly. Authentication is delegated to
 `az devops login`, configured Azure CLI credentials, or whatever credential
@@ -50,7 +50,7 @@ The `owner` field remains the organization/account name. A new `project` field i
 needed because most Azure DevOps REST endpoints are scoped to
 `/{organization}/{project}/...`.
 
-Initial provider scope:
+Provider scope:
 
 - List repositories in an organization/project.
 - List pull requests for a repository.
@@ -66,7 +66,7 @@ Deferred provider scope:
 Issue/work-item support should be cautious:
 
 - Grove's `Issue` model can represent a subset of Azure Boards work items, but work items are broader than issues.
-- The first implementation may expose only work items linked to PRs/builds or query-backed open work items if configured later.
+- Work items are not exposed yet. Support may start with only work items linked to PRs/builds, or query-backed open work items if configured later.
 - Full Azure Boards query support is explicitly a follow-up unless a concrete workflow requires it.
 
 ## Provider Interface Implications
@@ -98,7 +98,7 @@ instead of adding two incompatible extensions.
 ## Alternatives Considered
 
 **Implement Azure DevOps immediately with the current Provider interface** --
-accepted for an initial CLI-only local-repo provider. This gives usable PR,
+accepted for a CLI-only local-repo provider. This gives usable PR,
 branch, URL, and clone support without adding direct Azure DevOps PAT handling.
 It may still be refactored once ADR-003 adds richer remote repo metadata.
 

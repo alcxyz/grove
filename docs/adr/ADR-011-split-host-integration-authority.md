@@ -3,12 +3,13 @@
 **Status:** Accepted
 **Date:** 2026-05-03 (revised 2026-09-23, 2026-09-30, 2026-10-21)
 **Applies to:** repository workflow, release workflow, split remote concern configuration
+**History:** [replaced text](archive/ADR-011-split-host-integration-authority-history.md)
 
 ## Context
 
 ADR-009 allows one local repo to use different forges for code, social data, and CI. That matches the current migration state: Forgejo is the primary git host for most code, while a smaller set of repositories still uses GitHub for public reach, issues, suggested PRs, GitHub Releases, Homebrew, AUR, or GitHub Pages.
 
-The first version of this ADR treated GitHub-fronted repositories as GitHub-authoritative. That was too broad. GitHub can be useful as a public social and distribution surface without being trusted as the merge/history authority.
+GitHub can be useful as a public social and distribution surface without being trusted as the merge/history authority.
 
 The trust concern is not just duplicate merge commits. If GitHub is treated as the authority, a GitHub-side history rewrite, bad merge, or platform bug can be copied into the authoritative history. A blind mirror would preserve the problem, not protect against it.
 
@@ -31,9 +32,7 @@ Promotion pull requests are merged by fast-forward after their version, tests,
 and release snapshot pass: the promotion's head is pushed to `main`, which
 GitHub records as merging the pull request. `main` then equals `dev` at each
 promotion and changes only through `dev`, so no back-merge is needed and no
-forge-written commit enters the history. The 2026-09-30 revision replaced squash promotions and
-their required back-merge into `dev`; the 2026-10-21 revision replaced
-promotion merge commits with fast-forward.
+forge-written commit enters the history.
 
 Other hosting services are secondary continuity mirrors for Grove. They copy
 GitHub's branches and tags in the GitHub-to-mirror direction and do not create

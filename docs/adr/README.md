@@ -1,3 +1,7 @@
+# Architecture Decision Records
+
+Each accepted ADR states the current decision. Replaced text, and superseded or retired ADRs, are kept in the [archive](archive/README.md).
+
 | ADR | Title | Area |
 |---|---|---|
 | [ADR-001](ADR-001-path-based-group-matching.md) | Path-based group matching | config |

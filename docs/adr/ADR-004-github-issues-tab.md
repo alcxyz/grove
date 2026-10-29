@@ -1,12 +1,9 @@
 # ADR-004: GitHub Issues tab
 
 **Status:** Accepted
-**Date:** 2026-04-28
+**Date:** 2026-04-28 (revised 2026-05-05, 2026-06-04)
 **Applies to:** `internal/model/`, `internal/forge/`, `internal/cache/`, `internal/app/`, `internal/ui/`
-
-**Revision 2026-05-05:** GitHub issue fetching now goes through the direct HTTP `GitHubProvider` in `internal/forge/`, not the retired `internal/gh` CLI wrapper. The issue model, cache, tab, and rendering decisions remain unchanged.
-
-**Revision 2026-06-04:** Milestone names remain on issue rows for context, but standalone milestone planning moved to the first-class Milestones tab described in ADR-012.
+**History:** [replaced text](archive/ADR-004-github-issues-tab-history.md)
 
 ## Context
 
@@ -26,9 +23,11 @@ A new `Issue` struct in `internal/model/repo.go`:
 - `Labels` (slice of label names), `Assignees` (slice of logins), `Milestone` (name string)
 - `UpdatedAt`, `CreatedAt` — timestamps for sorting and display
 
+The milestone name stays on issue rows for context. Milestone planning (state, progress, due dates) belongs to the Milestones tab (ADR-012).
+
 ### Fetching
 
-`GitHubProvider.ListIssues` fetches open issues per repo via GitHub's REST API, following the same provider-level concurrency cap as PR fetching. It fetches all open issues, following pagination; the earlier 50-issue limit came from the retired `gh issue list --limit 50` call. GitHub's issues API can return pull requests, so Grove filters responses with a `pull_request` key.
+`GitHubProvider.ListIssues`, the direct HTTP provider in `internal/forge/`, fetches open issues per repo via GitHub's REST API, following the same provider-level concurrency cap as PR fetching. It fetches all open issues, following pagination. GitHub's issues API can return pull requests, so Grove filters responses with a `pull_request` key.
 
 ### Caching
 
@@ -59,7 +58,7 @@ Issues is added as `[6]` rather than inserted between existing tabs. This avoids
 
 ## Consequences
 
-- Tab bar gains a 6th entry. Addressed by wrapping tabs into a 2×3 grid with number-first labels and equal-width columns.
+- Tab bar gains a 6th entry. Tabs use number-first labels in equal-width columns and wrap onto further rows when the terminal is too narrow for one row.
 - One additional GitHub issue API call per repo per refresh. With the semaphore cap of 5 and typical repo counts, this is within rate-limit budget but increases total refresh time proportionally.
 - Cache directory gains one more JSON file (`issues.json`).
 - The dashboard table gains one more "Is" column. Addressed by the dynamic column width system (see ADR-005) which distributes all columns proportionally within the terminal width.
